@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 
+#include <memory> // must precede extern "C": z64.h pulls in <memory> under C++ (GCC rejects templates with C linkage)
 extern "C" {
 #include "z64.h"
 }
