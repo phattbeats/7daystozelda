@@ -69,6 +69,15 @@ inline bool IsClientAlive(const AnchorClient& client) {
     return client.lifeState == LIFE_STATE_ALIVE || client.lifeState == LIFE_STATE_REVIVING;
 }
 
+// ENEMY_PLAYER_EFFECT kinds (EnemyTargeting): effects an authority-run enemy applied
+// to a remote player's puppet, delivered to that player's own machine.
+typedef enum {
+    ENEMY_EFFECT_HEALTH = 0,    // play->damagePlayer(play, amount)
+    ENEMY_EFFECT_GRAB = 1,      // play->grabPlayer(play, self)
+    ENEMY_EFFECT_FREEZE = 2,    // actor.freezeTimer = max(current, amount)
+    ENEMY_EFFECT_KNOCKBACK = 3, // func_8002F698(speed, rot, yVel, kbType, amount)
+} EnemyEffectKind;
+
 typedef struct {
     uint32_t ownerClientId;
     u8 pvpMode;           // 0 = off, 1 = on, 2 = on with friendly fire
@@ -108,6 +117,7 @@ class Anchor : public Network {
     void HandlePacket_EnemyDied(nlohmann::json payload);
     void HandlePacket_EnemyHit(nlohmann::json payload);
     void HandlePacket_EnemyHitRequest(nlohmann::json payload);
+    void HandlePacket_EnemyPlayerEffect(nlohmann::json payload);
     void HandlePacket_EnemyRoster(nlohmann::json payload);
     void HandlePacket_EnemySpawn(nlohmann::json payload);
     void HandlePacket_EnemyState(nlohmann::json payload);
@@ -150,6 +160,7 @@ class Anchor : public Network {
     inline static const std::string ENEMY_DIED = "ENEMY_DIED";
     inline static const std::string ENEMY_HIT = "ENEMY_HIT";
     inline static const std::string ENEMY_HIT_REQUEST = "ENEMY_HIT_REQUEST";
+    inline static const std::string ENEMY_PLAYER_EFFECT = "ENEMY_PLAYER_EFFECT";
     inline static const std::string ENEMY_ROSTER = "ENEMY_ROSTER";
     inline static const std::string ENEMY_SPAWN = "ENEMY_SPAWN";
     inline static const std::string ENEMY_STATE = "ENEMY_STATE";
@@ -202,6 +213,8 @@ class Anchor : public Network {
     void SendPacket_EnemyDied(Actor* actor, uint64_t enemyKey, bool permanent);
     void SendPacket_EnemyHit(Actor* actor, uint64_t enemyKey, u8 damage, u32 dmgFlags, Vec3s hitPos, u8 health);
     void SendPacket_EnemyHitRequest(Actor* actor, uint64_t enemyKey, u8 damage, u32 dmgFlags, Vec3s hitPos);
+    void SendPacket_EnemyPlayerEffect(uint32_t targetClientId, u8 kind, s32 amount, s16 rot, f32 speed, f32 yVel,
+                                      u8 kbType);
     void SendPacket_EnemyRosterRequest(int16_t roomNum);
     void SendPacket_EnemySpawn(uint64_t enemyKey, int16_t actorId, uint16_t params, Vec3f pos, Vec3s rot,
                                int16_t roomNum, uint64_t parentKey);

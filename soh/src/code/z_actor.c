@@ -18,6 +18,9 @@
 
 #include "soh/ActorDB.h"
 #include "soh/OTRGlobals.h"
+#ifdef ENABLE_REMOTE_CONTROL
+#include "soh/Network/Anchor/EnemyTargeting.h"
+#endif
 
 #include <string.h>
 #include <stdlib.h>
@@ -2687,7 +2690,16 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                         actor->colorFilterTimer--;
                     }
                     if (GameInteractor_ShouldActorUpdate(actor)) {
+#ifdef ENABLE_REMOTE_CONTROL
+                        // Co-op nearest-player targeting: for this one update only, an
+                        // authority-run enemy may see a remote player's puppet as
+                        // GET_PLAYER (see soh/Network/Anchor/EnemyTargeting.h).
+                        Anchor_EnemyTargetBegin(play, actor);
+#endif
                         actor->update(actor, play);
+#ifdef ENABLE_REMOTE_CONTROL
+                        Anchor_EnemyTargetEnd(play, actor);
+#endif
                         GameInteractor_ExecuteOnActorUpdate(actor);
                     }
                     func_8003F8EC(play, &play->colCtx.dyna, actor);

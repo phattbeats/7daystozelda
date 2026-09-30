@@ -123,6 +123,8 @@ void Anchor::ProcessIncomingPacketQueue() {
             HandlePacket_EnemyHit(payload);
         else if (packetType == ENEMY_HIT_REQUEST)
             HandlePacket_EnemyHitRequest(payload);
+        else if (packetType == ENEMY_PLAYER_EFFECT)
+            HandlePacket_EnemyPlayerEffect(payload);
         else if (packetType == ENEMY_ROSTER)
             HandlePacket_EnemyRoster(payload);
         else if (packetType == ENEMY_SPAWN)

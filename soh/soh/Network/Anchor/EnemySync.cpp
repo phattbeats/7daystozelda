@@ -1,4 +1,5 @@
 #include "soh/Network/Anchor/EnemySync.h"
+#include "soh/Network/Anchor/EnemyTargeting.h"
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Anchor/JsonConversions.hpp"
 #include "soh/Network/Anchor/BossAdapters/ActorSyncAdapter.h"
@@ -190,6 +191,10 @@ uint32_t CurrentAuthorityId() {
 
 bool IsLocalAuthority() {
     return cachedAuthorityId != UINT32_MAX && cachedAuthorityId == Anchor::Instance->ownClientId;
+}
+
+const std::vector<uint32_t>& PerceptionTargets() {
+    return sPerceptionTargets;
 }
 
 bool IsSuppressed(Actor* actor) {
@@ -791,6 +796,19 @@ static void OverridePlayerPerception(Actor* actor) {
             bestXZ = xz;
             bestY = y;
             best = cand;
+        }
+    }
+
+    // M3 (EnemyTargeting): replace plain nearest with a sticky, liveness-aware choice
+    // and, for swap-eligible enemies, arm the update-time GET_PLAYER swap so the enemy
+    // ACTS on the same player it perceives (chase, lunge, grab, projectile aim).
+    if (EnemyTargeting::Enabled()) {
+        Actor* chosen = EnemyTargeting::SelectAndArm(actor);
+        if (chosen != nullptr && chosen != best) {
+            best = chosen;
+            bestXZ = Actor_WorldDistXZToActor(actor, best);
+            bestY = Actor_HeightDiff(actor, best);
+            bestSq = bestXZ * bestXZ + bestY * bestY;
         }
     }
 
@@ -1620,6 +1638,7 @@ static void OnColliderSetAC(Actor* actor, Collider* collider) {
 // by unordered_map iteration.
 void PerFrameTick() {
     Tick();
+    EnemyTargeting::PerFrameTick();
 }
 
 void RegisterHooks(bool isConnected) {
@@ -1644,7 +1663,10 @@ void RegisterHooks(bool isConnected) {
     // CoopLifeSync (myLifeState producer) is guaranteed. The disconnect path above still
     // runs Reset().
 
-    COND_HOOK(OnSceneInit, isConnected, [](int16_t sceneNum) { Reset(); });
+    COND_HOOK(OnSceneInit, isConnected, [](int16_t sceneNum) {
+        Reset();
+        EnemyTargeting::Reset();
+    });
 
     COND_HOOK(OnActorInit, isConnected, [](void* actor) {
         if (SyncEnabled()) {
@@ -1692,7 +1714,10 @@ void RegisterHooks(bool isConnected) {
         }
     });
 
-    COND_HOOK(OnActorDestroy, isConnected, [](void* actor) { OnEnemyActorDestroy((Actor*)actor); });
+    COND_HOOK(OnActorDestroy, isConnected, [](void* actor) {
+        EnemyTargeting::Forget((Actor*)actor);
+        OnEnemyActorDestroy((Actor*)actor);
+    });
 
     COND_HOOK(OnCollisionCheckSetAC, isConnected, [](void* actor, void* collider) {
         if (actor != NULL) {

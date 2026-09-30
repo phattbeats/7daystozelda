@@ -3,6 +3,7 @@
 #ifdef __cplusplus
 
 #include <cstdint>
+#include <vector>
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 
@@ -70,6 +71,9 @@ bool MirroringEnabled();
 // same-scene, save-loaded clients, self included). UINT32_MAX when unknown.
 uint32_t CurrentAuthorityId();
 bool IsLocalAuthority();
+
+// Same-scene live puppet clientIds cached this tick (EnemyTargeting reads it).
+const std::vector<uint32_t>& PerceptionTargets();
 
 // True while the given actor's update is suppressed and driven by the stream.
 bool IsSuppressed(Actor* actor);
