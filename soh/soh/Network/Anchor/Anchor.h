@@ -76,6 +76,7 @@ typedef enum {
     ENEMY_EFFECT_GRAB = 1,      // play->grabPlayer(play, self)
     ENEMY_EFFECT_FREEZE = 2,    // actor.freezeTimer = max(current, amount)
     ENEMY_EFFECT_KNOCKBACK = 3, // func_8002F698(speed, rot, yVel, kbType, amount)
+    ENEMY_EFFECT_GRAB_REFUSED = 4, // victim -> authority: drop the grab latch
 } EnemyEffectKind;
 
 typedef struct {
@@ -118,6 +119,7 @@ class Anchor : public Network {
     void HandlePacket_EnemyHit(nlohmann::json payload);
     void HandlePacket_EnemyHitRequest(nlohmann::json payload);
     void HandlePacket_EnemyPlayerEffect(nlohmann::json payload);
+    void HandlePacket_HordeEvent(nlohmann::json payload);
     void HandlePacket_EnemyRoster(nlohmann::json payload);
     void HandlePacket_EnemySpawn(nlohmann::json payload);
     void HandlePacket_EnemyState(nlohmann::json payload);
@@ -168,6 +170,7 @@ class Anchor : public Network {
     inline static const std::string GAME_COMPLETE = "GAME_COMPLETE";
     inline static const std::string GIVE_ITEM = "GIVE_ITEM";
     inline static const std::string HANDSHAKE = "HANDSHAKE";
+    inline static const std::string HORDE_EVENT = "HORDE_EVENT";
     inline static const std::string PLAYER_LIFE_STATE = "PLAYER_LIFE_STATE";
     inline static const std::string PLAYER_SFX = "PLAYER_SFX";
     inline static const std::string PLAYER_UPDATE = "PLAYER_UPDATE";
@@ -223,6 +226,7 @@ class Anchor : public Network {
     void SendPacket_GameComplete();
     void SendPacket_GiveItem(u16 modId, s16 getItemId);
     void SendPacket_Handshake();
+    void SendPacket_HordeEvent(bool started, int32_t horde);
     void SendPacket_PlayerLifeState(u8 state);
     void SendPacket_PlayerSfx(u16 sfxId);
     void SendPacket_PlayerUpdate();

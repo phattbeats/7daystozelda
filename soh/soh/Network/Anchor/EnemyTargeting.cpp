@@ -1,5 +1,6 @@
 #include "soh/Network/Anchor/EnemyTargeting.h"
 #include "soh/Network/Anchor/EnemySync.h"
+#include "soh/Network/Anchor/EnemyFxSync.h"
 #include "soh/Network/Anchor/Anchor.h"
 #include <libultraship/libultraship.h>
 
@@ -28,7 +29,7 @@ constexpr f32 SWITCH_RATIO_SQ = 0.64f;
 
 // How long the host keeps a remote player "grabbed" before its stream confirms.
 // OoT logic runs at 20 Hz, so 45 frames ~= 2.25 s: well past any sane round trip.
-constexpr uint16_t GRAB_LATCH_FRAMES = 45;
+constexpr uint16_t GRAB_LATCH_FRAMES = 60;
 
 struct TargetMemory {
     uint32_t clientId = LOCAL_TARGET;
@@ -49,6 +50,8 @@ struct ActiveSwap {
     s32 (*savedGrab)(PlayState*, Player*) = nullptr;
     s32 (*savedDamage)(PlayState*, s32) = nullptr;
     s16 freezeSnapshot = 0;
+    Actor* focusSnapshot = nullptr;
+    Actor* autoLockSnapshot = nullptr;
 };
 
 std::unordered_map<Actor*, TargetMemory> sMemory;
@@ -69,6 +72,16 @@ bool IsSwapBlocked(Actor* actor) {
         case ACTOR_EN_POH:        // same
         case ACTOR_EN_PO_SISTERS: // one-point cutscenes
         case ACTOR_EN_SKJ:        // Skull Kid: items, rupees, player cutscenes
+        // Contact damage keyed on OC2_HIT_PLAYER, which only the local Link sets: the
+        // host would touch it and the remote would take the hit.
+        case ACTOR_EN_ST:     // Skulltula
+        case ACTOR_EN_BUBBLE: // Shabom
+        // Release a grab by clearing the flag on "the player" themselves (and Moblin
+        // carries the player): on a puppet the real victim would stay held. Needs a
+        // RELEASE effect before these can target remote players.
+        case ACTOR_EN_DH:  // Dead Hand
+        case ACTOR_EN_DHA: // Dead Hand's hands
+        case ACTOR_EN_MB:  // Moblin
             return true;
         default:
             return false;
@@ -79,7 +92,7 @@ bool LocalAlive(Player* local) {
     if (local == nullptr || (local->stateFlags1 & PLAYER_STATE1_DEAD)) {
         return false;
     }
-    u8 ls = Anchor::Instance != nullptr ? Anchor::Instance->myLifeState : LIFE_STATE_ALIVE;
+    u8 ls = Anchor::Instance != nullptr ? Anchor::Instance->myLifeState : (u8)LIFE_STATE_ALIVE;
     return ls == LIFE_STATE_ALIVE || ls == LIFE_STATE_REVIVING;
 }
 
@@ -127,8 +140,11 @@ f32 DistSq(Actor* from, Actor* to) {
 
 s32 RouteDamage(PlayState* play, s32 damage) {
     if (sActive.on && Anchor::Instance != nullptr && damage != 0) {
+        // Grab bites are tagged so a victim who refused or already escaped the grab
+        // (confirmation still in flight) can drop them.
+        bool grabBite = (sActive.puppet->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) != 0;
         Anchor::Instance->SendPacket_EnemyPlayerEffect(sActive.clientId, ENEMY_EFFECT_HEALTH, damage, 0, 0.0f, 0.0f,
-                                                       0);
+                                                       grabBite ? 1 : 0);
     }
     // Player_InflictDamage returns 1 only when the hit killed the player; the remote
     // player's own damage path decides that on their machine.
@@ -256,6 +272,14 @@ void Reset() {
     sArmed = {};
 }
 
+void ClearGrabLatch(uint32_t clientId) {
+    sGrabLatch.erase(clientId);
+}
+
+bool SwapActive() {
+    return sActive.on;
+}
+
 void Forget(Actor* actor) {
     sMemory.erase(actor);
     if (sArmed.actor == actor) {
@@ -268,6 +292,9 @@ void Forget(Actor* actor) {
 using namespace EnemyTargeting;
 
 extern "C" void Anchor_EnemyTargetBegin(PlayState* play, Actor* actor) {
+    // Same bracket drives enemy sound/effect capture (EnemyFxSync).
+    EnemyFxSync::BeginActorUpdate(actor);
+
     if (sArmed.actor != actor) {
         return; // fast path: called for every updating actor every frame
     }
@@ -309,6 +336,8 @@ extern "C" void Anchor_EnemyTargetBegin(PlayState* play, Actor* actor) {
     sActive.savedGrab = play->grabPlayer;
     sActive.savedDamage = play->damagePlayer;
     sActive.freezeSnapshot = puppet->actor.freezeTimer;
+    sActive.focusSnapshot = puppet->focusActor;
+    sActive.autoLockSnapshot = puppet->autoLockOnActor;
 
     play->actorCtx.actorLists[ACTORCAT_PLAYER].head = &puppet->actor;
     play->grabPlayer = RouteGrab;
@@ -316,8 +345,15 @@ extern "C" void Anchor_EnemyTargetBegin(PlayState* play, Actor* actor) {
 }
 
 extern "C" void Anchor_EnemyTargetEnd(PlayState* play, Actor* actor) {
+    EnemyFxSync::EndActorUpdate(actor);
+
     if (!sActive.on || sActive.actor != actor) {
         return;
+    }
+    if (play->actorCtx.actorLists[ACTORCAT_PLAYER].head != &sActive.puppet->actor) {
+        // Something was inserted into the PLAYER list during the update (no enemy is
+        // known to do this). Restoring still wins: GET_PLAYER must be the local Link.
+        SPDLOG_WARN("[EnemyTargeting] PLAYER list head changed during swapped update of actor {}", actor->id);
     }
     play->actorCtx.actorLists[ACTORCAT_PLAYER].head = sActive.savedHead;
     play->grabPlayer = sActive.savedGrab;
@@ -326,6 +362,10 @@ extern "C" void Anchor_EnemyTargetEnd(PlayState* play, Actor* actor) {
     Player* puppet = sActive.puppet;
     uint32_t clientId = sActive.clientId;
     s16 freezeSnapshot = sActive.freezeSnapshot;
+    // Lock-on fields an enemy may write onto "the player": Actor_Delete only clears
+    // them on the real Link, so a puppet keeping them would dangle once the enemy dies.
+    puppet->focusActor = sActive.focusSnapshot;
+    puppet->autoLockOnActor = sActive.autoLockSnapshot;
     sActive = {};
 
     if (Anchor::Instance == nullptr) {
@@ -350,4 +390,8 @@ extern "C" void Anchor_EnemyTargetEnd(PlayState* play, Actor* actor) {
         puppet->knockbackSpeed = 0.0f;
         puppet->knockbackYVelocity = 0.0f;
     }
+}
+
+extern "C" s32 Anchor_EnemyTargetSwapActive(void) {
+    return EnemyTargeting::SwapActive() ? 1 : 0;
 }

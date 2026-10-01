@@ -1,5 +1,7 @@
 #include "soh/Network/Anchor/EnemySync.h"
 #include "soh/Network/Anchor/EnemyTargeting.h"
+#include "soh/Network/Anchor/EnemyFxSync.h"
+#include "soh/Network/Anchor/HordeNight.h"
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Anchor/JsonConversions.hpp"
 #include "soh/Network/Anchor/BossAdapters/ActorSyncAdapter.h"
@@ -84,6 +86,11 @@ struct TrackedState {
     // --- dynamic spawns / adapters ---
     int16_t spawnActorId = 0;         // identity at spawn (params mutate at runtime)
     uint16_t spawnParams = 0;
+    // Params as passed to Actor_Spawn, captured BEFORE init: many enemies rewrite
+    // actor->params in their own Init (ReDead, Wolfos), and OnActorInit fires after
+    // that. Used only for the ENEMY_SPAWN broadcast so mirrors spawn the identical
+    // actor; spawnParams (post-init) stays the occurrence-counter identity.
+    uint16_t broadcastParams = 0;
     bool dynamicKey = false;          // key is host-assigned (bit 63)
     bool remoteSpawned = false;       // spawned from an ENEMY_SPAWN packet
     bool needsSpawnBroadcast = false; // authority: announce this dynamic spawn
@@ -118,6 +125,10 @@ static std::unordered_map<uint64_t, RemoteEnemyState> remoteStates;
 // Keys of recently destroyed tracked actors, aged out in Tick(). Checked before
 // the fuzzy fallback so stale identities never resolve onto other enemies.
 static std::unordered_map<uint64_t, uint16_t> recentlyDeadKeys;
+
+// Pre-init params of tracked-category actors (ShouldActorInit hook), consumed by
+// OnEnemyActorInit. See TrackedState::broadcastParams.
+static std::unordered_map<Actor*, uint16_t> preInitParams;
 
 // Static-key death ledger: remote kills received while the enemy's room was
 // unloaded, applied when that room's copy inits (OnEnemyActorInit). Scene-scoped
@@ -269,6 +280,8 @@ template <typename F> static void ForEachColliderInfo(Collider* collider, F fn) 
 }
 
 static void Reset() {
+    EnemyFxSync::Reset();
+    preInitParams.clear();
     keyToActor.clear();
     tracked.clear();
     remoteStates.clear();
@@ -338,6 +351,10 @@ static bool AnySameScenePeer() {
         }
     }
     return false;
+}
+
+bool HasSameScenePeer() {
+    return AnySameScenePeer();
 }
 
 // The culling gate in Actor_UpdateAll sits BEFORE the ShouldActorUpdate hook, so
@@ -592,6 +609,7 @@ static void BeginSuppression(Actor* actor, TrackedState& st) {
 
 static void EndSuppression(Actor* actor, TrackedState& st, const char* reason) {
     st.suppressed = false;
+    EnemyFxSync::Drop(st.key); // local AI makes its own sounds/effects again
     st.prevHealth = actor->colChkInfo.health;
     st.expectedRemoteDamage = 0;
     st.expectedRemoteDamageTimer = 0;
@@ -918,6 +936,9 @@ static void OnShouldEnemyUpdate(Actor* actor, bool* should) {
 
     SubmitColliders(actor, st, r);
 
+    // M3: sounds and effects the authority's AI emitted for this enemy.
+    EnemyFxSync::Replay(actor, st.key);
+
     *should = false;
 }
 
@@ -991,6 +1012,7 @@ static nlohmann::json SnapshotEnemy(Actor* actor, TrackedState& st) {
             e["extras"] = extras;
         }
     }
+    EnemyFxSync::AppendToSnapshot(actor, e);
     return e;
 }
 
@@ -1018,6 +1040,15 @@ void IngestEnemyState(const nlohmann::json& payload) {
             r.phase = e.contains("phase") ? e["phase"].get<uint8_t>() : 0;
             if (e.contains("extras")) {
                 r.extras = e["extras"];
+            }
+            // Only queue sounds/effects for an enemy we're actively mirroring; anything
+            // else would replay as a stale burst when suppression begins.
+            auto kit = keyToActor.find(key);
+            if (kit != keyToActor.end()) {
+                auto tit = tracked.find(kit->second);
+                if (tit != tracked.end() && tit->second.suppressed) {
+                    EnemyFxSync::Ingest(key, e);
+                }
             }
             r.joints.clear();
             if (e.contains("jt")) {
@@ -1194,7 +1225,7 @@ static void Tick() {
                 // would replicate a zeroed yaw and the mirror copy would fly the wrong
                 // way. Regular dynamic spawns keep shape.rot (their facing).
                 Vec3s spawnRot = st.projectile ? actor->world.rot : actor->shape.rot;
-                Anchor::Instance->SendPacket_EnemySpawn(st.key, st.spawnActorId, st.spawnParams, actor->world.pos,
+                Anchor::Instance->SendPacket_EnemySpawn(st.key, st.spawnActorId, st.broadcastParams, actor->world.pos,
                                                         spawnRot, actor->room, parentKey);
             }
         }
@@ -1270,6 +1301,11 @@ static void OnEnemyActorInit(Actor* actor) {
     state.prevHealth = actor->colChkInfo.health;
     state.spawnActorId = actor->id;
     state.spawnParams = (uint16_t)actor->params;
+    auto pre = preInitParams.find(actor);
+    state.broadcastParams = pre != preInitParams.end() ? pre->second : (uint16_t)actor->params;
+    if (pre != preInitParams.end()) {
+        preInitParams.erase(pre);
+    }
     state.projectile = IsSyncedProjectile(actor);
 
     auto pending = pendingDynamicKeys.find(actor);
@@ -1638,7 +1674,9 @@ static void OnColliderSetAC(Actor* actor, Collider* collider) {
 // by unordered_map iteration.
 void PerFrameTick() {
     Tick();
+    EnemyFxSync::EndFrame(); // after Tick's snapshots drained this frame's captures
     EnemyTargeting::PerFrameTick();
+    HordeNight::PerFrameTick();
 }
 
 void RegisterHooks(bool isConnected) {
@@ -1666,6 +1704,14 @@ void RegisterHooks(bool isConnected) {
     COND_HOOK(OnSceneInit, isConnected, [](int16_t sceneNum) {
         Reset();
         EnemyTargeting::Reset();
+        HordeNight::Reset();
+    });
+
+    COND_HOOK(ShouldActorInit, isConnected, [](void* actorRef, bool* should) {
+        Actor* actor = (Actor*)actorRef;
+        if (SyncEnabled() && (IsTrackedCategory(actor) || IsSyncedProjectile(actor))) {
+            preInitParams[actor] = (uint16_t)actor->params;
+        }
     });
 
     COND_HOOK(OnActorInit, isConnected, [](void* actor) {
@@ -1716,6 +1762,12 @@ void RegisterHooks(bool isConnected) {
 
     COND_HOOK(OnActorDestroy, isConnected, [](void* actor) {
         EnemyTargeting::Forget((Actor*)actor);
+        EnemyFxSync::Forget((Actor*)actor);
+        preInitParams.erase((Actor*)actor);
+        auto tit = tracked.find((Actor*)actor);
+        if (tit != tracked.end()) {
+            EnemyFxSync::Drop(tit->second.key);
+        }
         OnEnemyActorDestroy((Actor*)actor);
     });
 

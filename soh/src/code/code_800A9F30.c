@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef ENABLE_REMOTE_CONTROL
+#include "soh/Network/Anchor/EnemyTargeting.h"
+#endif
 
 UnkRumbleStruct D_80160FD0;
 
@@ -35,6 +38,13 @@ void func_800AA000(f32 a, u8 b, u8 c, u8 d) {
     s32 temp1;
     s32 temp2;
     s32 i;
+
+#ifdef ENABLE_REMOTE_CONTROL
+    // Co-op: don't rumble our controller for an enemy biting a remote player.
+    if (Anchor_EnemyTargetSwapActive()) {
+        return;
+    }
+#endif
 
     if (1000000.0f < a) {
         temp1 = 1000;

@@ -72,6 +72,12 @@ void Reset();
 // Actor destroyed: forget its target memory.
 void Forget(Actor* actor);
 
+// The victim refused a grab (cutscene, hookshot, already escaped): let go now.
+void ClearGrabLatch(uint32_t clientId);
+
+// True while an enemy update is running against a remote player's puppet.
+bool SwapActive();
+
 } // namespace EnemyTargeting
 #endif // __cplusplus
 
@@ -81,6 +87,9 @@ extern "C" {
 #endif
 void Anchor_EnemyTargetBegin(PlayState* play, Actor* actor);
 void Anchor_EnemyTargetEnd(PlayState* play, Actor* actor);
+// Engine-side guard for host-only side effects aimed at "the player" (lock-on
+// camera, controller rumble) while GET_PLAYER is a remote player's puppet.
+s32 Anchor_EnemyTargetSwapActive(void);
 #ifdef __cplusplus
 }
 #endif

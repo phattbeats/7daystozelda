@@ -3,6 +3,9 @@
 #include "vt.h"
 
 #include "soh/Enhancements/audio/AudioEditor.h"
+#ifdef ENABLE_REMOTE_CONTROL
+#include "soh/Network/Anchor/EnemyFxSync.h"
+#endif
 
 typedef struct {
     /* 0x00 */ u16 sfxId;
@@ -127,6 +130,11 @@ void Audio_ClearBGMMute(u8 channelIdx) {
 void Audio_PlaySoundGeneral(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* reverbAdd) {
     size_t i;
     SoundRequest* req;
+
+#ifdef ENABLE_REMOTE_CONTROL
+    // Co-op: record enemy AI sounds so mirrored copies can replay them.
+    Anchor_RecordActorSfx(sfxId, pos);
+#endif
 
     if (!gSoundBankMuted[SFX_BANK_SHIFT(sfxId)]) {
         req = &sSoundRequests[sSoundRequestWriteIndex];

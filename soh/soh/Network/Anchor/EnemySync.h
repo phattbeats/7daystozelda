@@ -72,6 +72,9 @@ bool MirroringEnabled();
 uint32_t CurrentAuthorityId();
 bool IsLocalAuthority();
 
+// True when another online, save-loaded client is in our scene.
+bool HasSameScenePeer();
+
 // Same-scene live puppet clientIds cached this tick (EnemyTargeting reads it).
 const std::vector<uint32_t>& PerceptionTargets();
 

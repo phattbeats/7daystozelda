@@ -11,6 +11,9 @@
 #include "soh/ResourceManagerHelpers.h"
 
 #include <stdlib.h>
+#ifdef ENABLE_REMOTE_CONTROL
+#include "soh/Network/Anchor/EnemyTargeting.h"
+#endif
 
 typedef struct {
     /* 0x00 */ u8 flag;
@@ -737,6 +740,13 @@ void Player_ClearZTargeting(Player* this) {
  */
 void Player_SetAutoLockOnActor(PlayState* play, Actor* actor) {
     Player* this = GET_PLAYER(play);
+
+#ifdef ENABLE_REMOTE_CONTROL
+    // Co-op: an enemy locking onto a remote player's puppet must not move OUR camera.
+    if (Anchor_EnemyTargetSwapActive()) {
+        return;
+    }
+#endif
 
     Player_ClearZTargeting(this);
     this->focusActor = actor;

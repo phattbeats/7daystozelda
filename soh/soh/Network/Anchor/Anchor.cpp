@@ -125,6 +125,8 @@ void Anchor::ProcessIncomingPacketQueue() {
             HandlePacket_EnemyHitRequest(payload);
         else if (packetType == ENEMY_PLAYER_EFFECT)
             HandlePacket_EnemyPlayerEffect(payload);
+        else if (packetType == HORDE_EVENT)
+            HandlePacket_HordeEvent(payload);
         else if (packetType == ENEMY_ROSTER)
             HandlePacket_EnemyRoster(payload);
         else if (packetType == ENEMY_SPAWN)
