@@ -1,7 +1,7 @@
 #include "CrashHandler.h"
 #include "Utils/StringHelper.h"
 
-#if __has_include(<unistd.h>)
+#if __has_include(<unistd.h>) && !defined(__EMSCRIPTEN__)
 #define HAS_POSIX 1
 #else
 #define HAS_POSIX 0

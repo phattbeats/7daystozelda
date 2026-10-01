@@ -18,8 +18,10 @@
 #include "soh/Enhancements/mods.h"
 #include "soh/Notification/Notification.h"
 #include "soh/Enhancements/cosmetics/authenticGfxPatches.h"
+#ifndef __EMSCRIPTEN__
 #include "soh/Network/CrowdControl/CrowdControl.h"
 #include "soh/Network/Sail/Sail.h"
+#endif
 #include "soh/Enhancements/audio/AudioEditor.h"
 #include "soh/Enhancements/controls/InputViewer.h"
 #include "soh/Enhancements/cosmetics/CosmeticsEditor.h"

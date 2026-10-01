@@ -102,7 +102,9 @@ bool Context::InitLogging() {
 
     try {
         // Setup Logging
+#ifndef __EMSCRIPTEN__
         spdlog::init_thread_pool(8192, 1);
+#endif
         std::vector<spdlog::sink_ptr> sinks;
 
 #if (!defined(_WIN32)) || defined(_DEBUG)
@@ -142,11 +144,14 @@ bool Context::InitLogging() {
         sinks.push_back(systemConsoleSink);
 #endif
 
+#ifndef __EMSCRIPTEN__
         auto logPath = GetPathRelativeToAppDirectory(("logs/" + GetName() + ".log"));
         auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(logPath, 1024 * 1024 * 10, 10);
         sinks.push_back(fileSink);
-#ifdef _DEBUG
-        mLogger = std::make_shared<spdlog::logger>("multi_sink", sinks.begin(), sinks.end());
+#endif
+#if defined(_DEBUG) || defined(__EMSCRIPTEN__)
+        // Web: no pthreads, so no async logger.
+        mLogger = std::make_shared<spdlog::logger>(GetName(), sinks.begin(), sinks.end());
         GetLogger()->flush_on(spdlog::level::trace);
 #else
         mLogger = std::make_shared<spdlog::async_logger>(GetName(), sinks.begin(), sinks.end(), spdlog::thread_pool(),

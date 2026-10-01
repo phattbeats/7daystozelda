@@ -13,8 +13,16 @@ extern PlayState* gPlayState;
 // MARK: - Overrides
 
 void Anchor::Enable() {
+#ifdef __EMSCRIPTEN__
+    // Web: browsers can't open raw TCP sockets. Connect over WebSocket to a relay
+    // that bridges to a stock Anchor server (see web/anchor-bridge). The page sets
+    // the URL (same-origin /anchor by default); the room id still travels in the
+    // HANDSHAKE packet exactly as on desktop.
+    Network::EnableWebSocket(CVarGetString(CVAR_REMOTE_ANCHOR("WebSocketURL"), "ws://localhost:8080/anchor"));
+#else
     Network::Enable(CVarGetString(CVAR_REMOTE_ANCHOR("Host"), "anchor.hm64.org"),
                     CVarGetInteger(CVAR_REMOTE_ANCHOR("Port"), 43383));
+#endif
     ownClientId = CVarGetInteger(CVAR_REMOTE_ANCHOR("LastClientId"), 0);
     roomState.ownerClientId = 0;
 }
@@ -86,6 +94,11 @@ void Anchor::OnIncomingJson(nlohmann::json payload) {
 }
 
 void Anchor::ProcessIncomingPacketQueue() {
+#ifdef __EMSCRIPTEN__
+    // Web: no receive thread. Drain the WebSocket's inbox on the game thread; each
+    // message lands in incomingPacketQueue through OnIncomingJson as usual.
+    PollIncoming();
+#endif
     std::lock_guard<std::mutex> lock(incomingPacketQueueMutex);
 
     while (!incomingPacketQueue.empty()) {

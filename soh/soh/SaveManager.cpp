@@ -1,5 +1,8 @@
 #include "SaveManager.h"
 #include "OTRGlobals.h"
+#ifdef __EMSCRIPTEN__
+extern "C" void web_save_to_idb(void);
+#endif
 #include "Enhancements/game-interactor/GameInteractor.h"
 #include "Enhancements/randomizer/context.h"
 #include "Enhancements/randomizer/entrance.h"
@@ -127,7 +130,9 @@ SaveManager::SaveManager() {
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnExitGame>(
         [this](uint32_t fileNum) { ThreadPoolWait(); });
 
+#ifndef __EMSCRIPTEN__
     smThreadPool = std::make_shared<BS::thread_pool>(1);
+#endif
 
     for (SaveFileMetaInfo& info : fileMetaInfo) {
         info.valid = false;
@@ -1071,6 +1076,9 @@ void SaveManager::SaveFileThreaded(int fileNum, SaveContext* saveContext, int se
     InitMeta(fileNum);
     GameInteractor::Instance->ExecuteHooks<GameInteractor::OnSaveFile>(fileNum, sectionID);
     SPDLOG_INFO("Save File Finish - fileNum: {}", fileNum);
+#ifdef __EMSCRIPTEN__
+    web_save_to_idb();
+#endif
     saveMtx.unlock();
 }
 
@@ -1088,11 +1096,16 @@ void SaveManager::SaveSection(int fileNum, int sectionID, bool threaded) {
     }
     auto saveContext = new SaveContext;
     memcpy(saveContext, &gSaveContext, sizeof(gSaveContext));
+#ifdef __EMSCRIPTEN__
+    // No thread pool on web — always save synchronously
+    SaveFileThreaded(fileNum, saveContext, sectionID);
+#else
     if (threaded) {
         smThreadPool->detach_task(std::bind(&SaveManager::SaveFileThreaded, this, fileNum, saveContext, sectionID));
     } else {
         SaveFileThreaded(fileNum, saveContext, sectionID);
     }
+#endif
 }
 
 void SaveManager::SaveFile(int fileNum) {

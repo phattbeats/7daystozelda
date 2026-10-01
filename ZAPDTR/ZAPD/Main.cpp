@@ -653,8 +653,10 @@ int HandleExtract(ZFileMode fileMode, ExporterSet* exporterSet)
 				std::vector<std::string> fileList =
 					Directory::ListFiles(Globals::Instance->inputPath.string());
 
+#ifndef __EMSCRIPTEN__
 				const int num_threads = std::thread::hardware_concurrency();
 				ctpl::thread_pool pool(num_threads > 1 ? num_threads / 2 : 1);
+#endif
 
 				bool parseSuccessful;
 
@@ -673,6 +675,7 @@ int HandleExtract(ZFileMode fileMode, ExporterSet* exporterSet)
 					{
 						ExtractFunc(i, fileList.size(), fileList[i], fileMode);
 					}
+#ifndef __EMSCRIPTEN__
 					else
 					{
 						std::string fileListItem = fileList[i];
@@ -680,6 +683,7 @@ int HandleExtract(ZFileMode fileMode, ExporterSet* exporterSet)
 							ExtractFunc(i, fileListSize, fileListItem, fileMode);
 						});
 					}
+#endif
 				}
 
 				if (!Globals::Instance->singleThreaded)

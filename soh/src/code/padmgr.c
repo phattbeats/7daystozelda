@@ -318,6 +318,14 @@ void PadMgr_HandleRetraceMsg(PadMgr* padMgr) {
     osRecvMesg(queue, NULL, OS_MESG_BLOCK);
     osContGetReadData(padMgr->pads);
 
+#ifdef __EMSCRIPTEN__
+    // Merge touch gamepad input from JavaScript
+    {
+        extern void WebTouchGamepad_MergeInput(OSContPad* pad);
+        WebTouchGamepad_MergeInput(&padMgr->pads[0]);
+    }
+#endif
+
     Mouse_UpdateAll();
 
     for (i = 0; i < __osMaxControllers; i++) {

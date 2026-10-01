@@ -16,17 +16,35 @@ static std::vector<const char*> showLocationsModes = { "None", "Team Only", "All
 void AnchorMainMenu(WidgetInfo& info) {
     auto anchor = Anchor::Instance;
 
-    std::string host = CVarGetString(CVAR_REMOTE_ANCHOR("Host"), "anchor.hm64.org");
-    uint16_t port = CVarGetInteger(CVAR_REMOTE_ANCHOR("Port"), 43383);
     std::string anchorTeamId = CVarGetString(CVAR_REMOTE_ANCHOR("TeamId"), "default");
     std::string anchorRoomId = CVarGetString(CVAR_REMOTE_ANCHOR("RoomId"), "");
     std::string anchorName = CVarGetString(CVAR_REMOTE_ANCHOR("Name"), "");
+
+#ifdef __EMSCRIPTEN__
+    std::string wsUrl = CVarGetString(CVAR_REMOTE_ANCHOR("WebSocketURL"), "ws://localhost:8080/anchor");
+    bool isFormValid = !SohUtils::IsStringEmpty(wsUrl) && !SohUtils::IsStringEmpty(anchorRoomId) &&
+                       !SohUtils::IsStringEmpty(anchorName);
+#else
+    std::string host = CVarGetString(CVAR_REMOTE_ANCHOR("Host"), "anchor.hm64.org");
+    uint16_t port = CVarGetInteger(CVAR_REMOTE_ANCHOR("Port"), 43383);
     bool isFormValid = !SohUtils::IsStringEmpty(host) && port > 1024 && port < 65535 &&
                        !SohUtils::IsStringEmpty(anchorRoomId) && !SohUtils::IsStringEmpty(anchorName);
+#endif
 
     ImGui::SeparatorText("Connection Settings");
 
     ImGui::BeginDisabled(anchor->isEnabled);
+
+#ifdef __EMSCRIPTEN__
+    ImGui::Text("WebSocket URL");
+    if (UIWidgets::InputString("##WebSocketURL", &wsUrl,
+                               UIWidgets::InputOptions()
+                                   .Size(ImVec2(ImGui::GetContentRegionAvail().x, 0))
+                                   .Color(THEME_COLOR))) {
+        CVarSetString(CVAR_REMOTE_ANCHOR("WebSocketURL"), wsUrl.c_str());
+        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+    }
+#else
     ImGui::Text("Host & Port");
     if (UIWidgets::InputString("##Host", &host,
                                UIWidgets::InputOptions()
@@ -45,6 +63,7 @@ void AnchorMainMenu(WidgetInfo& info) {
         Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
     UIWidgets::PopStyleInput();
+#endif
 
     ImGui::Text("Name");
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
@@ -70,14 +89,19 @@ void AnchorMainMenu(WidgetInfo& info) {
     if (UIWidgets::Button("Restore Defaults", UIWidgets::ButtonOptions()
                                                   .Size(ImVec2(ImGui::GetContentRegionAvail().x / 2, 0))
                                                   .Color(UIWidgets::Colors::Red))) {
+#ifdef __EMSCRIPTEN__
+        CVarSetString(CVAR_REMOTE_ANCHOR("WebSocketURL"), "ws://localhost:8080/anchor");
+#else
         CVarSetString(CVAR_REMOTE_ANCHOR("Host"), "anchor.hm64.org");
         CVarSetInteger(CVAR_REMOTE_ANCHOR("Port"), 43383);
+#endif
         CVarSetString(CVAR_REMOTE_ANCHOR("TeamId"), "default");
         CVarSetString(CVAR_REMOTE_ANCHOR("RoomId"), "");
         CVarSetString(CVAR_REMOTE_ANCHOR("Name"), "");
         Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
 
+#ifndef __EMSCRIPTEN__
     ImGui::SameLine();
 
     if (UIWidgets::Button("Global Room", UIWidgets::ButtonOptions()
@@ -90,6 +114,7 @@ void AnchorMainMenu(WidgetInfo& info) {
         CVarSetString(CVAR_REMOTE_ANCHOR("RoomId"), "soh-global");
         Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
+#endif
 
     ImGui::EndDisabled();
 
@@ -222,6 +247,7 @@ void AnchorInstructionsMenu(WidgetInfo& info) {
         "the same randomizer seed, while players on different teams can use different seeds.");
 }
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
 void RegisterAnchorMenu() {
     WidgetPath path = { "Network", "Anchor", SECTION_COLUMN_1 };
     SohGui::mSohMenu->AddWidget(path, "AnchorMainMenu", WIDGET_CUSTOM)
@@ -237,3 +263,4 @@ void RegisterAnchorMenu() {
 }
 
 static RegisterMenuInitFunc menuInitFunc(RegisterAnchorMenu);
+#endif

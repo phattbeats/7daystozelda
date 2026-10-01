@@ -147,6 +147,32 @@ if (!BUILD_REMOTE_CONTROL)
     list(FILTER soh__ EXCLUDE REGEX "soh/Enhancements/crowd-control/")
 endif()
 
+# Web: Crowd Control and Sail need raw sockets. Anchor stays (WebSocket transport).
+if(BUILD_FOR_WEB)
+    list(FILTER soh__ EXCLUDE REGEX "soh/Network/CrowdControl/")
+    list(FILTER soh__ EXCLUDE REGEX "soh/Network/Sail/")
+endif()
+
+# Web: the randomizer's giant table sources need >4 GB each to compile with
+# optimization under emcc (exception-handling tables). Build them at -O0.
+if(BUILD_FOR_WEB)
+    file(GLOB_RECURSE SOH_WEB_O0_SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+        "soh/Enhancements/randomizer/3drando/hint_list.cpp"
+        "soh/Enhancements/randomizer/3drando/hint_list/*.cpp"
+        "soh/Enhancements/randomizer/location_list.cpp"
+        "soh/Enhancements/randomizer/item_list.cpp"
+        "soh/Enhancements/randomizer/settings.cpp"
+        "soh/Enhancements/randomizer/ShufflePots.cpp"
+        "soh/Enhancements/randomizer/randomizer.cpp"
+        "soh/Enhancements/randomizer/location_access/*.cpp"
+        "soh/Enhancements/randomizer/location_access/*/*.cpp"
+    )
+    # -O0 makes functions with more locals than wasm allows ("too many locals" at
+    # link), so they stay at -O1 but must be compiled one at a time (build these
+    # objects with -j1 first; ~4-5 GB each).
+    set(SOH_WEB_HEAVY_SOURCES ${SOH_WEB_O0_SOURCES})
+endif()
+
 # handle speechsynthesizer removals
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     list(FILTER soh__ EXCLUDE REGEX "soh/Enhancements/speechsynthesizer/Darwin")
@@ -254,6 +280,9 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	OUTPUT_NAME "soh.elf"
 	)
 endif()
+if(BUILD_FOR_WEB)
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "soh" SUFFIX ".html")
+endif()
 ################################################################################
 # MSVC runtime library
 ################################################################################
@@ -294,8 +323,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(dr_libs)
 
+if(NOT BUILD_FOR_WEB)
 find_package(SDL2)
 set(SDL2-INCLUDE ${SDL2_INCLUDE_DIRS})
+else()
+set(SDL2-INCLUDE "") # Emscripten SDL2 port (-sUSE_SDL=2)
+endif()
 
 if (BUILD_REMOTE_CONTROL)
     find_package(SDL2_net)
@@ -550,6 +583,46 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
                 -Wno-stringop-overflow
             >
         )
+    elseif(BUILD_FOR_WEB)
+        # Single-threaded wasm (no -pthread): no SharedArrayBuffer, so the page needs
+        # no cross-origin-isolation headers and runs from any static host.
+        target_compile_definitions(${PROJECT_NAME} PRIVATE USE_OPENGLES)
+        target_compile_options(${PROJECT_NAME} PRIVATE
+            -sUSE_SDL=2
+            -sUSE_ZLIB=1
+            -sUSE_OGG=1
+            -sUSE_VORBIS=1
+            -sUSE_LIBPNG=1
+            -w
+            -Wno-c++11-narrowing
+            $<$<COMPILE_LANGUAGE:CXX>:-fpermissive>
+            $<$<COMPILE_LANGUAGE:C>:
+                -Wno-implicit-function-declaration
+                -Wno-incompatible-pointer-types
+                -Wno-int-conversion
+            >
+        )
+        target_link_options(${PROJECT_NAME} PRIVATE
+            -sUSE_SDL=2
+            -sUSE_ZLIB=1
+            -sUSE_OGG=1
+            -sUSE_VORBIS=1
+            -sUSE_LIBPNG=1
+            -sWASM=1
+            -sALLOW_MEMORY_GROWTH=1
+            -sINITIAL_MEMORY=268435456
+            -sSTACK_SIZE=5242880
+            -sMAX_WEBGL_VERSION=2
+            -sMIN_WEBGL_VERSION=2
+            -sFULL_ES2=1
+            -sFORCE_FILESYSTEM=1
+            -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,FS,allocateUTF8,lengthBytesUTF8,stringToUTF8,setValue
+            -lidbfs.js
+            -lwebsocket.js
+            --shell-file=${CMAKE_CURRENT_SOURCE_DIR}/soh/web/shell.html
+            --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/assets/xml@assets/xml
+            --preload-file=${CMAKE_CURRENT_SOURCE_DIR}/assets/extractor@assets
+        )
     else()
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
 		set(CPU_OPTION -msse2 -mfpmath=sse)
@@ -684,6 +757,12 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "CafeOS")
     target_include_directories(${PROJECT_NAME} PRIVATE
         ${DEVKITPRO}/portlibs/wiiu/include/
     )
+elseif(BUILD_FOR_WEB)
+    # Emscripten ports provide SDL2/zlib/ogg/vorbis/png (link flags above).
+    set(ADDITIONAL_LIBRARY_DEPENDENCIES
+        "libultraship;"
+        "ZAPDLib;"
+    )
 else()
     find_package(SDL2)
     set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -709,7 +788,7 @@ else()
 	)
 endif()
 
-if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin|NintendoSwitch|CafeOS")
+if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin|NintendoSwitch|CafeOS" AND NOT BUILD_FOR_WEB)
 INSTALL(TARGETS soh DESTINATION . COMPONENT ship)
 endif()
 

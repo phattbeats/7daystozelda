@@ -148,19 +148,40 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 	.
 )
 
-find_package(nlohmann_json REQUIRED)
-target_link_libraries(${PROJECT_NAME} PUBLIC nlohmann_json::nlohmann_json)
+if(BUILD_FOR_WEB)
+    # On Emscripten, these are provided by libultraship via FetchContent
+    # The targets exist but find_package can't discover them, so check directly
+    if(TARGET nlohmann_json::nlohmann_json)
+        target_link_libraries(${PROJECT_NAME} PUBLIC nlohmann_json::nlohmann_json)
+    endif()
+    if(TARGET spdlog::spdlog)
+        target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog)
+    endif()
+    # libzip is fetched by libultraship; add its include path for ExporterArchiveO2R
+    if(DEFINED libzip_SOURCE_DIR)
+        target_include_directories(${PROJECT_NAME} PRIVATE ${libzip_SOURCE_DIR}/lib ${libzip_BINARY_DIR})
+    endif()
+    # Link tinyxml2 from FetchContent (v10) instead of using ZAPDTR's bundled v7
+    if(TARGET tinyxml2)
+        target_link_libraries(${PROJECT_NAME} PUBLIC tinyxml2)
+    endif()
+else()
+    # Desktop: unchanged from upstream (tinyxml2 comes from libultraship's deps).
+    find_package(nlohmann_json REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PUBLIC nlohmann_json::nlohmann_json)
+    find_package(spdlog REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog)
+endif()
 
-find_package(spdlog REQUIRED)
-target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog)
-
-FetchContent_Declare(
-    StormLib
-    GIT_REPOSITORY https://github.com/ladislav-zezula/StormLib.git
-    GIT_TAG v9.25
-)
-FetchContent_MakeAvailable(StormLib)
-target_include_directories(${PROJECT_NAME} PRIVATE ${stormlib_SOURCE_DIR}/src)
+if(NOT BUILD_FOR_WEB)
+    FetchContent_Declare(
+        StormLib
+        GIT_REPOSITORY https://github.com/ladislav-zezula/StormLib.git
+        GIT_TAG v9.25
+    )
+    FetchContent_MakeAvailable(StormLib)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${stormlib_SOURCE_DIR}/src)
+endif()
 
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE

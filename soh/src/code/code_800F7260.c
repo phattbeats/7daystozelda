@@ -3,7 +3,7 @@
 #include "vt.h"
 
 #include "soh/Enhancements/audio/AudioEditor.h"
-#ifdef ENABLE_REMOTE_CONTROL
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
 #include "soh/Network/Anchor/EnemyFxSync.h"
 #endif
 
@@ -131,7 +131,7 @@ void Audio_PlaySoundGeneral(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32
     size_t i;
     SoundRequest* req;
 
-#ifdef ENABLE_REMOTE_CONTROL
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
     // Co-op: record enemy AI sounds so mirrored copies can replay them.
     Anchor_RecordActorSfx(sfxId, pos);
 #endif

@@ -857,6 +857,12 @@ public:
     XMLNode* InsertAfterChild( XMLNode* afterThis, XMLNode* addThis );
 
     /**
+        Create a new element and add it as the last child.
+        Convenience method for InsertEndChild(GetDocument()->NewElement(name)).
+    */
+    XMLElement* InsertNewChildElement( const char* name );
+
+    /**
     	Delete all the children of this node.
     */
     void DeleteChildren();

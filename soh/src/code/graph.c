@@ -6,6 +6,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#endif
+
 #include "soh/Enhancements/gameconsole.h"
 #include "soh/OTRGlobals.h"
 #include "libultraship/bridge.h"
@@ -513,10 +518,110 @@ static void RunFrame() {
     exit(0);
 }
 
+
+#ifdef __EMSCRIPTEN__
+// Pattern from sm64coopdx:
+// 1. Graph_ProcessGfxCommands (inside RunFrame) is short-circuited on web
+//    to render 1 frame with identity matrices and return immediately.
+// 2. Every rAF, we re-render the last display list with an interpolation
+//    delta_frac that smoothly goes 0→1 between game ticks.
+// Base display rate for N64 (VI interrupts per second)
+#define OOT_DISPLAY_HZ 60
+static double sLastTickTime = 0;
+static Gfx* sLastDisplayList = NULL;
+static bool sGameTickReady = false;
+
+// Measured rAF rate — fed to GetInterpolationFPS so SoH knows the display rate.
+static double sRafTimes[10];
+static int sRafTimeIndex = 0;
+static int sRafTimeCount = 0;
+uint32_t gWebMeasuredFPS = 60; // exported to OTRGlobals.cpp
+
+// Interpolation fraction [0..1] within current game tick.
+// Set by RunFrameWeb before each Graph_ProcessGfxCommands call.
+float gWebInterpolationFraction = 1.0f;
+
+static void RunFrameWeb(void) {
+    double now = emscripten_get_now() / 1000.0;
+
+    // Measure actual rAF rate from recent frame times
+    sRafTimes[sRafTimeIndex] = now;
+    sRafTimeIndex = (sRafTimeIndex + 1) % 10;
+    if (sRafTimeCount < 10) sRafTimeCount++;
+    if (sRafTimeCount >= 2) {
+        int oldest = (sRafTimeIndex - sRafTimeCount + 10) % 10;
+        double span = now - sRafTimes[oldest];
+        if (span > 0.0) {
+            uint32_t measured = (uint32_t)((sRafTimeCount - 1) / span + 0.5);
+            if (measured >= 20 && measured <= 240) {
+                gWebMeasuredFPS = measured;
+            }
+        }
+    }
+
+    if (sLastTickTime == 0) {
+        sLastTickTime = now;
+    }
+
+    // Game tick rate adapts to R_UPDATE_RATE:
+    //   R_UPDATE_RATE=3 → 60/3 = 20 Hz (normal gameplay)
+    //   R_UPDATE_RATE=1 → 60/1 = 60 Hz (menus, file select, title screen)
+    int updateRate = R_UPDATE_RATE;
+    if (updateRate < 1) updateRate = 1;
+    if (updateRate > 3) updateRate = 3;
+    double gameTickTime = (double)updateRate / (double)OOT_DISPLAY_HZ;
+
+    double elapsed = now - sLastTickTime;
+
+    // Step 1: Run game logic when enough time has accumulated.
+    // Tick rate follows R_UPDATE_RATE so menus run at proper speed.
+    if (elapsed >= gameTickTime) {
+        int ticks = (int)(elapsed / gameTickTime);
+        if (ticks > 4) {
+            ticks = 4;  // Cap catch-up to prevent spiral (higher cap for 60Hz menus)
+        }
+
+        for (int i = 0; i < ticks; i++) {
+            gWebInterpolationFraction = 1.0f;
+            RunFrame();
+        }
+
+        sLastDisplayList = runFrameContext.gfxCtx.workBuffer;
+
+        sLastTickTime += ticks * gameTickTime;
+        if (now - sLastTickTime > gameTickTime) {
+            sLastTickTime = now;
+        }
+
+        sGameTickReady = true;
+        // Recalculate elapsed after advancing tick time
+        elapsed = now - sLastTickTime;
+    }
+
+    // Step 2: Render an interpolation frame every rAF call.
+    // delta_frac goes from 0 (just after tick) to ~1 (just before next tick).
+    if (sGameTickReady && sLastDisplayList != NULL) {
+        float delta_frac = (float)(elapsed / gameTickTime);
+        if (delta_frac < 0.0f) delta_frac = 0.0f;
+        if (delta_frac > 1.0f) delta_frac = 1.0f;
+
+        gWebInterpolationFraction = delta_frac;
+        Graph_ProcessGfxCommands(sLastDisplayList);
+    }
+}
+#endif
+
 void Graph_ThreadEntry(void* arg0) {
+#ifdef __EMSCRIPTEN__
+    // Use rAF (fps=0) for smooth rendering, throttle game logic to 20fps internally.
+    // Between game ticks, re-render with interpolation for visual smoothness.
+    emscripten_set_main_loop(RunFrameWeb, 0, 0);
+    return;
+#else
     while (WindowIsRunning()) {
         RunFrame();
     }
+#endif
 }
 
 void* Graph_Alloc(GraphicsContext* gfxCtx, size_t size) {

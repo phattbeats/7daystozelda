@@ -3,8 +3,10 @@
 #include <soh/Network/Network.h>
 #include "SohGui.hpp"
 #include "soh/OTRGlobals.h"
+#ifndef __EMSCRIPTEN__
 #include <soh/Network/Sail/Sail.h>
 #include <soh/Network/CrowdControl/CrowdControl.h>
+#endif
 
 namespace SohGui {
 
@@ -16,7 +18,7 @@ void SohMenu::AddMenuNetwork() {
     AddMenuEntry("Network", CVAR_SETTING("Menu.NetworkSidebarSection"));
     WidgetPath path;
 
-#ifndef ENABLE_REMOTE_CONTROL
+#if !defined(ENABLE_REMOTE_CONTROL) && !defined(__EMSCRIPTEN__)
     path = { "Network", "Info", SECTION_COLUMN_1 };
     AddSidebarEntry("Network", path.sidebarName, 2);
 
@@ -28,6 +30,7 @@ void SohMenu::AddMenuNetwork() {
     return;
 #endif
 
+#ifndef __EMSCRIPTEN__ // Sail and Crowd Control need raw sockets; the web build only has Anchor
     // Sail
     path = { "Network", "Sail", SECTION_COLUMN_1 };
     AddSidebarEntry("Network", path.sidebarName, 3);
@@ -180,6 +183,7 @@ void SohMenu::AddMenuNetwork() {
         .RaceDisable(true)
         .Options(CheckboxOptions().Tooltip("Enemies spawned by CrowdControl won't be considered for \"clear enemy "
                                            "rooms\", so they don't need to be killed to complete these rooms."));
+#endif
     path.sidebarName = "Anchor";
     AddSidebarEntry("Network", path.sidebarName, 2);
 }

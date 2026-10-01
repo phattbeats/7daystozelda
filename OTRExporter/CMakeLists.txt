@@ -84,7 +84,7 @@ if (NOT TARGET libultraship)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../libultraship ${CMAKE_BINARY_DIR}/libultraship)
 endif()
 
-if (NOT TARGET ZAPD)
+if (NOT TARGET ZAPDLib)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../ZAPDTR/ZAPD ${CMAKE_BINARY_DIR}/ZAPD)
 endif()
 

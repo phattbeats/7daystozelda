@@ -3,7 +3,7 @@
 
 #include "soh/frame_interpolation.h"
 #include <assert.h>
-#ifdef ENABLE_REMOTE_CONTROL
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
 #include "soh/Network/Anchor/EnemyFxSync.h"
 #endif
 
@@ -181,7 +181,7 @@ void EffectSs_Spawn(PlayState* play, s32 type, s32 priority, void* initParams) {
 
     assert(type < EFFECT_SS_TYPE_MAX);
 
-#ifdef ENABLE_REMOTE_CONTROL
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
     // Co-op: record whitelisted effects spawned by enemy AI for mirrored copies.
     Anchor_RecordEffectSpawn(type, priority, initParams);
 #endif

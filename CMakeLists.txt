@@ -6,7 +6,22 @@ set(CMAKE_C_STANDARD 23 CACHE STRING "The C standard to use")
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment version")
 
+# Detect Emscripten
+if(EMSCRIPTEN OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    set(BUILD_FOR_WEB ON)
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+else()
+    set(BUILD_FOR_WEB OFF)
+endif()
+
 project(Ship VERSION 9.1.1 LANGUAGES C CXX)
+
+# Re-check after project() in case toolchain set CMAKE_SYSTEM_NAME during project()
+if(EMSCRIPTEN OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    set(BUILD_FOR_WEB ON)
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+endif()
+
 include(CMake/soh-cvars.cmake)
 include(CMake/lus-cvars.cmake)
 include(CMake/logging.cmake)
@@ -77,7 +92,11 @@ set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT soh)
 add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/MP>)
 add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+if(BUILD_FOR_WEB)
+    # Emscripten provides its own ports for SDL2, zlib, etc.
+    message(STATUS "Building for Emscripten/WebAssembly")
+    set(BUILD_REMOTE_CONTROL OFF CACHE BOOL "Disable remote control for web" FORCE)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     include(CMake/automate-vcpkg.cmake)
 
     set(VCPKG_TRIPLET x64-windows-static)
@@ -113,6 +132,10 @@ set(CMAKE_C_FLAGS_DEBUG "-g -ffast-math -DDEBUG")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -ffast-math -DDEBUG")
 set(CMAKE_C_FLAGS_RELEASE "-O3 -ffast-math -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -ffast-math -DNDEBUG")
+elseif(BUILD_FOR_WEB)
+# -O1 keeps wasm-ld/Binaryen memory in check at link (the full game OOMs ~7 GB at -O2).
+set(CMAKE_C_FLAGS_RELEASE "-O1 -DNDEBUG" CACHE STRING "C flags for Release" FORCE)
+set(CMAKE_CXX_FLAGS_RELEASE "-O1 -DNDEBUG" CACHE STRING "CXX flags for Release" FORCE)
 else()
 set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
@@ -150,14 +173,23 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 ################################################################################
 
 # Enable the Gfx debugger in LUS to use libgfxd from ZAPDTR
-set(GFX_DEBUG_DISASSEMBLER ON)
+if(BUILD_FOR_WEB)
+    set(GFX_DEBUG_DISASSEMBLER OFF)
+else()
+    set(GFX_DEBUG_DISASSEMBLER ON)
+endif()
 
 # Tell LUS we're using F3DEX_GBI_2 (in a way that doesn't break libgfxd)
 set(GBI_UCODE F3DEX_GBI_2)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
 
-# Enable MPQ and OTR support
-set(INCLUDE_MPQ_SUPPORT ON)
+# Enable MPQ and OTR support (MPQ not needed on web — StormLib's bundled
+# zlib uses K&R syntax incompatible with C23/Emscripten)
+if(BUILD_FOR_WEB)
+    set(INCLUDE_MPQ_SUPPORT OFF)
+else()
+    set(INCLUDE_MPQ_SUPPORT ON)
+endif()
 
 ################################################################################
 # Set CONTROLLERBUTTONS_T
@@ -169,7 +201,9 @@ add_compile_definitions(CONTROLLERBUTTONS_T=uint32_t)
 ################################################################################
 add_subdirectory(libultraship ${CMAKE_BINARY_DIR}/libultraship)
 target_compile_options(libultraship PRIVATE "${WARNING_OVERRIDE}")
-target_compile_definitions(libultraship PUBLIC INCLUDE_MPQ_SUPPORT)
+if(INCLUDE_MPQ_SUPPORT)
+    target_compile_definitions(libultraship PUBLIC INCLUDE_MPQ_SUPPORT)
+endif()
 add_subdirectory(ZAPDTR/ZAPD ${CMAKE_BINARY_DIR}/ZAPD)
 add_subdirectory(OTRExporter)
 add_subdirectory(soh)
@@ -190,6 +224,7 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/soh/assets/extractor/" DESTINATION ./asse
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/soh/assets/xml/" DESTINATION ./assets/xml COMPONENT ship)
 endif()
 
+if(NOT BUILD_FOR_WEB)
 find_package(Python3 COMPONENTS Interpreter)
 
 # Target to generate OTRs
@@ -233,6 +268,7 @@ add_custom_target(
     COMMENT "Generating soh.o2r..."
     DEPENDS ZAPD
 )
+endif() # NOT BUILD_FOR_WEB
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     find_package(ImageMagick COMPONENTS convert)

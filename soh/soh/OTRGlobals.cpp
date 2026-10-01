@@ -15,7 +15,12 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 
 #include "Enhancements/gameconsole.h"
-#ifdef _WIN32
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#include <time.h>
+#include "soh/web/web_main.h"
+#elif defined(_WIN32)
 #include <Windows.h>
 #else
 #include <time.h>
@@ -75,8 +80,10 @@
 #include "soh/SohGui/ImGuiUtils.h"
 #include "ActorDB.h"
 #include "SaveManager.h"
+#ifndef __EMSCRIPTEN__ // raw-socket integrations; the web build only has Anchor (WebSocket)
 #include "soh/Network/CrowdControl/CrowdControl.h"
 #include "soh/Network/Sail/Sail.h"
+#endif
 #include "soh/Network/Anchor/Anchor.h"
 #include "Enhancements/mods.h"
 #include "Enhancements/game-interactor/GameInteractor.h"
@@ -141,8 +148,10 @@ ItemTableManager* ItemTableManager::Instance;
 GameInteractor* GameInteractor::Instance;
 AudioCollection* AudioCollection::Instance;
 SpeechSynthesizer* SpeechSynthesizer::Instance;
+#ifndef __EMSCRIPTEN__
 CrowdControl* CrowdControl::Instance;
 Sail* Sail::Instance;
+#endif
 Anchor* Anchor::Instance;
 
 extern "C" char** cameraStrings;
@@ -533,7 +542,16 @@ bool OTRGlobals::HasOriginal() {
     return hasOriginal;
 }
 
+#ifdef __EMSCRIPTEN__
+extern "C" uint32_t gWebMeasuredFPS;
+extern "C" float gWebInterpolationFraction;
+#endif
+
 uint32_t OTRGlobals::GetInterpolationFPS() {
+#ifdef __EMSCRIPTEN__
+    // Web: the requestAnimationFrame loop in graph.c measures the display rate.
+    return gWebMeasuredFPS;
+#endif
     if (CVarGetInteger(CVAR_SETTING("MatchRefreshRate"), 0)) {
         return Ship::Context::GetInstance()->GetWindow()->GetCurrentRefreshRate();
     } else if (CVarGetInteger(CVAR_VSYNC_ENABLED, 1) ||
@@ -550,6 +568,21 @@ extern "C" void AudioPlayer_Play(const uint8_t* buf, uint32_t len);
 extern "C" int AudioPlayer_Buffered(void);
 extern "C" int AudioPlayer_GetDesiredBuffered(void);
 std::unordered_map<std::string, ExtensionEntry> ExtensionCache;
+
+#ifdef __EMSCRIPTEN__
+// Web: no threads. Mix one update's worth of audio inline on each game tick.
+void OTRAudio_ProcessInline() {
+    const int samplesHigh = 560, samplesLow = 528, channels = 2;
+    const int framesPerUpdate = R_UPDATE_RATE > 0 ? R_UPDATE_RATE : 1;
+    int samples_left = AudioPlayer_Buffered();
+    u32 num_audio_samples = samples_left < AudioPlayer_GetDesiredBuffered() ? samplesHigh : samplesLow;
+    static s16 audio_buffer[560 * 2 * 3];
+    for (int i = 0; i < framesPerUpdate; i++) {
+        AudioMgr_CreateNextAudioBuffer(audio_buffer + i * (num_audio_samples * channels), num_audio_samples);
+    }
+    AudioPlayer_Play((u8*)audio_buffer, num_audio_samples * (sizeof(int16_t) * channels * framesPerUpdate));
+}
+#endif
 
 void OTRAudio_Thread() {
     while (audio.running) {
@@ -596,10 +629,14 @@ extern "C" void OTRAudio_Init() {
     // Precache all our samples, sequences, etc...
     ResourceMgr_LoadDirectory("audio");
 
+#ifdef __EMSCRIPTEN__
+    audio.running = true;
+#else
     if (!audio.running) {
         audio.running = true;
         audio.thread = std::thread(OTRAudio_Thread);
     }
+#endif
 }
 
 extern "C" char** sequenceMap;
@@ -609,6 +646,9 @@ extern "C" char** fontMap;
 extern "C" size_t fontMapSize;
 
 extern "C" void OTRAudio_Exit() {
+#ifdef __EMSCRIPTEN__
+    audio.running = false;
+#else
     // Tell the audio thread to stop
     {
         std::unique_lock<std::mutex> Lock(audio.mutex);
@@ -618,6 +658,7 @@ extern "C" void OTRAudio_Exit() {
 
     // Wait until the audio thread quit
     audio.thread.join();
+#endif
 #if 0
     for (size_t i = 0; i < sequenceMapSize; i++) {
         free(sequenceMap[i]);
@@ -1289,8 +1330,10 @@ extern "C" void InitOTR(int argc, char* argv[]) {
 #endif
     SpeechSynthesizer::Instance->Init();
 
+#ifndef __EMSCRIPTEN__
     CrowdControl::Instance = new CrowdControl();
     Sail::Instance = new Sail();
+#endif
     Anchor::Instance = new Anchor();
 
     OTRMessage_Init();
@@ -1322,12 +1365,17 @@ extern "C" void InitOTR(int argc, char* argv[]) {
 #ifdef ENABLE_REMOTE_CONTROL
     SDLNet_Init();
 #endif
+#ifndef __EMSCRIPTEN__
     if (CVarGetInteger(CVAR_REMOTE_CROWD_CONTROL("Enabled"), 0)) {
         CrowdControl::Instance->Enable();
     }
     if (CVarGetInteger(CVAR_REMOTE_SAIL("Enabled"), 0)) {
         Sail::Instance->Enable();
     }
+#else
+    // Web: Anchor settings (room, name, color, relay URL) come from the page.
+    web_apply_anchor_config();
+#endif
     if (CVarGetInteger(CVAR_REMOTE_ANCHOR("Enabled"), 0)) {
         Anchor::Instance->Enable();
     }
@@ -1340,12 +1388,14 @@ extern "C" void SaveManager_ThreadPoolWait() {
 extern "C" void DeinitOTR() {
     SaveManager_ThreadPoolWait();
     OTRAudio_Exit();
+#ifndef __EMSCRIPTEN__
     if (CVarGetInteger(CVAR_REMOTE_CROWD_CONTROL("Enabled"), 0)) {
         CrowdControl::Instance->Disable();
     }
     if (CVarGetInteger(CVAR_REMOTE_SAIL("Enabled"), 0)) {
         Sail::Instance->Disable();
     }
+#endif
     if (CVarGetInteger(CVAR_REMOTE_ANCHOR("Enabled"), 0)) {
         Anchor::Instance->Disable();
     }
@@ -1360,7 +1410,15 @@ extern "C" void DeinitOTR() {
     OTRGlobals::Instance->context = nullptr;
 }
 
-#ifdef _WIN32
+#ifdef __EMSCRIPTEN__
+extern "C" uint64_t GetFrequency() {
+    return 1000000; // microseconds
+}
+
+extern "C" uint64_t GetPerfCounter() {
+    return (uint64_t)(emscripten_get_now() * 1000.0);
+}
+#elif defined(_WIN32)
 extern "C" uint64_t GetFrequency() {
     LARGE_INTEGER nFreq;
 
@@ -1520,12 +1578,19 @@ void RunCommands(Gfx* Commands, const std::vector<std::unordered_map<Mtx*, MtxF>
 
 // C->C++ Bridge
 extern "C" void Graph_ProcessGfxCommands(Gfx* commands) {
+#ifdef __EMSCRIPTEN__
+    // Mix audio only on real game ticks, not on interpolation re-renders.
+    if (gWebInterpolationFraction >= 1.0f) {
+        OTRAudio_ProcessInline();
+    }
+#else
     {
         std::unique_lock<std::mutex> Lock(audio.mutex);
         audio.processing = true;
     }
 
     audio.cv_to_thread.notify_one();
+#endif
     std::vector<std::unordered_map<Mtx*, MtxF>> mtx_replacements;
     int target_fps = OTRGlobals::Instance->GetInterpolationFPS();
     static int last_fps;
@@ -1535,6 +1600,15 @@ extern "C" void Graph_ProcessGfxCommands(Gfx* commands) {
     int original_fps = 60 / R_UPDATE_RATE;
     auto wnd = std::dynamic_pointer_cast<Fast::Fast3dWindow>(Ship::Context::GetInstance()->GetWindow());
 
+#ifdef __EMSCRIPTEN__
+    // Web: RunFrameWeb (graph.c) calls us once per requestAnimationFrame with the
+    // interpolation fraction already chosen; produce exactly one render.
+    if (gWebInterpolationFraction >= 1.0f) {
+        mtx_replacements.emplace_back();
+    } else {
+        mtx_replacements.push_back(FrameInterpolation_Interpolate(gWebInterpolationFraction));
+    }
+#else
     if (target_fps == 20 || original_fps > target_fps) {
         fps = original_fps;
     }
@@ -1556,6 +1630,7 @@ extern "C" void Graph_ProcessGfxCommands(Gfx* commands) {
     }
 
     time -= fps;
+#endif
 
     if (wnd != nullptr) {
         wnd->SetTargetFps(fps);
@@ -1572,12 +1647,14 @@ extern "C" void Graph_ProcessGfxCommands(Gfx* commands) {
     last_fps = fps;
     last_update_rate = R_UPDATE_RATE;
 
+#ifndef __EMSCRIPTEN__
     {
         std::unique_lock<std::mutex> Lock(audio.mutex);
         while (audio.processing) {
             audio.cv_from_thread.wait(Lock);
         }
     }
+#endif
 
     bool curAltAssets = CVarGetInteger(CVAR_SETTING("AltAssets"), 1);
     if (prevAltAssets != curAltAssets) {

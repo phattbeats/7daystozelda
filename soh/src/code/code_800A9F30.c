@@ -1,5 +1,5 @@
 #include "global.h"
-#ifdef ENABLE_REMOTE_CONTROL
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
 #include "soh/Network/Anchor/EnemyTargeting.h"
 #endif
 
@@ -39,7 +39,7 @@ void func_800AA000(f32 a, u8 b, u8 c, u8 d) {
     s32 temp2;
     s32 i;
 
-#ifdef ENABLE_REMOTE_CONTROL
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
     // Co-op: don't rumble our controller for an enemy biting a remote player.
     if (Anchor_EnemyTargetSwapActive()) {
         return;

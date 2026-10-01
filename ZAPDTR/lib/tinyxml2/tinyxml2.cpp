@@ -935,6 +935,11 @@ XMLNode* XMLNode::InsertAfterChild( XMLNode* afterThis, XMLNode* addThis )
 }
 
 
+XMLElement* XMLNode::InsertNewChildElement( const char* name )
+{
+    XMLElement* node = GetDocument()->NewElement( name );
+    return static_cast<XMLElement*>( InsertEndChild( node ) );
+}
 
 
 const XMLElement* XMLNode::FirstChildElement( const char* name ) const

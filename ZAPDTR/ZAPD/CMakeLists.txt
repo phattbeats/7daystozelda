@@ -262,14 +262,18 @@ set(ALL_FILES
 
 add_library(${PROJECT_NAME} STATIC ${ALL_FILES})
 
-add_executable(ZAPD ExecutableMain.cpp)
-target_link_libraries(ZAPD ${PROJECT_NAME})
+if(NOT BUILD_FOR_WEB)
+    add_executable(ZAPD ExecutableMain.cpp)
+    target_link_libraries(ZAPD ${PROJECT_NAME})
+endif()
 
 
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 use_props(${PROJECT_NAME} "${CMAKE_CONFIGURATION_TYPES}" "${DEFAULT_CXX_PROPS}")
-use_props(ZAPD "${CMAKE_CONFIGURATION_TYPES}" "${DEFAULT_CXX_PROPS}")
+if(TARGET ZAPD)
+    use_props(ZAPD "${CMAKE_CONFIGURATION_TYPES}" "${DEFAULT_CXX_PROPS}")
+endif()
 endif()
 ################################################################################
 # Includes for CMake from *.props
@@ -288,15 +292,21 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 		)
 	endif()
 elseif (CMAKE_SYSTEM_NAME MATCHES "Linux|Darwin")
+    if(TARGET ZAPD)
         set_target_properties(ZAPD PROPERTIES
 		OUTPUT_NAME "ZAPD.out"
 	)
+    endif()
 endif()
 ################################################################################
 # MSVC runtime library
 ################################################################################
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
-foreach(ZTarget ${PROJECT_NAME} ZAPD)
+set(_ZAPD_TARGETS ${PROJECT_NAME})
+if(TARGET ZAPD)
+    list(APPEND _ZAPD_TARGETS ZAPD)
+endif()
+foreach(ZTarget ${_ZAPD_TARGETS})
 	get_property(MSVC_RUNTIME_LIBRARY_DEFAULT TARGET ${ZTarget} PROPERTY MSVC_RUNTIME_LIBRARY)
 	if("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "Win32" OR "${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
 		string(CONCAT "MSVC_RUNTIME_LIBRARY_STR"
@@ -340,7 +350,13 @@ endif()
 if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 	set(CMAKE_FIND_FRAMEWORK LAST)
 endif()
-find_package(PNG REQUIRED)
+if(BUILD_FOR_WEB)
+    # Emscripten provides libpng as a port
+    target_compile_options(${PROJECT_NAME} PRIVATE -sUSE_LIBPNG=1)
+    target_link_options(${PROJECT_NAME} PUBLIC -sUSE_LIBPNG=1)
+else()
+    find_package(PNG REQUIRED)
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../libultraship/src/resource
@@ -419,10 +435,12 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU|Clang|AppleClang")
         -Wno-parentheses
         -Wno-narrowing
         $<$<COMPILE_LANGUAGE:CXX>:-Wno-deprecated-enum-enum-conversion>
-		-pthread
+		$<$<NOT:$<BOOL:${BUILD_FOR_WEB}>>:-pthread>
 	)
 
-    if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    if(BUILD_FOR_WEB)
+        # No pthread or export-dynamic for Emscripten
+    elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         target_link_options(${PROJECT_NAME} PUBLIC
             -pthread
         )
@@ -438,10 +456,16 @@ endif()
 ################################################################################
 # Dependencies
 ################################################################################
-add_dependencies(${PROJECT_NAME}
-    OTRExporter
-    libultraship
-)
+if(TARGET OTRExporter)
+    add_dependencies(${PROJECT_NAME}
+        OTRExporter
+        libultraship
+    )
+else()
+    add_dependencies(${PROJECT_NAME}
+        libultraship
+    )
+endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 #	if("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
@@ -476,6 +500,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "CafeOS")
     set(ADDITIONAL_LIBRARY_DEPENDENCIES
         "libultraship;"
         PNG::PNG
+    )
+elseif(BUILD_FOR_WEB)
+    set(ADDITIONAL_LIBRARY_DEPENDENCIES
+        -Wl,--whole-archive $<TARGET_LINKER_FILE_DIR:OTRExporter>/$<TARGET_LINKER_FILE_NAME:OTRExporter> -Wl,--no-whole-archive
+        "libultraship;"
     )
 else()
 	set(THREADS_PREFER_PTHREAD_FLAG ON)
