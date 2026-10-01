@@ -4,8 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Ocarina">
+  <link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
+  <link rel="apple-touch-icon" href="icon-180.png">
   <title>Ocarina Co-op</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 88'%3E%3Cpath fill='%23d9b55b' d='M50 0l25 44H25zM25 44l25 44H0zM75 44l25 44H50z'/%3E%3C/svg%3E">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
   <style>
     :root {
       --bg: #0b0f14;
@@ -30,7 +37,19 @@
     #canvas {
       position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
       display: block; outline: none; z-index: 1;
+      touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
     }
+    body.playing { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+    /* ---- Phone held upright during play ---- */
+    #rotate {
+      position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 60;
+      width: min(20rem, calc(100vw - 32px)); text-align: center;
+      background: rgba(10,14,20,.9); border: 1px solid var(--line); border-radius: 12px;
+      padding: 1rem; font-size: .92rem;
+    }
+    #rotate .phone { font-size: 2rem; display: block; margin-bottom: .3rem; transform: rotate(90deg); }
+    #rotate .actions { justify-content: center; }
 
     /* ---- Lobby overlay ---- */
     #overlay {
@@ -46,7 +65,7 @@
     #overlay.hidden { opacity: 0; pointer-events: none; }
     .card { width: 100%; max-width: 30rem; }
     .brand { text-align: center; margin-bottom: 1.4rem; }
-    .brand svg { width: 34px; height: 30px; display: block; margin: 0 auto .6rem; }
+    .brand svg { width: 56px; height: 56px; display: block; margin: 0 auto .6rem; }
     .brand h1 {
       font: 600 1.9rem/1.1 Georgia, "Times New Roman", serif;
       letter-spacing: .02em; color: #f3eedf;
@@ -165,7 +184,10 @@
 
     /* Touch Gamepad */
     #touch-gamepad {
-      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      /* Inset by the notch / rounded corners so the stick and buttons stay reachable. */
+      display: none; position: fixed;
+      top: env(safe-area-inset-top, 0px); right: env(safe-area-inset-right, 0px);
+      bottom: env(safe-area-inset-bottom, 0px); left: env(safe-area-inset-left, 0px);
       z-index: 5; pointer-events: none; user-select: none; -webkit-user-select: none;
     }
     #touch-gamepad.visible { display: block; }
@@ -220,7 +242,7 @@
   <div id="overlay">
     <div class="card">
       <div class="brand">
-        <svg viewBox="0 0 100 88" aria-hidden="true"><path fill="#d9b55b" d="M50 0l25 44H25zM25 44l25 44H0zM75 44l25 44H50z"/></svg>
+        <svg viewBox="0 0 100 100" aria-hidden="true"><defs><radialGradient id="fairy-glow"><stop offset="0" stop-color="#d9b55b" stop-opacity=".75"/><stop offset="1" stop-color="#d9b55b" stop-opacity="0"/></radialGradient></defs><circle cx="50" cy="50" r="42" fill="url(#fairy-glow)"/><g fill="#afd4ff" fill-opacity=".62"><ellipse cx="50" cy="35" rx="6.5" ry="15" transform="rotate(38 50 50)"/><ellipse cx="50" cy="35" rx="6.5" ry="15" transform="rotate(-38 50 50)"/></g><g fill="#afd4ff" fill-opacity=".45"><ellipse cx="50" cy="40" rx="5" ry="10" transform="rotate(128 50 50)"/><ellipse cx="50" cy="40" rx="5" ry="10" transform="rotate(-128 50 50)"/></g><circle cx="50" cy="50" r="7" fill="#fff3d2"/></svg>
         <h1>Ocarina Co-op</h1>
         <p>Ship of Harkinian &middot; shared enemies &middot; horde night</p>
       </div>
@@ -235,10 +257,10 @@
 
         <div id="rom-need" hidden>
           <button type="button" id="drop">
-            <strong>Drop your Ocarina of Time ROM</strong>
-            <span class="muted small">or click to choose a .z64 / .n64 / .v64 file. It's unpacked inside this browser and never uploaded.</span>
+            <strong id="drop-title">Drop your Ocarina of Time ROM</strong>
+            <span class="muted small" id="drop-hint">or click to choose a .z64 / .n64 / .v64 file, or a .zip with one inside. It's unpacked inside this browser and never uploaded.</span>
           </button>
-          <input type="file" id="rom-file" accept=".z64,.n64,.v64,.o2r,.otr" multiple>
+          <input type="file" id="rom-file" accept=".z64,.n64,.v64,.zip,.o2r,.otr" multiple>
         </div>
 
         <div id="rom-ready" class="ready-row" hidden>
@@ -300,6 +322,17 @@
 
   <div id="net-pill" hidden><i></i><span id="net-text"></span></div>
 
+  <div id="rotate" hidden role="dialog" aria-label="Turn your phone sideways">
+    <span class="phone" aria-hidden="true">&#128241;</span>
+    <strong>Turn your phone sideways</strong>
+    <p class="muted small" style="margin-top:.3rem">The game is 4:3 and the controls need the room.</p>
+    <p class="muted small" id="rotate-ios" hidden style="margin-top:.4rem">For true fullscreen on iPhone: Share &rarr; Add to Home Screen, then play from that icon. Drop your ROM once more there; it keeps its own storage.</p>
+    <div class="actions">
+      <button class="btn primary" type="button" id="rotate-fs" hidden>Go fullscreen</button>
+      <button class="btn" type="button" id="rotate-dismiss">Keep it upright</button>
+    </div>
+  </div>
+
   <div id="crash" hidden>
     <div class="panel">
       <h2>The game crashed</h2>
@@ -350,6 +383,12 @@
     var autoJoin = !!(hashParams.room && hashParams.name);
 
     function $(id) { return document.getElementById(id); }
+
+    var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    // Phones and tablets: the OS freezes a backgrounded page outright.
+    var isMobile = isIOS || /Android|Mobile/i.test(navigator.userAgent) || !!(navigator.userAgentData && navigator.userAgentData.mobile);
+    var isStandalone = (window.matchMedia && matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) || navigator.standalone === true;
 
     // Per-browser conveniences only (name, tunic). Storage can be blocked.
     function remember(k, v) { try { localStorage.setItem('soh.' + k, v); } catch (e) {} }
@@ -422,7 +461,14 @@
       if (!matched) radios[0].checked = true;
       $('f-horde').checked = hashParams.horde === '1' || (!('horde' in hashParams) && recall('horde') === '1');
       ['f-name', 'f-room'].forEach(function(id) { $(id).addEventListener('input', refreshButtons); });
-      if ('ontouchstart' in window || navigator.maxTouchPoints > 0) document.body.classList.add('touch');
+      if (isTouch) document.body.classList.add('touch');
+      if (isTouch) {
+        $('drop-title').textContent = 'Choose your Ocarina of Time ROM';
+        $('drop-hint').textContent = 'Tap to pick the .z64 / .n64 / .v64 file (or a .zip of it) from Files or Downloads. It never leaves this phone.';
+      }
+      // iOS turns `accept` into file types it knows; .z64 isn't one, so the ROM
+      // shows up greyed out and can't be picked. Let iOS offer every file.
+      if (isIOS) $('rom-file').removeAttribute('accept');
     })();
 
     function formValues() {
@@ -526,7 +572,8 @@
 
     function extractRom(romBuf) {
       romView('loading');
-      setStatus('Unpacking your ROM (about half a minute; the page may freeze briefly)...');
+      setStatus(isMobile ? 'Unpacking your ROM (a minute or two on a phone; keep this screen open)...'
+                         : 'Unpacking your ROM (about half a minute; the page may freeze briefly)...');
       setProgress(20);
       try {
         FS.writeFile('/rom.z64', new Uint8Array(romBuf));
@@ -568,12 +615,67 @@
         }
         // Slice to an exact-size buffer: FS.readFile can hand back a view on a larger one.
         var exact = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-        cacheFile(name, exact).catch(function(err) {
-          console.warn('[Web] Could not store ' + name + ' (you will need to drop the ROM again next visit):', err);
-        }).then(function() {
+        cacheFile(name, exact).then(function() {
+          // Ask the browser not to evict a 100+ MB archive under storage pressure.
+          try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+          // WebAssembly memory never shrinks, and the extractor's peak would stay
+          // allocated for the whole session. Phones kill tabs well before desktops
+          // do, so start the game from a fresh page; the archive loads from storage.
+          var v = formValues();
+          if (v.name) remember('name', v.name);
+          if (v.room) remember('room', v.room);
+          remember('color', v.color);
+          remember('horde', v.horde ? '1' : '0');
+          setStatus('Unpacked. Reloading to start fresh...');
+          setProgress(100);
+          setTimeout(function() { location.reload(); }, 400);
+        }, function(err) {
+          // Couldn't store it (private mode, quota): play from memory this session.
+          console.warn('[Web] Could not store ' + name + ' (you will need to add the ROM again next visit):', err);
           setRomReady([name], true);
         });
       }, 60);
+    }
+
+    // Minimal .zip reader: finds the first N64 ROM inside and inflates it with the
+    // browser's own DecompressionStream. Resolves {name, data} or null.
+    function unzipRom(buf) {
+      var v = new DataView(buf), u8 = new Uint8Array(buf);
+      var eocd = -1;
+      for (var i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) {
+        if (v.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+      }
+      if (eocd < 0) return Promise.reject(new Error('not a zip'));
+      var count = v.getUint16(eocd + 10, true), p = v.getUint32(eocd + 16, true);
+      for (var n = 0; n < count && p + 46 <= buf.byteLength; n++) {
+        if (v.getUint32(p, true) !== 0x02014b50) break;
+        var method = v.getUint16(p + 10, true), csize = v.getUint32(p + 20, true);
+        var nlen = v.getUint16(p + 28, true), xlen = v.getUint16(p + 30, true), clen = v.getUint16(p + 32, true);
+        var local = v.getUint32(p + 42, true);
+        var name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nlen));
+        p += 46 + nlen + xlen + clen;
+        if (!/\.(z64|n64|v64)$/i.test(name) || /(^|\/)__MACOSX\//.test(name)) continue;
+        var start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+        var raw = buf.slice(start, start + csize);
+        var base = name.split('/').pop();
+        if (method === 0) return Promise.resolve({ name: base, data: raw });
+        if (method !== 8) return Promise.reject(new Error('That zip uses a compression method browsers can\'t open. Unzip it first.'));
+        if (typeof DecompressionStream === 'undefined') return Promise.reject(new Error('This browser can\'t open .zip files. Unzip it first.'));
+        var stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+        return new Response(stream).arrayBuffer().then(function(data) { return { name: base, data: data }; });
+      }
+      return Promise.resolve(null);
+    }
+
+    function checkAndExtract(buf) {
+      var be = toBigEndianRom(buf);
+      if (!be) { showError("That file isn't an N64 ROM."); romView('need'); return; }
+      if (romTitle(be).toUpperCase().indexOf('ZELDA') < 0) {
+        showError('That ROM is "' + romTitle(be) + '". This needs Ocarina of Time.');
+        romView('need');
+        return;
+      }
+      extractRom(be);
     }
 
     function handleFiles(files) {
@@ -584,29 +686,35 @@
         setStatus('Got it. Waiting for the game engine to finish loading...');
         return;
       }
-      var rom = null, archives = [];
+      var rom = null, zip = null, archives = [];
       for (var i = 0; i < files.length; i++) {
         if (isRomFile(files[i].name)) rom = rom || files[i];
+        else if (/\.zip$/i.test(files[i].name)) zip = zip || files[i];
         else if (/\.(o2r|otr)$/i.test(files[i].name)) archives.push(files[i]);
       }
+      if (!rom && zip) {
+        romView('loading');
+        setStatus('Opening ' + zip.name + '...');
+        setProgress(8);
+        zip.arrayBuffer().then(unzipRom).then(function(found) {
+          if (!found) { showError('No .z64 / .n64 / .v64 ROM inside ' + zip.name + '.'); romView('need'); return; }
+          setStatus('Found ' + found.name + '.');
+          checkAndExtract(found.data);
+        }).catch(function(err) {
+          showError(err && err.message && err.message !== 'not a zip' ? err.message : ("Couldn't open " + zip.name + ' as a zip.'));
+          romView('need');
+        });
+        return;
+      }
       if (!rom && !archives.length) {
-        showError("That doesn't look like a ROM. Drop the .z64 (or .n64 / .v64) file.");
+        showError("That doesn't look like a ROM. Pick the .z64 (or .n64 / .v64) file, or a .zip of it.");
         return;
       }
       if (rom) {
         romView('loading');
         setStatus('Reading ' + rom.name + '...');
         setProgress(10);
-        rom.arrayBuffer().then(function(buf) {
-          var be = toBigEndianRom(buf);
-          if (!be) { showError("That file isn't an N64 ROM."); romView('need'); return; }
-          if (romTitle(be).toUpperCase().indexOf('ZELDA') < 0) {
-            showError('That ROM is "' + romTitle(be) + '". This needs Ocarina of Time.');
-            romView('need');
-            return;
-          }
-          extractRom(be);
-        }, function() { showError('Could not read ' + rom.name + '.'); romView('need'); });
+        rom.arrayBuffer().then(checkAndExtract, function() { showError('Could not read ' + rom.name + '.'); romView('need'); });
         return;
       }
       // Pre-extracted archives (advanced): store and use them as-is.
@@ -677,9 +785,32 @@
     }
 
     // ---- Start ----
+    function enterFullscreen() {
+      // Android browsers: fullscreen, then lock landscape. iPhone Safari has no
+      // fullscreen for pages; there the home-screen app is the fullscreen route.
+      var el = document.documentElement;
+      var req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (!req) return false;
+      try {
+        var p = req.call(el, { navigationUI: 'hide' });
+        if (p && p.then) p.then(function() {
+          if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function() {});
+        }, function() {});
+        return true;
+      } catch (e) { return false; }
+    }
+
     function startGame(v) {
       if (gameStarted) return;
       gameStarted = true;
+      // Called straight from the Join/Solo tap, so the browser allows fullscreen.
+      if (isMobile && !isStandalone && !document.fullscreenElement) enterFullscreen();
+      if (isTouch) {
+        document.body.classList.add('playing');
+        var vp = document.querySelector('meta[name=viewport]');
+        if (vp) vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+        document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+      }
       refreshButtons();
       showError('');
 
@@ -722,8 +853,27 @@
           e.returnValue = '';
         });
         waitForGameRender();
+        if (isMobile) setTimeout(RotateHint.check, 1600);
       });
     }
+
+    // ---- "Turn your phone sideways" hint ----
+    var RotateHint = (function() {
+      var dismissed = false;
+      var mq = window.matchMedia ? matchMedia('(orientation: portrait)') : null;
+      function check() {
+        var show = gameStarted && isMobile && !dismissed && mq && mq.matches && Math.min(innerWidth, innerHeight) < 600;
+        $('rotate').hidden = !show;
+        // iPhone Safari can't fullscreen a page; the home-screen app is the route there.
+        $('rotate-fs').hidden = isIOS || !(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen) || !!document.fullscreenElement;
+        $('rotate-ios').hidden = !(isIOS && !isStandalone);
+      }
+      if (mq && mq.addEventListener) mq.addEventListener('change', check);
+      window.addEventListener('resize', check);
+      $('rotate-dismiss').addEventListener('click', function() { dismissed = true; check(); $('canvas').focus(); });
+      $('rotate-fs').addEventListener('click', function() { enterFullscreen(); setTimeout(check, 600); });
+      return { check: check };
+    })();
 
     function waitForGameRender() {
       // The engine draws its first frame within a second or two; there's no
@@ -741,8 +891,15 @@
     // ---- Background tabs keep the game ticking (see web_set_hidden) ----
     document.addEventListener('visibilitychange', function() {
       if (!runtimeReady || typeof Module._web_set_hidden !== 'function') return;
-      try { Module._web_set_hidden(document.visibilityState === 'hidden' ? 1 : 0); } catch (e) {}
-      if (gameStarted && document.visibilityState === 'visible') keepAwake();
+      var hidden = document.visibilityState === 'hidden';
+      try { Module._web_set_hidden(hidden ? 1 : 0); } catch (e) {}
+      // A phone page is frozen outright while hidden (switching to TeamSpeak,
+      // locking the screen), so step out of the co-op room instead of holding
+      // enemy authority hostage. Rejoins on return.
+      if (isMobile && gameStarted && typeof Module._web_anchor_suspend === 'function') {
+        try { Module._web_anchor_suspend(hidden ? 1 : 0); } catch (e) {}
+      }
+      if (gameStarted && !hidden) keepAwake();
     });
 
     // ---- Connection pill (driven from WebSocket.cpp via window.SohNet) ----
@@ -885,7 +1042,24 @@
         this._active = true;
         this._setupButtons();
         this._setupStick();
+        var self = this;
+        // A Bluetooth controller on a phone/tablet: get the touch pad out of the way.
+        window.addEventListener('gamepadconnected', function() { self.setShown(false); });
+        window.addEventListener('gamepaddisconnected', function() {
+          var pads = navigator.getGamepads ? Array.prototype.filter.call(navigator.getGamepads(), Boolean) : [];
+          if (!pads.length) self.setShown(true);
+        });
         console.log('[TouchGamepad] Initialized for touch device');
+      },
+
+      setShown: function(on) {
+        this._active = on;
+        document.getElementById('touch-gamepad').classList.toggle('visible', on);
+        if (!on) {
+          this._buttons = {};
+          this._stickX = 0; this._stickY = 0; this._stickTouchId = null;
+          if (this._knob) this._knob.style.transform = 'translate(0px, 0px)';
+        }
       },
 
       // Public API for WASM integration

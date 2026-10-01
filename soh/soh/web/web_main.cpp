@@ -13,6 +13,7 @@
 #include <libultraship/libultraship.h>
 #include "soh/cvar_prefixes.h"
 #include "soh/Enhancements/enhancementTypes.h"
+#include "soh/Network/Anchor/Anchor.h"
 
 // ---- Touch Gamepad Bridge ----
 // Read touch gamepad state from JavaScript and merge into OSContPad
@@ -187,6 +188,33 @@ int web_get_otr_status(void) {
 EMSCRIPTEN_KEEPALIVE
 void web_save_to_idb(void) {
     EM_ASM({ if (window.sohPersist) window.sohPersist(); });
+}
+
+// Phones freeze a backgrounded page completely (no timers either), so a phone
+// that switches to TeamSpeak keeps its Anchor seat while doing nothing. If it
+// was the room's enemy authority, every enemy froze for everyone until the relay
+// noticed the silence (~50 s). Instead the page leaves the room when hidden and
+// rejoins when shown: authority moves to the next player within a tick.
+static bool s_anchorSuspended = false;
+
+EMSCRIPTEN_KEEPALIVE
+void web_anchor_suspend(int suspend) {
+    if (Anchor::Instance == nullptr) {
+        return;
+    }
+    if (suspend) {
+        if (Anchor::Instance->isEnabled) {
+            printf("[Web] Page hidden on a phone: leaving the co-op room until it's back.\n");
+            Anchor::Instance->Disable();
+            s_anchorSuspended = true;
+        }
+    } else if (s_anchorSuspended) {
+        s_anchorSuspended = false;
+        if (CVarGetInteger(CVAR_REMOTE_ANCHOR("Enabled"), 0)) {
+            printf("[Web] Page visible again: rejoining the co-op room.\n");
+            Anchor::Instance->Enable();
+        }
+    }
 }
 
 // Background tabs get no requestAnimationFrame, so the game (and its Anchor
