@@ -2,145 +2,166 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ship of Harkinian - Web</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Ocarina Co-op</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 88'%3E%3Cpath fill='%23d9b55b' d='M50 0l25 44H25zM25 44l25 44H0zM75 44l25 44H50z'/%3E%3C/svg%3E">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    :root {
+      --bg: #0b0f14;
+      --bg-2: #111822;
+      --card: #141c27;
+      --line: #263243;
+      --text: #e7e3d8;
+      --muted: #8f9aa8;
+      --gold: #d9b55b;
+      --gold-dim: #8a7337;
+      --ok: #5cc87a;
+      --warn: #e2b04a;
+      --bad: #e0625a;
+      --focus: #9cc3ff;
     }
-
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #0a0a1a;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      color: #e0e0e0;
+      width: 100%; height: 100%; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     }
-
     #canvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      display: block;
-      outline: none;
-      z-index: 1;
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      display: block; outline: none; z-index: 1;
     }
 
+    /* ---- Lobby overlay ---- */
     #overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: #0a0a1a;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-      transition: opacity 0.5s ease;
+      position: fixed; inset: 0; z-index: 100;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, #1b2a3a 0%, transparent 60%),
+        var(--bg);
+      display: flex; justify-content: center; align-items: flex-start;
+      padding: max(16px, 6vh) 16px 24px;
+      transition: opacity .4s ease;
     }
+    #overlay.hidden { opacity: 0; pointer-events: none; }
+    .card { width: 100%; max-width: 30rem; }
+    .brand { text-align: center; margin-bottom: 1.4rem; }
+    .brand svg { width: 34px; height: 30px; display: block; margin: 0 auto .6rem; }
+    .brand h1 {
+      font: 600 1.9rem/1.1 Georgia, "Times New Roman", serif;
+      letter-spacing: .02em; color: #f3eedf;
+    }
+    .brand p { color: var(--muted); font-size: .88rem; margin-top: .35rem; }
 
-    #overlay.hidden {
-      opacity: 0;
-      pointer-events: none;
+    .panel {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 1rem 1.1rem; margin-bottom: .9rem;
     }
+    .panel h2 {
+      font-size: .74rem; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
+      color: var(--gold); margin-bottom: .7rem;
+    }
+    .muted { color: var(--muted); }
+    .small { font-size: .84rem; }
 
-    #overlay h1 {
-      font-size: 2.2rem;
-      margin-bottom: 0.3rem;
-      color: #ffffff;
+    /* ROM states */
+    #drop {
+      display: block; width: 100%; text-align: center; cursor: pointer;
+      border: 1.5px dashed #3a4a60; border-radius: 10px; padding: 1.2rem 1rem;
+      background: var(--bg-2); color: var(--text); font: inherit;
+      transition: border-color .15s, background .15s;
     }
+    #drop:hover, #drop.over { border-color: var(--gold); background: #17202c; }
+    #drop:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    #drop strong { display: block; font-size: 1rem; margin-bottom: .25rem; }
+    #rom-file { display: none; }
+    .ready-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+    .ready-row .tick {
+      width: 22px; height: 22px; border-radius: 50%; background: #1d3a27; color: var(--ok);
+      display: grid; place-items: center; font-size: .8rem; flex: none;
+    }
+    .ready-row .grow { flex: 1; min-width: 10rem; }
+    .linkish {
+      background: none; border: 0; color: var(--muted); font: inherit; font-size: .84rem;
+      text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: .2rem 0;
+    }
+    .linkish:hover { color: var(--text); }
+    .bar { height: 6px; background: var(--bg-2); border-radius: 3px; overflow: hidden; margin: .55rem 0 .45rem; }
+    .bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--gold-dim), var(--gold)); transition: width .3s ease; }
+    .bar > div.crawl { transition: none; animation: crawl 40s cubic-bezier(.1,.4,.2,.85) forwards; }
+    @keyframes crawl { from { width: 25%; } to { width: 92%; } }
 
-    #overlay .subtitle {
-      font-size: 0.95rem;
-      color: #888;
-      margin-bottom: 2rem;
+    /* Form */
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+    @media (max-width: 420px) { .grid { grid-template-columns: 1fr; } }
+    label.f { display: block; font-size: .8rem; color: var(--muted); }
+    label.f input {
+      display: block; width: 100%; margin-top: .3rem;
+      background: var(--bg-2); color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: .55rem .65rem; font: inherit; font-size: 16px;
     }
+    label.f input:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: transparent; }
+    .tunics { display: flex; gap: .5rem; margin-top: .3rem; flex-wrap: wrap; }
+    .tunic {
+      display: inline-flex; align-items: center; gap: .4rem; cursor: pointer;
+      padding: .35rem .6rem .35rem .4rem; border: 1px solid var(--line); border-radius: 999px;
+      font-size: .84rem; background: var(--bg-2);
+    }
+    .tunic input { position: absolute; opacity: 0; pointer-events: none; }
+    .tunic i { width: 16px; height: 16px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 2px rgba(0,0,0,.25); }
+    .tunic:has(input:checked) { border-color: var(--gold); background: #1a2330; }
+    .tunic:has(input:focus-visible) { outline: 2px solid var(--focus); }
+    .check { display: flex; gap: .55rem; align-items: flex-start; margin-top: .85rem; cursor: pointer; font-size: .9rem; }
+    .check input { margin-top: .2rem; accent-color: var(--gold); width: 16px; height: 16px; flex: none; }
+    .actions { display: flex; gap: .6rem; margin-top: 1rem; flex-wrap: wrap; }
+    .btn {
+      appearance: none; border-radius: 9px; padding: .65rem 1.1rem; font: 600 .95rem/1 system-ui, sans-serif;
+      cursor: pointer; border: 1px solid var(--line); background: var(--bg-2); color: var(--text);
+    }
+    .btn:hover { border-color: #3c4d64; }
+    .btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    .btn.primary { background: var(--gold); color: #1a1405; border-color: var(--gold); flex: 1; }
+    .btn.primary:hover { background: #e6c46d; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .invite { display: flex; align-items: center; gap: .5rem; margin-top: .8rem; font-size: .84rem; }
+    #copy-note { color: var(--ok); }
 
-    #otr-picker {
-      background: #111128;
-      border: 2px dashed #2a2a5a;
-      border-radius: 12px;
-      padding: 2rem 3rem;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.2s ease, background 0.2s ease;
-      margin-bottom: 1.5rem;
-    }
+    #status-line { min-height: 1.3em; font-size: .88rem; color: var(--muted); }
+    #error-msg { color: var(--bad); font-size: .88rem; margin-top: .3rem; }
+    #error-msg:empty { display: none; }
 
-    #otr-picker:hover {
-      border-color: #5588ff;
-      background: #15153a;
+    .keys { font-size: .8rem; color: var(--muted); line-height: 1.7; }
+    kbd {
+      font: 600 .74rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+      background: var(--bg-2); border: 1px solid var(--line); border-bottom-width: 2px;
+      border-radius: 4px; padding: .12rem .32rem; margin-right: .2rem;
     }
+    .foot { text-align: center; font-size: .76rem; color: #5f6a78; margin-top: .4rem; }
 
-    #otr-picker p {
-      font-size: 1.05rem;
-      margin-bottom: 0.5rem;
-    }
+    [hidden] { display: none !important; }
 
-    #otr-picker .hint {
-      font-size: 0.82rem;
-      color: #666;
+    /* ---- In-game connection pill ---- */
+    #net-pill {
+      position: fixed; top: 8px; right: 8px; z-index: 50;
+      display: flex; align-items: center; gap: .45rem;
+      font: 600 12px/1 system-ui, sans-serif; color: #f0ede4;
+      background: rgba(10,14,20,.72); border: 1px solid rgba(255,255,255,.12);
+      padding: 6px 10px; border-radius: 999px; pointer-events: none;
+      transition: opacity .6s ease;
     }
+    #net-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); display: block; }
+    #net-pill.ok i { background: var(--ok); }
+    #net-pill.bad i { background: var(--bad); }
+    #net-pill.quiet { opacity: .35; }
+    body.touch #net-pill { top: 52px; }
 
-    #otr-file {
-      display: none;
+    /* ---- Crash card ---- */
+    #crash {
+      position: fixed; inset: 0; z-index: 200; background: rgba(6,9,13,.92);
+      display: grid; place-items: center; padding: 16px;
     }
-
-    #progress-container {
-      width: 320px;
-      display: none;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    #progress-bar-outer {
-      width: 100%;
-      height: 8px;
-      background: #111128;
-      border-radius: 4px;
-      overflow: hidden;
-      margin-bottom: 0.75rem;
-    }
-
-    #progress-bar-inner {
-      width: 0%;
-      height: 100%;
-      background: linear-gradient(90deg, #5588ff, #2244aa);
-      border-radius: 4px;
-      transition: width 0.3s ease;
-    }
-
-    #progress-bar-inner.extracting {
-      transition: none;
-      animation: fake-progress 30s cubic-bezier(0.1, 0.4, 0.2, 0.85) forwards;
-    }
-
-    @keyframes fake-progress {
-      0%   { width: 25%; }
-      100% { width: 90%; }
-    }
-
-    #status {
-      font-size: 0.9rem;
-      color: #aaa;
-      text-align: center;
-      min-height: 1.5em;
-    }
-
-    #error-msg {
-      color: #ff5566;
-      font-size: 0.9rem;
-      margin-top: 0.5rem;
-      min-height: 1.5em;
-      text-align: center;
-    }
+    #crash .panel { max-width: 28rem; }
+    #crash pre { white-space: pre-wrap; word-break: break-word; font-size: .74rem; color: var(--muted); margin-top: .6rem; max-height: 8rem; overflow: auto; }
 
     /* Touch Gamepad */
     #touch-gamepad {
@@ -197,24 +218,95 @@
 </head>
 <body>
   <div id="overlay">
-    <h1>Ship of Harkinian</h1>
-    <p class="subtitle">True Co-op &middot; Horde Night</p>
-
-    <div id="otr-picker" onclick="document.getElementById('otr-file').click()">
-      <p>Click or drag to load game files</p>
-      <p class="hint">Drop your own Ocarina of Time ROM (.z64). It is extracted in your browser and never uploaded.</p>
-    </div>
-    <input type="file" id="otr-file" accept=".otr,.o2r,.z64,.n64,.v64" multiple>
-
-
-    <div id="progress-container">
-      <div id="progress-bar-outer">
-        <div id="progress-bar-inner"></div>
+    <div class="card">
+      <div class="brand">
+        <svg viewBox="0 0 100 88" aria-hidden="true"><path fill="#d9b55b" d="M50 0l25 44H25zM25 44l25 44H0zM75 44l25 44H50z"/></svg>
+        <h1>Ocarina Co-op</h1>
+        <p>Ship of Harkinian &middot; shared enemies &middot; horde night</p>
       </div>
-      <div id="status">Initializing...</div>
-    </div>
 
-    <div id="error-msg"></div>
+      <section class="panel" aria-labelledby="rom-h">
+        <h2 id="rom-h">1 &middot; Game files</h2>
+
+        <div id="rom-loading">
+          <div id="status-line">Loading the game engine&hellip;</div>
+          <div class="bar"><div id="bar"></div></div>
+        </div>
+
+        <div id="rom-need" hidden>
+          <button type="button" id="drop">
+            <strong>Drop your Ocarina of Time ROM</strong>
+            <span class="muted small">or click to choose a .z64 / .n64 / .v64 file. It's unpacked inside this browser and never uploaded.</span>
+          </button>
+          <input type="file" id="rom-file" accept=".z64,.n64,.v64,.o2r,.otr" multiple>
+        </div>
+
+        <div id="rom-ready" class="ready-row" hidden>
+          <span class="tick" aria-hidden="true">&#10003;</span>
+          <span class="grow"><span id="rom-label">ROM ready</span><br><span class="muted small">Stored in this browser. Saves stay here too.</span></span>
+          <button type="button" class="linkish" id="rom-forget">Use a different ROM</button>
+        </div>
+
+        <div id="error-msg" role="alert"></div>
+      </section>
+
+      <form class="panel" id="join" aria-labelledby="join-h" autocomplete="off">
+        <h2 id="join-h">2 &middot; Who's playing</h2>
+        <div class="grid">
+          <label class="f">Your name
+            <input id="f-name" name="name" maxlength="24" placeholder="Tyler" enterkeyhint="go">
+          </label>
+          <label class="f">Room
+            <input id="f-room" name="room" maxlength="32" placeholder="boys" enterkeyhint="go">
+          </label>
+        </div>
+        <div class="f" style="margin-top:.8rem">
+          <span class="muted" style="font-size:.8rem">Fairy color</span>
+          <span class="muted" style="font-size:.76rem;opacity:.8;display:block">How your fairy glows on everyone else's screen.</span>
+          <div class="tunics" role="radiogroup" aria-label="Fairy color">
+            <label class="tunic"><input type="radio" name="tunic" value="3CB043"><i style="background:#3cb043"></i>Green</label>
+            <label class="tunic"><input type="radio" name="tunic" value="D0312D"><i style="background:#d0312d"></i>Red</label>
+            <label class="tunic"><input type="radio" name="tunic" value="2A6FDB"><i style="background:#2a6fdb"></i>Blue</label>
+            <label class="tunic"><input type="radio" name="tunic" value="8E44AD"><i style="background:#8e44ad"></i>Purple</label>
+          </div>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="f-horde">
+          <span>Horde night<br><span class="muted small">Every third night in Hyrule Field and Lon Lon Ranch, the dead come for you. Whoever hosts the room decides.</span></span>
+        </label>
+        <div class="actions">
+          <button class="btn primary" id="btn-join" type="submit" disabled>Join room</button>
+          <button class="btn" id="btn-solo" type="button" disabled>Play solo</button>
+        </div>
+        <div class="invite">
+          <button type="button" class="linkish" id="btn-invite">Copy invite link</button>
+          <span id="copy-note" aria-live="polite"></span>
+        </div>
+      </form>
+
+      <section class="panel">
+        <h2>Controls</h2>
+        <div class="keys">
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move &nbsp;
+          <kbd>X</kbd> A &nbsp; <kbd>C</kbd> B &nbsp; <kbd>Z</kbd> Z-target &nbsp;
+          <kbd>Space</kbd> Start &nbsp; <kbd>E</kbd>/<kbd>R</kbd> L/R &nbsp;
+          arrows C-buttons &nbsp; <kbd>Esc</kbd> settings menu.
+          Controllers work too: press a button once the game is up. Rebind anything in Settings &rarr; Controller; it's remembered.
+        </div>
+      </section>
+      <p class="foot">Bring your own legally dumped ROM. No Nintendo files are hosted here.</p>
+    </div>
+  </div>
+
+  <div id="net-pill" hidden><i></i><span id="net-text"></span></div>
+
+  <div id="crash" hidden>
+    <div class="panel">
+      <h2>The game crashed</h2>
+      <p>Anything you saved before this is kept. Reload to jump back in; the link remembers your room.</p>
+      <div class="actions"><button class="btn primary" type="button" onclick="location.reload()">Reload</button></div>
+      <pre id="crash-detail"></pre>
+    </div>
   </div>
 
   <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
@@ -235,495 +327,487 @@
     <div class="touch-btn" id="tb-r">R</div>
     <div class="touch-btn" id="tb-l">L</div>
     <div class="touch-btn" id="tb-esc">ESC</div>
-    <div class="touch-cbtn" id="tb-cu">▲</div>
-    <div class="touch-cbtn" id="tb-cd">▼</div>
-    <div class="touch-cbtn" id="tb-cl">◀</div>
-    <div class="touch-cbtn" id="tb-cr">▶</div>
+    <div class="touch-cbtn" id="tb-cu">&#9650;</div>
+    <div class="touch-cbtn" id="tb-cd">&#9660;</div>
+    <div class="touch-cbtn" id="tb-cl">&#9664;</div>
+    <div class="touch-cbtn" id="tb-cr">&#9654;</div>
   </div>
 
   <script>
+    // ================= Lobby, game files, and boot =================
     var OTR_DB_NAME = 'soh_otr_files';
     var OTR_DB_STORE = 'otr';
     var OTR_DB_VERSION = 1;
+    var ROM_ARCHIVES = ['oot.o2r', 'oot-mq.o2r'];
 
-
-    var otrFilesReady = false;
     var audioResumed = false;
+    var runtimeReady = false;
+    var sohInstalled = false;
+    var romReady = false;
     var gameStarted = false;
-    var requiredFiles = {};
+    var pendingRomFiles = null; // ROM dropped before the engine finished loading
+    var hashParams = getHashParams();
+    var autoJoin = !!(hashParams.room && hashParams.name);
 
-    // ---- IndexedDB helpers ----
+    function $(id) { return document.getElementById(id); }
 
+    // Per-browser conveniences only (name, tunic). Storage can be blocked.
+    function remember(k, v) { try { localStorage.setItem('soh.' + k, v); } catch (e) {} }
+    function recall(k) { try { return localStorage.getItem('soh.' + k) || ''; } catch (e) { return ''; } }
+
+    // ---- IndexedDB helpers (extracted ROM archives) ----
     function openOtrDB() {
       return new Promise(function(resolve, reject) {
         var req = indexedDB.open(OTR_DB_NAME, OTR_DB_VERSION);
-        req.onupgradeneeded = function(e) {
-          e.target.result.createObjectStore(OTR_DB_STORE);
-        };
+        req.onupgradeneeded = function(e) { e.target.result.createObjectStore(OTR_DB_STORE); };
         req.onsuccess = function(e) { resolve(e.target.result); };
         req.onerror = function(e) { reject(e.target.error); };
       });
     }
-
-    function getCachedFile(name) {
+    function idbDo(mode, fn) {
       return openOtrDB().then(function(db) {
         return new Promise(function(resolve, reject) {
-          var tx = db.transaction(OTR_DB_STORE, 'readonly');
-          var store = tx.objectStore(OTR_DB_STORE);
-          var req = store.get(name);
-          req.onsuccess = function() { resolve(req.result || null); };
-          req.onerror = function() { resolve(null); };
-        });
-      });
-    }
-
-    function cacheFile(name, arrayBuffer) {
-      return openOtrDB().then(function(db) {
-        return new Promise(function(resolve, reject) {
-          var tx = db.transaction(OTR_DB_STORE, 'readwrite');
-          var store = tx.objectStore(OTR_DB_STORE);
-          store.put(arrayBuffer, name);
-          tx.oncomplete = function() { resolve(); };
+          var tx = db.transaction(OTR_DB_STORE, mode);
+          var req = fn(tx.objectStore(OTR_DB_STORE));
+          tx.oncomplete = function() { resolve(req ? req.result : undefined); };
           tx.onerror = function(e) { reject(e.target.error); };
+          tx.onabort = function(e) { reject(e.target.error); };
         });
       });
     }
+    function getCachedFile(name) { return idbDo('readonly', function(s) { return s.get(name); }).then(function(r) { return r || null; }).catch(function() { return null; }); }
+    function cacheFile(name, buf) { return idbDo('readwrite', function(s) { return s.put(buf, name); }); }
+    function deleteCachedFile(name) { return idbDo('readwrite', function(s) { return s.delete(name); }).catch(function() {}); }
+    function listCachedFiles() { return idbDo('readonly', function(s) { return s.getAllKeys(); }).then(function(r) { return r || []; }).catch(function() { return []; }); }
 
-    function listCachedFiles() {
-      return openOtrDB().then(function(db) {
-        return new Promise(function(resolve, reject) {
-          var tx = db.transaction(OTR_DB_STORE, 'readonly');
-          var store = tx.objectStore(OTR_DB_STORE);
-          var req = store.getAllKeys();
-          req.onsuccess = function() { resolve(req.result || []); };
-          req.onerror = function() { resolve([]); };
-        });
-      });
+    // soh.o2r used to be cached here forever, which pinned old builds' assets
+    // after a redeploy. It now comes from the server (ETag-revalidated) each visit.
+    deleteCachedFile('soh.o2r');
+
+    // ---- UI state ----
+    function showError(msg) { $('error-msg').textContent = msg || ''; }
+    function setStatus(msg) { $('status-line').textContent = msg; }
+    function setProgress(pct) { $('bar').style.width = Math.max(0, Math.min(100, pct)) + '%'; }
+    function romView(which) {
+      $('rom-loading').hidden = which !== 'loading';
+      $('rom-need').hidden = which !== 'need';
+      $('rom-ready').hidden = which !== 'ready';
     }
-
-    // ---- UI helpers ----
-
-    function showError(msg) {
-      document.getElementById('error-msg').textContent = msg;
-    }
-
-    function setStatus(msg) {
-      document.getElementById('status').textContent = msg;
-    }
-
-    function setProgress(pct) {
-      document.getElementById('progress-bar-inner').style.width = pct + '%';
-    }
-
-    function showProgress() {
-      document.getElementById('otr-picker').style.display = 'none';
-      document.getElementById('progress-container').style.display = 'flex';
-    }
-
-    function hideProgress() {
-      document.getElementById('otr-picker').style.display = '';
-      document.getElementById('progress-container').style.display = 'none';
+    function refreshButtons() {
+      var engine = runtimeReady && sohInstalled;
+      var ok = engine && romReady && !gameStarted;
+      $('btn-join').textContent = gameStarted ? 'Starting...' : (romReady && !engine ? 'Loading engine...' : 'Join room');
+      $('btn-solo').disabled = !ok;
+      $('btn-join').disabled = !ok || !$('f-name').value.trim() || !$('f-room').value.trim();
     }
 
     function hideOverlay() {
-      var el = document.getElementById('overlay');
+      var el = $('overlay');
       if (el.classList.contains('hidden')) return;
       el.classList.add('hidden');
-      // Fully remove from layout after fade-out transition
-      setTimeout(function() { el.style.display = 'none'; }, 600);
-      document.getElementById('canvas').focus();
+      setTimeout(function() { el.style.display = 'none'; }, 450);
+      $('canvas').focus();
     }
 
-    // ---- Write OTR files to Emscripten FS ----
-
-    function getWritePath() {
-      // Game looks for OTR files relative to cwd which is "/"
-      return '/';
-    }
-
-    function writeOtrToFS(name, arrayBuffer) {
-      try {
-        var data = new Uint8Array(arrayBuffer);
-        var writePath = getWritePath();
-
-        var filePath = writePath + name;
-        FS.writeFile(filePath, data);
-        console.log('[Web] OTR written to ' + filePath + ' (' + data.length + ' bytes)');
-        return true;
-      } catch (e) {
-        showError('Failed to write ' + name + ' to virtual filesystem: ' + e.message);
-        console.error('[Web] writeOtrToFS error:', e);
-        return false;
+    // ---- Form ----
+    (function initForm() {
+      $('f-name').value = hashParams.name || recall('name');
+      $('f-room').value = hashParams.room || recall('room');
+      var tunic = (hashParams.color || recall('color') || '3CB043').toUpperCase();
+      var radios = document.querySelectorAll('input[name=tunic]');
+      var matched = false;
+      for (var i = 0; i < radios.length; i++) {
+        if (radios[i].value === tunic) { radios[i].checked = true; matched = true; }
       }
-    }
-
-    function validateRequiredFiles() {
-      // Check that at least soh.o2r and one oot archive exist in the virtual FS
-      try {
-        var hasSoh = false;
-        var hasOot = false;
-        var files = FS.readdir('/');
-        for (var i = 0; i < files.length; i++) {
-          var f = files[i].toLowerCase();
-          if (f === 'soh.o2r') hasSoh = true;
-          if (f === 'oot.o2r' || f === 'oot-mq.o2r') hasOot = true;
-        }
-        if (!hasSoh) return 'Couldn't download soh.o2r from this server. Try reloading.';
-        if (!hasOot) return 'Drop your Ocarina of Time ROM above to start.';
-        return null;
-      } catch (e) {
-        return null; // FS not ready, let engine handle it
-      }
-    }
-
-    function finalizeOtrLoad() {
-      var error = validateRequiredFiles();
-      if (error) {
-        showError(error);
-        hideProgress();
-        return;
-      }
-
-      otrFilesReady = true;
-      setStatus('Game files loaded. Starting...');
-      setProgress(100);
-
-      // Configure Anchor networking from URL hash before starting the game
-      configureAnchorFromHash();
-
-      // Tell the C side that OTR files are ready
-      if (typeof Module._web_otr_loaded === 'function') {
-        Module._web_otr_loaded();
-      }
-
-      waitForGameRender();
-    }
-
-    // ---- Eager prefetch of soh.o2r ----
-    // Starts immediately at page load, in parallel with WASM compilation.
-    // The result is written to the Emscripten FS once the runtime is ready.
-
-    var _sohO2rPromise = (function() {
-      // First check IndexedDB cache
-      return getCachedFile('soh.o2r').then(function(buf) {
-        if (buf) {
-          console.log('[Web] soh.o2r found in IndexedDB cache (' + buf.byteLength + ' bytes)');
-          return buf;
-        }
-        // Not cached — fetch from server
-        return new Promise(function(resolve, reject) {
-          console.log('[Web] Prefetching soh.o2r from server...');
-          var xhr = new XMLHttpRequest();
-          xhr.open('GET', 'soh.o2r', true);
-          xhr.responseType = 'arraybuffer';
-          xhr.onload = function() {
-            if (xhr.status === 200) {
-              console.log('[Web] soh.o2r downloaded: ' + xhr.response.byteLength + ' bytes');
-              cacheFile('soh.o2r', xhr.response).catch(function() {});
-              resolve(xhr.response);
-            } else {
-              reject('HTTP ' + xhr.status);
-            }
-          };
-          xhr.onerror = function() { reject('network error'); };
-          xhr.send();
-        });
-      }).catch(function(err) {
-        console.warn('[Web] Failed to prefetch soh.o2r:', err);
-        return null;
-      });
+      if (!matched) radios[0].checked = true;
+      $('f-horde').checked = hashParams.horde === '1' || (!('horde' in hashParams) && recall('horde') === '1');
+      ['f-name', 'f-room'].forEach(function(id) { $(id).addEventListener('input', refreshButtons); });
+      if ('ontouchstart' in window || navigator.maxTouchPoints > 0) document.body.classList.add('touch');
     })();
 
-    function installSohO2r() {
-      return _sohO2rPromise.then(function(buf) {
-        if (buf) {
-          writeOtrToFS('soh.o2r', buf);
-          return true;
-        }
-        return false;
-      });
+    function formValues() {
+      var t = document.querySelector('input[name=tunic]:checked');
+      return {
+        name: $('f-name').value.trim().slice(0, 24),
+        room: $('f-room').value.trim().slice(0, 32),
+        color: t ? t.value : '3CB043',
+        horde: $('f-horde').checked
+      };
     }
 
-    // ---- ROM detection helpers ----
+    function buildHash(v, withName) {
+      var parts = ['room=' + encodeURIComponent(v.room)];
+      if (withName) parts.push('name=' + encodeURIComponent(v.name));
+      if (withName) parts.push('color=' + v.color);
+      if (v.horde) parts.push('horde=1');
+      ['team', 'ws', 'hordeforce'].forEach(function(k) {
+        if (hashParams[k]) parts.push(k + '=' + encodeURIComponent(hashParams[k]));
+      });
+      return '#' + parts.join('&');
+    }
 
+    $('join').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var v = formValues();
+      if (!v.name || !v.room) return;
+      startGame(v);
+    });
+    $('btn-solo').addEventListener('click', function() { startGame(null); });
+
+    $('btn-invite').addEventListener('click', function() {
+      var v = formValues();
+      if (!v.room) { $('f-room').focus(); $('copy-note').textContent = 'Pick a room name first.'; return; }
+      var url = location.origin + location.pathname + location.search + buildHash(v, false);
+      var done = function() { $('copy-note').textContent = 'Copied. Friends add their own name.'; };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url).then(done, function() { prompt('Invite link:', url); });
+      } else {
+        prompt('Invite link:', url);
+      }
+    });
+
+    // ---- Writing files into the game's virtual filesystem ----
+    function writeToFS(name, arrayBuffer) {
+      try {
+        FS.writeFile('/' + name, new Uint8Array(arrayBuffer));
+        return true;
+      } catch (e) {
+        showError('Could not load ' + name + ' into the game: ' + e.message);
+        console.error('[Web] write failed', e);
+        return false;
+      }
+    }
+
+    // soh.o2r (Ship of Harkinian's own assets): fetched in parallel with the
+    // engine download. The server revalidates it, so this is a 304 on repeat visits.
+    var sohO2rPromise = fetch('soh.o2r', { cache: 'no-cache' }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.arrayBuffer();
+    }).catch(function(err) {
+      console.warn('[Web] soh.o2r download failed:', err);
+      return null;
+    });
+
+    // ---- ROM handling ----
     function isRomFile(name) {
       var ext = name.toLowerCase().split('.').pop();
       return ext === 'z64' || ext === 'n64' || ext === 'v64';
     }
 
-    // Returns true if the ArrayBuffer looks like an OoT ROM (not SM64).
-    // SM64 US big-endian z64 starts with bytes: 80 37 12 40
-    // OoT  US big-endian z64 starts with bytes: 80 37 12 40... wait, same magic.
-    // Distinguish by the game title at offset 0x20: OoT = "THE LEGEND OF ZELDA"
-    function isOotRom(arrayBuffer) {
-      var view = new DataView(arrayBuffer);
-      var magic = view.getUint32(0, false); // big-endian
-      if (magic !== 0x80371240) return false; // not a valid big-endian N64 ROM
-      // Check game title at offset 0x20 (20 bytes, ASCII)
-      var title = '';
-      for (var i = 0; i < 20; i++) {
-        title += String.fromCharCode(view.getUint8(0x20 + i));
+    // Normalize .v64 (byte-swapped) and .n64 (word-swapped) dumps to .z64 order.
+    // Returns the big-endian buffer, or null if it isn't an N64 ROM at all.
+    function toBigEndianRom(buf) {
+      var b = new Uint8Array(buf);
+      if (b.length < 0x1000) return null;
+      var m = (b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]) >>> 0;
+      if (m === 0x80371240) return buf;
+      var out = new Uint8Array(b.length), i;
+      if (m === 0x37804012) {
+        for (i = 0; i + 1 < b.length; i += 2) { out[i] = b[i + 1]; out[i + 1] = b[i]; }
+        return out.buffer;
       }
-      return title.indexOf('ZELDA') >= 0 || title.indexOf('zelda') >= 0;
+      if (m === 0x40123780) {
+        for (i = 0; i + 3 < b.length; i += 4) { out[i] = b[i + 3]; out[i + 1] = b[i + 2]; out[i + 2] = b[i + 1]; out[i + 3] = b[i]; }
+        return out.buffer;
+      }
+      return null;
     }
 
-    function extractRomInBrowser(romArrayBuffer, romFileName) {
-      setStatus('Writing ROM to virtual filesystem...');
-      setProgress(20);
+    function romTitle(buf) {
+      var b = new Uint8Array(buf, 0x20, 20), s = '';
+      for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+      return s.trim();
+    }
 
-      var romData = new Uint8Array(romArrayBuffer);
+    var EXTRACT_ERRORS = {
+      '-3': "That ROM isn't a version Ship of Harkinian supports. It needs an unmodified Ocarina of Time dump: N64 1.0/1.1/1.2, PAL, or a GameCube version.",
+      '-4': "Unpacking finished without producing game data. Reload and try once more; if it repeats, the browser console has details."
+    };
+
+    function extractRom(romBuf) {
+      romView('loading');
+      setStatus('Unpacking your ROM (about half a minute; the page may freeze briefly)...');
+      setProgress(20);
       try {
-        FS.writeFile('/rom.z64', romData);
+        FS.writeFile('/rom.z64', new Uint8Array(romBuf));
       } catch (e) {
-        showError('Failed to write ROM to virtual filesystem: ' + e.message);
-        hideProgress();
+        showError('Could not load the ROM: ' + e.message);
+        romView('need');
         return;
       }
-
-      setStatus('Extracting ROM assets (~25 seconds)...');
-      setProgress(25);
-
-      // Start CSS animation for fake progress (runs on compositor thread,
-      // keeps animating even while the main thread is blocked by WASM)
-      var bar = document.getElementById('progress-bar-inner');
-      bar.classList.add('extracting');
-
-      // Run extraction (synchronous — ZAPD runs single-threaded)
-      // Use setTimeout to allow the UI/animation to start before blocking
+      var bar = $('bar');
+      bar.classList.add('crawl');
+      // Let the progress animation start before the (blocking) extractor runs.
       setTimeout(function() {
-        var romPathPtr = Module.allocateUTF8('/rom.z64');
-        var outPathPtr = Module.allocateUTF8('/oot.o2r');
-        var result = Module._web_extract_rom(romPathPtr, outPathPtr);
-        Module._free(romPathPtr);
-        Module._free(outPathPtr);
+        var result;
+        try {
+          // ccall puts the strings on the wasm stack and frees them itself. The
+          // old allocateUTF8 + Module._free path threw (_free isn't exported),
+          // so every extraction, good ROM or bad, hung at this step.
+          result = Module.ccall('web_extract_rom', 'number', ['string', 'string'], ['/rom.z64', '/oot.o2r']);
+        } catch (e) {
+          console.error('[Web] extractor crashed', e);
+          result = -4;
+        }
+        try { FS.unlink('/rom.z64'); } catch (e) {}
+        bar.classList.remove('crawl');
 
         if (result < 0) {
-          bar.classList.remove('extracting');
-          showError('ROM extraction failed (error ' + result + '). Check the browser console for details.');
-          hideProgress();
-          try { FS.unlink('/rom.z64'); } catch(e) {}
+          showError(EXTRACT_ERRORS[String(result)] || ('Unpacking failed (error ' + result + ').'));
+          romView('need');
           return;
         }
-
-        // result: 0 = vanilla (oot.o2r), 1 = MQ (oot-mq.o2r)
-        var actualOutputName = result === 1 ? 'oot-mq.o2r' : 'oot.o2r';
-        var actualOutputPath = '/' + actualOutputName;
-
-        // Stop fake progress animation and jump to real progress
-        bar.classList.remove('extracting');
-        setStatus('Caching extracted archive...');
-        setProgress(80);
-
-        // Read the generated .o2r from MEMFS and cache it
-        try {
-          var o2rData = FS.readFile(actualOutputPath);
-          var o2rBuffer = o2rData.buffer;
-
-          cacheFile(actualOutputName, o2rBuffer).then(function() {
-            console.log('[Web] Cached ' + actualOutputName + ' to IndexedDB (' + o2rData.length + ' bytes)');
-            // Clean up ROM from MEMFS (save memory)
-            try { FS.unlink('/rom.z64'); } catch(e) {}
-            setProgress(90);
-            setStatus('Extraction complete.');
-            finalizeOtrLoad();
-          }).catch(function(err) {
-            console.warn('[Web] Failed to cache ' + actualOutputName + ':', err);
-            try { FS.unlink('/rom.z64'); } catch(e) {}
-            finalizeOtrLoad();
-          });
-        } catch (e) {
-          showError('Failed to read extracted archive: ' + e.message);
-          hideProgress();
+        var name = result === 1 ? 'oot-mq.o2r' : 'oot.o2r';
+        setStatus('Saving the unpacked game in this browser...');
+        setProgress(94);
+        var data;
+        try { data = FS.readFile('/' + name); } catch (e) {
+          showError('Could not read the unpacked game: ' + e.message);
+          romView('need');
+          return;
         }
-      }, 50);
+        // Slice to an exact-size buffer: FS.readFile can hand back a view on a larger one.
+        var exact = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        cacheFile(name, exact).catch(function(err) {
+          console.warn('[Web] Could not store ' + name + ' (you will need to drop the ROM again next visit):', err);
+        }).then(function() {
+          setRomReady([name], true);
+        });
+      }, 60);
     }
 
-    // ---- File handler ----
-
-    function handleOtrFiles(files) {
+    function handleFiles(files) {
       showError('');
-      showProgress();
-      setStatus('Reading game files...');
-      setProgress(10);
-
-      var romFiles = [];
-      var otrFiles = [];
-
-      for (var i = 0; i < files.length; i++) {
-        if (isRomFile(files[i].name)) {
-          romFiles.push(files[i]);
-        } else {
-          otrFiles.push(files[i]);
-        }
-      }
-
-      var processed = 0;
-      var totalOtr = otrFiles.length;
-      var pendingRom = romFiles.length > 0 ? romFiles[0] : null;
-
-      function onAllOtrProcessed() {
-        if (pendingRom) {
-          // Read and validate the ROM before extracting
-          setStatus('Reading ROM file...');
-          setProgress(15);
-          var reader = new FileReader();
-          reader.onload = function(e) {
-            var buf = e.target.result;
-            // Reject SM64 ROMs accidentally dropped on the OoT picker
-            if (!isOotRom(buf)) {
-              showError('Unrecognized ROM. Please provide an Ocarina of Time .z64 ROM.');
-              hideProgress();
-              return;
-            }
-            extractRomInBrowser(buf, pendingRom.name);
-          };
-          reader.onerror = function() {
-            showError('Failed to read ROM file: ' + pendingRom.name);
-            hideProgress();
-          };
-          reader.readAsArrayBuffer(pendingRom);
-        } else {
-          setProgress(90);
-          setStatus('All files loaded.');
-          finalizeOtrLoad();
-        }
-      }
-
-      if (totalOtr === 0) {
-        onAllOtrProcessed();
+      if (!runtimeReady) {
+        pendingRomFiles = files;
+        romView('loading');
+        setStatus('Got it. Waiting for the game engine to finish loading...');
         return;
       }
+      var rom = null, archives = [];
+      for (var i = 0; i < files.length; i++) {
+        if (isRomFile(files[i].name)) rom = rom || files[i];
+        else if (/\.(o2r|otr)$/i.test(files[i].name)) archives.push(files[i]);
+      }
+      if (!rom && !archives.length) {
+        showError("That doesn't look like a ROM. Drop the .z64 (or .n64 / .v64) file.");
+        return;
+      }
+      if (rom) {
+        romView('loading');
+        setStatus('Reading ' + rom.name + '...');
+        setProgress(10);
+        rom.arrayBuffer().then(function(buf) {
+          var be = toBigEndianRom(buf);
+          if (!be) { showError("That file isn't an N64 ROM."); romView('need'); return; }
+          if (romTitle(be).toUpperCase().indexOf('ZELDA') < 0) {
+            showError('That ROM is "' + romTitle(be) + '". This needs Ocarina of Time.');
+            romView('need');
+            return;
+          }
+          extractRom(be);
+        }, function() { showError('Could not read ' + rom.name + '.'); romView('need'); });
+        return;
+      }
+      // Pre-extracted archives (advanced): store and use them as-is.
+      Promise.all(archives.map(function(f) {
+        var name = f.name.toLowerCase();
+        return f.arrayBuffer().then(function(buf) {
+          return cacheFile(name, buf).catch(function() {}).then(function() { writeToFS(name, buf); return name; });
+        });
+      })).then(function(names) {
+        var oot = names.filter(function(n) { return ROM_ARCHIVES.indexOf(n) >= 0; });
+        if (oot.length) setRomReady(oot, true);
+        else showError('Those files are loaded, but the game still needs your Ocarina of Time ROM.');
+      });
+    }
 
-      for (var i = 0; i < otrFiles.length; i++) {
-        (function(file) {
-          var reader = new FileReader();
-          reader.onload = function(e) {
-            var buf = e.target.result;
-            var name = file.name.toLowerCase();
+    $('drop').addEventListener('click', function() { $('rom-file').click(); });
+    $('rom-file').addEventListener('change', function(e) {
+      if (e.target.files.length) handleFiles(e.target.files);
+      e.target.value = '';
+    });
+    document.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      if (!gameStarted) $('drop').classList.add('over');
+    });
+    document.addEventListener('dragleave', function() { $('drop').classList.remove('over'); });
+    document.addEventListener('drop', function(e) {
+      e.preventDefault();
+      $('drop').classList.remove('over');
+      if (!gameStarted && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+    });
 
-            setProgress(10 + (processed / totalOtr) * 60);
-            setStatus('Caching ' + file.name + '...');
+    $('rom-forget').addEventListener('click', function() {
+      Promise.all(ROM_ARCHIVES.map(deleteCachedFile)).then(function() {
+        ROM_ARCHIVES.forEach(function(n) { try { FS.unlink('/' + n); } catch (e) {} });
+        romReady = false;
+        romView('need');
+        refreshButtons();
+      });
+    });
 
-            // Cache for future visits
-            cacheFile(name, buf).then(function() {
-              writeOtrToFS(name, buf);
-              processed++;
-              if (processed === totalOtr) {
-                onAllOtrProcessed();
-              }
-            }).catch(function() {
-              writeOtrToFS(name, buf);
-              processed++;
-              if (processed === totalOtr) {
-                onAllOtrProcessed();
-              }
-            });
-          };
-          reader.onerror = function() {
-            showError('Failed to read ' + file.name);
-          };
-          reader.readAsArrayBuffer(file);
-        })(otrFiles[i]);
+    // names: archives now in the FS (alreadyInFS) or in the cache.
+    function setRomReady(names, alreadyInFS) {
+      romReady = true;
+      romReadyNames = names;
+      romInFS = !!alreadyInFS;
+      var mq = names.indexOf('oot-mq.o2r') >= 0, vanilla = names.indexOf('oot.o2r') >= 0;
+      $('rom-label').textContent = 'Ocarina of Time ready' + (mq && vanilla ? ' (vanilla + Master Quest)' : mq ? ' (Master Quest)' : '');
+      romView('ready');
+      refreshButtons();
+      maybeAutoJoin();
+    }
+    var romReadyNames = [];
+    var romInFS = false;
+
+    function checkCachedRom() {
+      return listCachedFiles().then(function(keys) {
+        var have = keys.filter(function(k) { return ROM_ARCHIVES.indexOf(k) >= 0; });
+        if (have.length) setRomReady(have, false);
+        else if (runtimeReady) romView('need');
+        return have.length > 0;
+      });
+    }
+
+    function maybeAutoJoin() {
+      if (autoJoin && !gameStarted && romReady && runtimeReady && sohInstalled) {
+        startGame(formValues());
       }
     }
 
-    document.getElementById('otr-file').addEventListener('change', function(e) {
-      if (e.target.files.length > 0) {
-        handleOtrFiles(e.target.files);
+    // ---- Start ----
+    function startGame(v) {
+      if (gameStarted) return;
+      gameStarted = true;
+      refreshButtons();
+      showError('');
+
+      if (v) {
+        remember('name', v.name); remember('room', v.room); remember('color', v.color);
+        remember('horde', v.horde ? '1' : '0');
+        // The link now reflects this session, so a reload rejoins directly.
+        try { history.replaceState(null, '', location.pathname + location.search + buildHash(v, true)); } catch (e) {}
+        window._anchorConfig = {
+          room: v.room, name: v.name, color: v.color, team: hashParams.team || 'default',
+          ws: hashParams.ws || '', horde: v.horde ? '1' : '0', hordeforce: hashParams.hordeforce || ''
+        };
+        NetPill.start(v.room);
+      } else {
+        delete window._anchorConfig;
       }
+
+      romView('loading');
+      setStatus('Starting...');
+      setProgress(96);
+
+      var load = romInFS ? Promise.resolve() : Promise.all(romReadyNames.map(function(n) {
+        return getCachedFile(n).then(function(buf) { if (buf) writeToFS(n, buf); });
+      }));
+      load.then(function() {
+        var hasOot = ROM_ARCHIVES.some(function(n) { try { FS.stat('/' + n); return true; } catch (e) { return false; } });
+        if (!hasOot) {
+          gameStarted = false;
+          showError('The stored game files are gone (browser storage was cleared?). Drop your ROM again.');
+          romReady = false;
+          romView('need');
+          refreshButtons();
+          return;
+        }
+        setProgress(100);
+        Module._web_otr_loaded();
+        keepAwake();
+        window.addEventListener('beforeunload', function(e) {
+          e.preventDefault();
+          e.returnValue = '';
+        });
+        waitForGameRender();
+      });
+    }
+
+    function waitForGameRender() {
+      // The engine draws its first frame within a second or two; there's no
+      // reliable readback from the canvas, so fade the lobby after a short beat.
+      setTimeout(hideOverlay, 1500);
+    }
+
+    // ---- Screen wake lock (phones/tablets dim mid-fight otherwise) ----
+    var wakeLock = null;
+    function keepAwake() {
+      if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+      navigator.wakeLock.request('screen').then(function(l) { wakeLock = l; }, function() {});
+    }
+
+    // ---- Background tabs keep the game ticking (see web_set_hidden) ----
+    document.addEventListener('visibilitychange', function() {
+      if (!runtimeReady || typeof Module._web_set_hidden !== 'function') return;
+      try { Module._web_set_hidden(document.visibilityState === 'hidden' ? 1 : 0); } catch (e) {}
+      if (gameStarted && document.visibilityState === 'visible') keepAwake();
     });
 
-    // Drag-and-drop
-    document.addEventListener('dragover', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-    });
-    document.addEventListener('drop', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.dataTransfer.files.length > 0) {
-        handleOtrFiles(e.dataTransfer.files);
+    // ---- Connection pill (driven from WebSocket.cpp via window.SohNet) ----
+    var NetPill = (function() {
+      var room = '', everConnected = false, quietTimer = null, active = false;
+      function set(cls, text, quiet) {
+        var el = $('net-pill');
+        el.hidden = false;
+        el.className = cls + (quiet ? ' quiet' : '');
+        $('net-text').textContent = text;
+        clearTimeout(quietTimer);
+        if (cls === 'ok') quietTimer = setTimeout(function() { el.classList.add('quiet'); }, 5000);
       }
+      return {
+        start: function(r) { room = r; active = true; set('', 'Connecting to ' + room + '...'); },
+        state: function(s) {
+          if (!active) return;
+          if (s === 2) { everConnected = true; set('ok', room); }
+          else if (s === 1) set('', (everConnected ? 'Reconnecting to ' : 'Connecting to ') + room + '...');
+          else set('bad', everConnected ? 'Disconnected, retrying...' : "Can't reach the co-op server, retrying...");
+        }
+      };
+    })();
+    window.SohNet = { state: function(s) { NetPill.state(s); } };
+
+    // ---- Crash handling ----
+    var crashed = false;
+    function showCrash(detail) {
+      if (crashed) return;
+      crashed = true;
+      if (!runtimeReady) {
+        // Died while downloading/compiling: a network hiccup, not a game crash.
+        $('crash').querySelector('h2').textContent = "The game didn't finish loading";
+        $('crash').querySelector('p').textContent = 'Usually a dropped download. Reload to try again.';
+      }
+      $('crash-detail').textContent = String(detail || '').slice(0, 600);
+      $('crash').hidden = false;
+      try { if (window.sohPersist) window.sohPersist(); } catch (e) {}
+    }
+    window.addEventListener('error', function(e) {
+      var msg = (e && (e.message || (e.error && e.error.message))) || '';
+      if (/abort|RuntimeError|unreachable|memory access out of bounds/i.test(msg)) showCrash(msg);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var msg = e && e.reason && (e.reason.message || String(e.reason));
+      if (msg && /abort|RuntimeError|unreachable/i.test(msg)) showCrash(msg);
     });
 
     // ---- Audio context resume ----
-    // iOS problem: Emscripten's SDL2 registers one-shot (listenOnce) gesture
-    // listeners via autoResumeAudioContext. These fire and are removed before
-    // SDL has created its AudioContext on first page load. After that, no
-    // listeners remain and audio is permanently broken.
-    //
-    // Fix: Register PERSISTENT listeners that keep trying on every interaction.
-
+    // iOS problem: Emscripten's SDL2 registers one-shot gesture listeners before
+    // SDL has created its AudioContext; keep trying on every interaction instead.
     function resumeAudio() {
       if (audioResumed) return;
       try {
         var ctx = Module.SDL2 && Module.SDL2.audioContext;
         if (!ctx) return;
-        if (ctx.state === 'running') {
-          audioResumed = true;
-          return;
-        }
+        if (ctx.state === 'running') { audioResumed = true; return; }
         if (ctx.state === 'suspended') {
-          ctx.resume().then(function() {
-            if (ctx.state === 'running') {
-              audioResumed = true;
-              console.log('[Web] AudioContext resumed');
-            }
-          }).catch(function() {});
+          ctx.resume().then(function() { if (ctx.state === 'running') audioResumed = true; }).catch(function() {});
         }
-      } catch(e) {}
+      } catch (e) {}
     }
-
-    // Persistent listeners on document (unlike Emscripten's one-shot listeners)
     ['click', 'mousedown', 'keydown', 'touchstart', 'touchend', 'pointerdown', 'pointerup'].forEach(function(evt) {
       document.addEventListener(evt, resumeAudio, true);
     });
-
-    // Also bind directly on the canvas once it exists
-    function bindCanvasAudio() {
-      var c = document.getElementById('canvas');
-      if (c && !c._audioBound) {
-        c._audioBound = true;
-        ['touchstart', 'touchend', 'mousedown', 'click', 'pointerdown', 'pointerup'].forEach(function(evt) {
-          c.addEventListener(evt, resumeAudio, true);
-        });
-      }
-    }
-    bindCanvasAudio();
-    setTimeout(bindCanvasAudio, 2000);
-
-    // ---- Watch for game rendering ----
-
-    function waitForGameRender() {
-      var canvas = document.getElementById('canvas');
-      var checkInterval = setInterval(function() {
-        try {
-          var ctx = canvas.getContext('webgl2') || canvas.getContext('webgl');
-          if (ctx) {
-            // Check if the canvas has any non-zero pixels anywhere (not just center)
-            var pixels = new Uint8Array(4);
-            // Sample a few points — game may render non-black outside center
-            var points = [
-              [canvas.width/2, canvas.height/2],
-              [canvas.width/4, canvas.height/4],
-              [canvas.width*3/4, canvas.height/4]
-            ];
-            for (var i = 0; i < points.length; i++) {
-              ctx.readPixels(points[i][0], points[i][1], 1, 1, ctx.RGBA, ctx.UNSIGNED_BYTE, pixels);
-              if (pixels[0] > 0 || pixels[1] > 0 || pixels[2] > 0) {
-                hideOverlay();
-                clearInterval(checkInterval);
-                return;
-              }
-            }
-          }
-        } catch(e) {}
-      }, 200);
-      // Fallback: hide after 5 seconds regardless
-      setTimeout(function() { clearInterval(checkInterval); hideOverlay(); }, 5000);
-    }
-
-    // ---- URL hash parameter: #rom=URL ----
 
     function getHashParams() {
       var params = {};
@@ -732,276 +816,52 @@
       hash.split('&').forEach(function(part) {
         var eq = part.indexOf('=');
         if (eq > 0) {
-          params[decodeURIComponent(part.substring(0, eq))] = decodeURIComponent(part.substring(eq + 1));
+          try { params[decodeURIComponent(part.substring(0, eq))] = decodeURIComponent(part.substring(eq + 1)); } catch (e) {}
         }
       });
       return params;
     }
 
-    function fetchRomFromUrl(url) {
-      showProgress();
-      setStatus('Downloading ROM from URL...');
-      setProgress(5);
-      console.log('[Web] Fetching ROM from: ' + url);
-
-      var xhr = new XMLHttpRequest();
-      xhr.open('GET', url, true);
-      xhr.responseType = 'arraybuffer';
-
-      xhr.onprogress = function(e) {
-        if (e.lengthComputable) {
-          var pct = Math.round((e.loaded / e.total) * 100);
-          setProgress(5 + pct * 0.4);
-          setStatus('Downloading ROM... ' + pct + '%');
-        }
-      };
-
-      xhr.onload = function() {
-        if (xhr.status === 200) {
-          console.log('[Web] ROM downloaded: ' + xhr.response.byteLength + ' bytes');
-          setStatus('ROM downloaded. Preparing extraction...');
-          setProgress(50);
-
-          // Determine filename from URL or use default
-          var urlPath = url.split('?')[0].split('#')[0];
-          var fileName = urlPath.split('/').pop() || 'rom.z64';
-          if (!isRomFile(fileName)) fileName = 'rom.z64';
-
-          extractRomInBrowser(xhr.response, fileName);
-        } else {
-          showError('Failed to download ROM: HTTP ' + xhr.status);
-          hideProgress();
-        }
-      };
-
-      xhr.onerror = function() {
-        showError('Failed to download ROM. Check CORS and URL.');
-        hideProgress();
-      };
-
-      xhr.send();
-    }
-
-    function checkHashRom() {
-      var params = getHashParams();
-      if (params.rom) {
-        fetchRomFromUrl(params.rom);
-        return true;
-      }
-      return false;
-    }
-
-    // ---- URL hash parameter: #soh=URL&oot=URL for .o2r files ----
-
-    // Convert Google Drive share URLs to direct download URLs
-    function toDirectUrl(url) {
-      var match = url.match(/drive\.google\.com\/file\/d\/([^\/]+)/);
-      if (match) {
-        return 'https://drive.google.com/uc?export=download&id=' + match[1];
-      }
-      return url;
-    }
-
-    function fetchO2rFromUrl(url, name, onProgress, onDone) {
-      var directUrl = toDirectUrl(url);
-      console.log('[Web] Fetching ' + name + ' from: ' + directUrl);
-
-      var xhr = new XMLHttpRequest();
-      xhr.open('GET', directUrl, true);
-      xhr.responseType = 'arraybuffer';
-
-      xhr.onprogress = function(e) {
-        if (e.lengthComputable) {
-          onProgress(e.loaded, e.total);
-        }
-      };
-
-      xhr.onload = function() {
-        if (xhr.status === 200) {
-          var buf = xhr.response;
-          console.log('[Web] Downloaded ' + name + ': ' + buf.byteLength + ' bytes');
-          cacheFile(name, buf).then(function() {
-            writeOtrToFS(name, buf);
-            onDone(null);
-          }).catch(function() {
-            writeOtrToFS(name, buf);
-            onDone(null);
-          });
-        } else {
-          onDone('HTTP ' + xhr.status);
-        }
-      };
-
-      xhr.onerror = function() {
-        onDone('Network error (check CORS)');
-      };
-
-      xhr.send();
-    }
-
-    function checkHashO2r() {
-      var params = getHashParams();
-      if (!params.soh && !params.oot) return false;
-
-      showProgress();
-      var downloads = [];
-      if (params.soh) downloads.push({ url: params.soh, name: 'soh.o2r' });
-      if (params.oot) downloads.push({ url: params.oot, name: 'oot.o2r' });
-
-      var completed = 0;
-      var total = downloads.length;
-      var errors = [];
-
-      setStatus('Downloading game archives (' + total + ' files)...');
-      setProgress(5);
-
-      downloads.forEach(function(dl, idx) {
-        fetchO2rFromUrl(dl.url, dl.name,
-          function(loaded, fileTotal) {
-            var filePct = Math.round((loaded / fileTotal) * 100);
-            setStatus('Downloading ' + dl.name + '... ' + filePct + '%');
-            var overallPct = 5 + ((completed + (loaded / fileTotal)) / total) * 85;
-            setProgress(Math.round(overallPct));
-          },
-          function(err) {
-            completed++;
-            if (err) errors.push(dl.name + ': ' + err);
-            if (completed === total) {
-              if (errors.length > 0) {
-                showError('Download failed: ' + errors.join(', '));
-                hideProgress();
-              } else {
-                setProgress(95);
-                setStatus('All archives downloaded.');
-                finalizeOtrLoad();
-              }
-            }
-          }
-        );
-      });
-
-      return true;
-    }
-
-    // ---- URL hash parameter: Anchor co-op config ----
-    // Params: room, name, color (hex RGB), team, ws (relay URL override)
-    // Example: #room=myroom&name=Player1&color=FF0000&team=red
-
-    function configureAnchorFromHash() {
-      var params = getHashParams();
-      if (!params.room && !params.name && !params.color && !params.team && !params.ws &&
-          !params.horde && !params.hordeforce) return false;
-
-      // Store config as globals for C++ to read via EM_JS during game init
-      window._anchorConfig = {
-        room:  params.room  || 'default',
-        name:  params.name  || '',
-        color: params.color || '',
-        team:  params.team  || 'default',
-        ws:    params.ws    || '',  // optional relay override; default is wss://<this host>/anchor
-        horde: params.horde || '',  // 1 = horde night mode on
-        hordeforce: params.hordeforce || ''  // 1 = treat now as a horde night (testing)
-      };
-
-      console.log('[Web] Anchor config stored for game init:', window._anchorConfig);
-      return true;
-    }
-
-    // ---- Check for cached OTR files on load ----
-
-    function checkCachedOtr() {
-      listCachedFiles().then(function(keys) {
-        if (keys.length > 0) {
-          showProgress();
-          setStatus('Found cached game files. Loading...');
-          setProgress(10);
-
-          var loaded = 0;
-          var total = keys.length;
-
-          function tryLoadCached() {
-            if (typeof FS === 'undefined') {
-              setTimeout(tryLoadCached, 100);
-              return;
-            }
-
-            keys.forEach(function(key) {
-              getCachedFile(key).then(function(buf) {
-                if (buf) {
-                  writeOtrToFS(key, buf);
-                }
-                loaded++;
-                setProgress(10 + (loaded / total) * 80);
-                if (loaded === total) {
-                  finalizeOtrLoad();
-                }
-              });
-            });
-          }
-
-          tryLoadCached();
-        }
-      }).catch(function() {
-        // No cached files
-      });
-    }
+    // Lobby shows the cached ROM state right away, before the engine finishes.
+    checkCachedRom();
 
     // ---- Emscripten Module configuration ----
-
     var Module = {
-      canvas: (function() {
-        return document.getElementById('canvas');
-      })(),
-
+      canvas: (function() { return document.getElementById('canvas'); })(),
       noInitialRun: false,
-
-      print: function(text) {
-        console.log('[SOH] ' + text);
-      },
-
-      printErr: function(text) {
-        console.error('[SOH] ' + text);
-      },
-
+      print: function(text) { console.log('[SOH] ' + text); },
+      printErr: function(text) { console.error('[SOH] ' + text); },
       setStatus: function(text) {
-        if (text) {
-          setStatus(text);
+        if (!text || runtimeReady) return;
+        var m = text.match(/\((\d+(?:\.\d+)?)\/(\d+)\)/);
+        if (m) {
+          var pct = Math.round(parseFloat(m[1]) / parseInt(m[2], 10) * 100);
+          setStatus('Downloading the game engine... ' + pct + '%');
+          setProgress(pct * 0.9);
         }
       },
-
       monitorRunDependencies: function(left) {
-        if (left === 0) {
-          setStatus('All dependencies loaded.');
-        } else {
-          setStatus('Loading... (' + left + ' remaining)');
-        }
+        if (!runtimeReady && left === 0) setStatus('Starting the engine...');
       },
-
+      onAbort: function(what) { showCrash(what); },
       onRuntimeInitialized: function() {
-        setStatus('Runtime initialized. Loading game files...');
-        // Install soh.o2r (prefetched during page load) before any other file logic
-        installSohO2r().then(function(installed) {
-          if (installed) {
-            console.log('[Web] soh.o2r installed to virtual filesystem');
+        runtimeReady = true;
+        sohO2rPromise.then(function(buf) {
+          if (!buf || !writeToFS('soh.o2r', buf)) {
+            showError("Couldn't download the game's support files from this server. Reload to retry.");
+            return;
           }
-          // Check URL hash for o2r/ROM parameters first, then fall back to cached files
-          if (checkHashO2r()) {
-            // Downloading o2r files from URL hash
-          } else if (!checkHashRom()) {
-            checkCachedOtr();
+          sohInstalled = true;
+          if (pendingRomFiles) {
+            var f = pendingRomFiles;
+            pendingRomFiles = null;
+            handleFiles(f);
+            return;
           }
+          if (!romReady) checkCachedRom(); else { refreshButtons(); maybeAutoJoin(); }
         });
       },
-
-      locateFile: function(path) {
-        return path;
-      }
-    };
-
-    window.onerror = function(msg) {
-      if (msg && msg.indexOf('abort') !== -1) {
-        showError('An error occurred. Check the browser console for details.');
-      }
+      locateFile: function(path) { return path; }
     };
 
     // ---- Touch Gamepad (UI only — WASM integration handled separately) ----

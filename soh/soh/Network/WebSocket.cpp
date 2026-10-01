@@ -23,10 +23,24 @@ bool WebSocketClient::Poll(std::string& outMessage) {
 }
 
 #ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+// Connection state for the page's status pill (shell.html): 0 offline,
+// 1 connecting, 2 connected.
+static void NotifyPage(int state) {
+    EM_ASM({ if (typeof window.SohNet !== 'undefined') window.SohNet.state($0); }, state);
+}
 
 bool WebSocketClient::Connect(const std::string& url) {
     if (mConnected) {
         return true;
+    }
+    // Reconnect: release the previous (closed or failed) socket first. Leaving
+    // it registered leaked one handle per retry and let its late close event
+    // flip the new connection's state.
+    if (mSocket > 0) {
+        emscripten_websocket_delete(mSocket);
+        mSocket = 0;
     }
 
     EmscriptenWebSocketCreateAttributes attrs;
@@ -46,6 +60,7 @@ bool WebSocketClient::Connect(const std::string& url) {
     emscripten_websocket_set_onerror_callback(mSocket, this, OnError);
 
     SPDLOG_INFO("[WebSocket] Connecting to {}", url);
+    NotifyPage(1);
     return true;
 }
 
@@ -56,6 +71,7 @@ void WebSocketClient::Disconnect() {
         mSocket = 0;
     }
     mConnected = false;
+    NotifyPage(0);
 }
 
 void WebSocketClient::Send(const std::string& data) {
@@ -67,8 +83,12 @@ void WebSocketClient::Send(const std::string& data) {
 
 EM_BOOL WebSocketClient::OnOpen(int eventType, const EmscriptenWebSocketOpenEvent* event, void* userData) {
     auto* self = static_cast<WebSocketClient*>(userData);
+    if (event->socket != self->mSocket) {
+        return EM_TRUE; // stale socket from an earlier attempt
+    }
     self->mConnected = true;
     SPDLOG_INFO("[WebSocket] Connected!");
+    NotifyPage(2);
     if (self->mOnConnect) {
         self->mOnConnect();
     }
@@ -77,6 +97,9 @@ EM_BOOL WebSocketClient::OnOpen(int eventType, const EmscriptenWebSocketOpenEven
 
 EM_BOOL WebSocketClient::OnMessage(int eventType, const EmscriptenWebSocketMessageEvent* event, void* userData) {
     auto* self = static_cast<WebSocketClient*>(userData);
+    if (event->socket != self->mSocket) {
+        return EM_TRUE;
+    }
     if (event->isText) {
         std::string msg((const char*)event->data, event->numBytes);
         std::lock_guard<std::mutex> lock(self->mQueueMutex);
@@ -87,9 +110,13 @@ EM_BOOL WebSocketClient::OnMessage(int eventType, const EmscriptenWebSocketMessa
 
 EM_BOOL WebSocketClient::OnClose(int eventType, const EmscriptenWebSocketCloseEvent* event, void* userData) {
     auto* self = static_cast<WebSocketClient*>(userData);
+    if (event->socket != self->mSocket) {
+        return EM_TRUE;
+    }
     self->mConnected = false;
-    std::string reason = event->reason ? event->reason : "";
+    std::string reason = event->reason;
     SPDLOG_INFO("[WebSocket] Disconnected (code={}, reason={})", event->code, reason);
+    NotifyPage(0);
     if (self->mOnDisconnect) {
         self->mOnDisconnect();
     }

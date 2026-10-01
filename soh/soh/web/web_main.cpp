@@ -109,9 +109,10 @@ void web_apply_anchor_config() {
     free(defUrl);
 
     if (!web_has_anchor_config()) {
-        if (std::string(CVarGetString(CVAR_REMOTE_ANCHOR("WebSocketURL"), "")).empty()) {
-            CVarSetString(CVAR_REMOTE_ANCHOR("WebSocketURL"), wsUrl.c_str());
-        }
+        // Solo (no co-op link). Settings now persist across visits, so a co-op
+        // session's Enabled=1 would otherwise auto-connect a solo game next time.
+        CVarSetString(CVAR_REMOTE_ANCHOR("WebSocketURL"), wsUrl.c_str());
+        CVarSetInteger(CVAR_REMOTE_ANCHOR("Enabled"), 0);
         return;
     }
 
@@ -185,38 +186,96 @@ int web_get_otr_status(void) {
 
 EMSCRIPTEN_KEEPALIVE
 void web_save_to_idb(void) {
-    emscripten_run_script(
-        "if (typeof FS !== 'undefined' && FS.syncfs) {"
-        "  FS.syncfs(false, function(err) {"
-        "    if (err) console.error('[Web] FS.syncfs save failed:', err);"
-        "    else console.log('[Web] FS.syncfs save complete.');"
-        "  });"
-        "}"
-    );
+    EM_ASM({ if (window.sohPersist) window.sohPersist(); });
+}
+
+// Background tabs get no requestAnimationFrame, so the game (and its Anchor
+// traffic) froze whenever someone tabbed out. For the room's authority that
+// froze every enemy for everyone. While hidden, drive the loop from timers.
+// Browsers keep ~60 Hz timers for tabs that are playing audio; a silent tab
+// may drop to 1 Hz, which still keeps the connection and authority alive.
+EMSCRIPTEN_KEEPALIVE
+void web_set_hidden(int hidden) {
+    if (hidden) {
+        emscripten_set_main_loop_timing(EM_TIMING_SETTIMEOUT, 16);
+    } else {
+        emscripten_set_main_loop_timing(EM_TIMING_RAF, 1);
+    }
 }
 
 // Track whether IDBFS has finished loading from IndexedDB
 static volatile int s_idbfs_ready = 0;
 
 EM_JS(void, web_mount_idbfs, (), {
-    // Mount IDBFS at the actual directories the game uses:
-    // GetAppDirectoryPath() returns "." on Emscripten, so saves go to ./Save/
-    // and config goes to ./  (cvars.cfg, imgui.ini)
-    var dirs = ["/Save"];
+    // Two persistent directories:
+    //   /Save     save files (the game writes there directly)
+    //   /persist  copies of settings files that live in "/" (cvars, controller
+    //             bindings, window layout). "/" itself cannot be an IDBFS mount
+    //             (the game archives are written there), so they are copied in
+    //             before boot and copied back on every sync.
+    var dirs = ["/Save", "/persist"];
     for (var i = 0; i < dirs.length; i++) {
         try { FS.mkdir(dirs[i]); } catch (e) { /* may exist */ }
         FS.mount(IDBFS, {}, dirs[i]);
     }
+    var settingsFiles = ["shipofharkinian.json", "imgui.ini"];
+
+    var syncing = false, again = false;
+    // Copy settings into /persist and flush both mounts to IndexedDB. Safe to
+    // call often: overlapping calls coalesce into one follow-up sync.
+    window.sohPersist = function() {
+        if (!window._sohIdbReady) return;
+        if (syncing) { again = true; return; }
+        for (var i = 0; i < settingsFiles.length; i++) {
+            try {
+                var data = FS.readFile("/" + settingsFiles[i]);
+                var dst = "/persist/" + settingsFiles[i];
+                var same = false;
+                try {
+                    var old = FS.readFile(dst);
+                    if (old.length === data.length) {
+                        same = true;
+                        for (var j = 0; j < data.length; j++) { if (old[j] !== data[j]) { same = false; break; } }
+                    }
+                } catch (e) {}
+                if (!same) FS.writeFile(dst, data);
+            } catch (e) { /* not written yet */ }
+        }
+        syncing = true;
+        FS.syncfs(false, function(err) {
+            syncing = false;
+            if (err) console.error("[Web] Saving to browser storage failed:", err);
+            if (again) { again = false; window.sohPersist(); }
+        });
+    };
+
     FS.syncfs(true, function(err) {
         if (err) {
             console.error("[Web] IDBFS load failed:", err);
         } else {
-            console.log("[Web] IDBFS loaded. Files in /Save/:");
-            try {
-                var files = FS.readdir("/Save");
-                console.log("[Web]   " + files.join(", "));
-            } catch(e) {}
+            try { console.log("[Web] IDBFS loaded. Saves: " + FS.readdir("/Save").filter(function(f) { return f[0] !== "."; }).join(", ")); } catch (e) {}
+            for (var i = 0; i < settingsFiles.length; i++) {
+                try {
+                    var data = FS.readFile("/persist/" + settingsFiles[i]);
+                    if (settingsFiles[i] === "shipofharkinian.json") {
+                        // Do not restore fullscreen: the browser refuses it without a
+                        // click, and a stuck fullscreen flag fights the page layout.
+                        var cfg = JSON.parse(new TextDecoder().decode(data));
+                        if (cfg && cfg.Window) delete cfg.Window.Fullscreen;
+                        data = new TextEncoder().encode(JSON.stringify(cfg, null, 4));
+                    }
+                    FS.writeFile("/" + settingsFiles[i], data);
+                    console.log("[Web] Restored " + settingsFiles[i]);
+                } catch (e) { /* first visit, or unreadable: start from defaults */ }
+            }
         }
+        window._sohIdbReady = true;
+        // Saves are flushed right after each save; this catches settings changes.
+        setInterval(window.sohPersist, 20000);
+        document.addEventListener("visibilitychange", function() {
+            if (document.visibilityState === "hidden") window.sohPersist();
+        });
+        window.addEventListener("pagehide", window.sohPersist);
         // Signal C side that IDBFS is ready
         setValue(_web_idbfs_ready_ptr(), 1, 'i32');
     });

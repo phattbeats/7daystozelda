@@ -97,6 +97,11 @@ void Network::SendJsonToRemote(nlohmann::json payload) {
 #include <emscripten.h>
 
 void Network::EnableWebSocket(const std::string& url) {
+    if (isEnabled) {
+        // Already on (menu toggled twice, or a re-enable without Disable):
+        // don't stack a second socket and second set of callbacks.
+        return;
+    }
     isEnabled = true;
     wsUrl = url;
     reconnectAttempts = 0;
