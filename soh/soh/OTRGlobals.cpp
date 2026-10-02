@@ -573,14 +573,26 @@ std::unordered_map<std::string, ExtensionEntry> ExtensionCache;
 // Web: no threads. Mix one update's worth of audio inline on each game tick.
 void OTRAudio_ProcessInline() {
     const int samplesHigh = 560, samplesLow = 528, channels = 2;
-    const int framesPerUpdate = R_UPDATE_RATE > 0 ? R_UPDATE_RATE : 1;
+    const int framesPerUpdate = R_UPDATE_RATE < 1 ? 1 : (R_UPDATE_RATE > 3 ? 3 : R_UPDATE_RATE);
     int samples_left = AudioPlayer_Buffered();
-    u32 num_audio_samples = samples_left < AudioPlayer_GetDesiredBuffered() ? samplesHigh : samplesLow;
-    static s16 audio_buffer[560 * 2 * 3];
-    for (int i = 0; i < framesPerUpdate; i++) {
+    int desired = AudioPlayer_GetDesiredBuffered();
+    u32 num_audio_samples = samples_left < desired ? samplesHigh : samplesLow;
+    // The 560-vs-528 nudge refills only ~3% faster than real time. After a
+    // hitch drains the queue well below target, mix one extra update so the
+    // queue recovers in one tick instead of several seconds of near-empty.
+    int updates = (samples_left < desired / 3) ? 2 : 1;
+    static s16 audio_buffer[560 * 2 * 3 * 2];
+    int frames = framesPerUpdate * updates;
+    for (int i = 0; i < frames; i++) {
         AudioMgr_CreateNextAudioBuffer(audio_buffer + i * (num_audio_samples * channels), num_audio_samples);
     }
-    AudioPlayer_Play((u8*)audio_buffer, num_audio_samples * (sizeof(int16_t) * channels * framesPerUpdate));
+    AudioPlayer_Play((u8*)audio_buffer, num_audio_samples * (sizeof(int16_t) * channels * frames));
+}
+
+// Debug probe for the browser console / test harness: samples currently queued
+// for the speakers. 0 while the game is running = an underrun (a crackle).
+extern "C" EMSCRIPTEN_KEEPALIVE int web_audio_queued(void) {
+    return AudioPlayer_Buffered();
 }
 #endif
 
