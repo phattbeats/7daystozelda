@@ -59,15 +59,33 @@ void GfxRenderingAPIOGL::SetUniforms(ShaderProgram* prg) const {
     glUniform1f(prg->noiseScaleLocation, mCurrentNoiseScale);
 }
 
+// Texture info is indexed by GL texture name. Desktop drivers hand out small,
+// recycled names; WebGL (Emscripten) draws every object name from one counter
+// that never recycles, so names quickly pass any fixed table size. Reads of a
+// name that has no entry yet see a zeroed default instead of running off the end.
+const TextureInfo& GfxRenderingAPIOGL::TexInfo(GLuint id) const {
+    static const TextureInfo kEmpty = {};
+    return id < textures.size() ? textures[id] : kEmpty;
+}
+
+TextureInfo& GfxRenderingAPIOGL::TexInfoMut(GLuint id) {
+    if (id >= textures.size()) {
+        textures.resize((size_t)id + 1);
+    }
+    return textures[id];
+}
+
 void GfxRenderingAPIOGL::SetPerDrawUniforms() {
     if (mCurrentShaderProgram->usedTextures[0] || mCurrentShaderProgram->usedTextures[1]) {
-        GLint filtering[2] = { textures[mCurrentTextureIds[0]].filtering, textures[mCurrentTextureIds[1]].filtering };
+        const TextureInfo& t0 = TexInfo(mCurrentTextureIds[0]);
+        const TextureInfo& t1 = TexInfo(mCurrentTextureIds[1]);
+        GLint filtering[2] = { t0.filtering, t1.filtering };
         glUniform1iv(mCurrentShaderProgram->texture_filtering_location, 2, filtering);
 
-        GLint width[2] = { textures[mCurrentTextureIds[0]].width, textures[mCurrentTextureIds[1]].width };
+        GLint width[2] = { t0.width, t1.width };
         glUniform1iv(mCurrentShaderProgram->texture_width_location, 2, width);
 
-        GLint height[2] = { textures[mCurrentTextureIds[0]].height, textures[mCurrentTextureIds[1]].height };
+        GLint height[2] = { t0.height, t1.height };
         glUniform1iv(mCurrentShaderProgram->texture_height_location, 2, height);
     }
 }
@@ -521,6 +539,7 @@ void GfxRenderingAPIOGL::ShaderGetInfo(struct ShaderProgram* prg, uint8_t* numIn
 GLuint GfxRenderingAPIOGL::NewTexture() {
     GLuint ret;
     glGenTextures(1, &ret);
+    textures.resize(std::max(textures.size(), (size_t)ret + 1));
     return ret;
 }
 
@@ -537,8 +556,9 @@ void GfxRenderingAPIOGL::SelectTexture(int tile, GLuint texture_id) {
 
 void GfxRenderingAPIOGL::UploadTexture(const uint8_t* rgba32_buf, uint32_t width, uint32_t height) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba32_buf);
-    textures[mCurrentTextureIds[mCurrentTile]].width = width;
-    textures[mCurrentTextureIds[mCurrentTile]].height = height;
+    TextureInfo& info = TexInfoMut(mCurrentTextureIds[mCurrentTile]);
+    info.width = width;
+    info.height = height;
 }
 
 #ifdef USE_OPENGLES
@@ -564,7 +584,7 @@ void GfxRenderingAPIOGL::SetSamplerParameters(int tile, bool linear_filter, uint
     const GLint filter = linear_filter && mCurrentFilterMode == FILTER_LINEAR ? GL_LINEAR : GL_NEAREST;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
-    textures[mCurrentTextureIds[tile]].filtering = !linear_filter ? FILTER_LINEAR : FILTER_THREE_POINT;
+    TexInfoMut(mCurrentTextureIds[tile]).filtering = !linear_filter ? FILTER_LINEAR : FILTER_THREE_POINT;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, gfx_cm_to_opengl(cms));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, gfx_cm_to_opengl(cmt));
 }

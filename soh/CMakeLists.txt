@@ -611,7 +611,13 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
             -sWASM=1
             -sALLOW_MEMORY_GROWTH=1
             -sINITIAL_MEMORY=268435456
+            # wasm32's full 4 GB instead of the 2 GB default: in-browser ROM
+            # extraction holds the ROM, ZAPD's parse state and the archive at once.
+            -sMAXIMUM_MEMORY=4GB
             -sSTACK_SIZE=5242880
+            # Keep function names in the wasm so a crash in the console is a
+            # readable stack, not wasm-function[12345]. About 1 MB gzipped.
+            --profiling-funcs
             -sMAX_WEBGL_VERSION=2
             -sMIN_WEBGL_VERSION=2
             -sFULL_ES2=1

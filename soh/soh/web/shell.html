@@ -718,8 +718,13 @@
         return;
       }
       // Pre-extracted archives (advanced): store and use them as-is.
+      // Pre-extracted archives: go by what the name says, not the exact spelling,
+      // so a download saved as "oot (1).o2r" still works. soh.o2r always comes
+      // from this server (it must match the build), so a dropped one is ignored.
+      archives = archives.filter(function(f) { return !/soh/i.test(f.name); });
+      if (!archives.length) { showError('That is the support archive; this page already has it. Drop your ROM or oot.o2r.'); return; }
       Promise.all(archives.map(function(f) {
-        var name = f.name.toLowerCase();
+        var name = /mq/i.test(f.name) ? 'oot-mq.o2r' : 'oot.o2r';
         return f.arrayBuffer().then(function(buf) {
           return cacheFile(name, buf).catch(function() {}).then(function() { writeToFS(name, buf); return name; });
         });

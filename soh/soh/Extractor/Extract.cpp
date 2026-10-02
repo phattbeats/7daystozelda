@@ -5,7 +5,9 @@
 #pragma comment(lib, "Shlwapi.lib")
 #endif
 #include "Extract.h"
+#ifndef __EMSCRIPTEN__
 #include "portable-file-dialogs.h"
+#endif
 #include <ship/utils/binarytools/BitConverter.h>
 #include "variables.h"
 
@@ -110,7 +112,10 @@ enum class ButtonId : int {
 };
 
 void Extractor::ShowErrorBox(const char* title, const char* text) {
-#ifdef _WIN32
+#ifdef __EMSCRIPTEN__
+    // Web: no native dialogs; the page reports failures from the return code.
+    fprintf(stderr, "[Extractor] %s: %s\n", title, text);
+#elif defined(_WIN32)
     MessageBoxA(nullptr, text, title, MB_OK | MB_ICONERROR);
 #else
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title, text, nullptr);
@@ -136,6 +141,10 @@ void Extractor::ShowCompressedErrorBox() const {
 }
 
 int Extractor::ShowRomPickBox(uint32_t verCrc) const {
+#ifdef __EMSCRIPTEN__
+    // Web: the player already chose this file in the page.
+    return (int)ButtonId::YES;
+#endif
     std::unique_ptr<char[]> boxBuffer = std::make_unique<char[]>(mCurrentRomPath.size() + 100);
     SDL_MessageBoxData boxData = { 0 };
     SDL_MessageBoxButtonData buttons[3] = { { 0 } };
@@ -166,7 +175,10 @@ int Extractor::ShowRomPickBox(uint32_t verCrc) const {
 
 int Extractor::ShowYesNoBox(const char* title, const char* box) {
     int ret;
-#ifdef _WIN32
+#ifdef __EMSCRIPTEN__
+    fprintf(stderr, "[Extractor] %s: %s (answering yes)\n", title, box);
+    ret = IDYES;
+#elif defined(_WIN32)
     ret = MessageBoxA(nullptr, box, title, MB_YESNO | MB_ICONQUESTION);
 #else
     SDL_MessageBoxData boxData = { 0 };
@@ -279,7 +291,10 @@ void Extractor::GetRoms(std::vector<std::string>& roms) {
 }
 
 bool Extractor::GetRomPathFromBox() {
-#ifdef _WIN32
+#ifdef __EMSCRIPTEN__
+    // Web: the page hands the ROM path in directly.
+    return false;
+#elif defined(_WIN32)
     OPENFILENAMEA box = { 0 };
     char nameBuffer[512];
     nameBuffer[0] = 0;
@@ -696,8 +711,9 @@ bool Extractor::CallZapd(std::string installPath, std::string exportdir) {
     // extraction.
     ShowWindow(cmdWindow, SW_SHOW);
     SetWindowPos(cmdWindow, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
-#else
+#elif !defined(__EMSCRIPTEN__)
     // Show extraction in background message until linux/mac can have visual progress
+    // (Not on web: there are no threads, and std::thread aborts the whole page.)
     std::thread mbThread(MessageboxWorker);
     mbThread.detach();
 #endif
@@ -719,6 +735,9 @@ bool Extractor::CallZapd(std::string installPath, std::string exportdir) {
 }
 
 static void MessageboxWorker() {
+#ifdef __EMSCRIPTEN__
+    return;
+#endif
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Extracting",
                              "Extraction will now begin in the background.\n\nPlease be patient for the process to "
                              "finish. Do not close the main program.",
