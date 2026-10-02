@@ -340,7 +340,9 @@ static void OnCredited(uint8_t material, uint32_t amount, bool quiet = false) {
     });
     Sfx_PlaySfxCentered(NA_SE_SY_GET_ITEM);
     if (!quiet) {
-        QueueNavi(FIRST_GATHER_BASE + material); // pots and crates have their own line (Loot.cpp)
+        QueueNavi(FIRST_GATHER_BASE + material);
+    } else {
+        QueueLootNavi(LOOTLINE_POT); // quiet credits are pots and crates (Loot.cpp): their own line
     }
 }
 
@@ -784,7 +786,6 @@ static void LoadSection() {
         });
     });
     SaveManager::Instance->LoadData("firsts", sFirsts);
-    MarkMetaCounters();
 }
 
 // v2 = v1 + "base". A v1 save (M4) keeps the village seeded by InitSave.

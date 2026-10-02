@@ -880,6 +880,9 @@ void Environment_PrintDebugInfo(PlayState* play, Gfx** gfx) {
 void func_80075B44(PlayState* play);
 void func_800766C4(PlayState* play);
 
+// 7 Days to Zelda (soh/SevenDays/Nights.cpp): a raid night's tint, [ambient, light, fog][rgb].
+s16 gSevenDaysTint[3][3] = { { 0 } };
+
 void Environment_Update(PlayState* play, EnvironmentContext* envCtx, LightContext* lightCtx, PauseContext* pauseCtx,
                         MessageContext* msgCtx, GameOverContext* gameOverCtx, GraphicsContext* gfxCtx) {
     f32 sp8C;
@@ -1143,39 +1146,44 @@ void Environment_Update(PlayState* play, EnvironmentContext* envCtx, LightContex
         envCtx->blendIndoorLights = true;
 
         // Apply lighting adjustments
+        // 7 Days to Zelda: a raid night's red tint (gSevenDaysTint, Nights.cpp) is added here, on top of
+        // the adj fields, so it never mixes with the game's own relative writes to them (bomb flashes,
+        // lightning, boss effects).
         for (i = 0; i < 3; i++) {
-            if ((s16)(envCtx->lightSettings.ambientColor[i] + envCtx->adjAmbientColor[i]) > 255) {
+            s16 adjAmbient = envCtx->adjAmbientColor[i] + gSevenDaysTint[0][i];
+            s16 adjLight1 = envCtx->adjLight1Color[i] + gSevenDaysTint[1][i];
+            s16 adjFog = envCtx->adjFogColor[i] + gSevenDaysTint[2][i];
+
+            if ((s16)(envCtx->lightSettings.ambientColor[i] + adjAmbient) > 255) {
                 lightCtx->ambientColor[i] = 255;
-            } else if ((s16)(envCtx->lightSettings.ambientColor[i] + envCtx->adjAmbientColor[i]) < 0) {
+            } else if ((s16)(envCtx->lightSettings.ambientColor[i] + adjAmbient) < 0) {
                 lightCtx->ambientColor[i] = 0;
             } else {
-                lightCtx->ambientColor[i] = (s16)(envCtx->lightSettings.ambientColor[i] + envCtx->adjAmbientColor[i]);
+                lightCtx->ambientColor[i] = (s16)(envCtx->lightSettings.ambientColor[i] + adjAmbient);
             }
 
-            if ((s16)(envCtx->lightSettings.light1Color[i] + envCtx->adjLight1Color[i]) > 255) {
+            if ((s16)(envCtx->lightSettings.light1Color[i] + adjLight1) > 255) {
                 envCtx->dirLight1.params.dir.color[i] = 255;
-            } else if ((s16)(envCtx->lightSettings.light1Color[i] + envCtx->adjLight1Color[i]) < 0) {
+            } else if ((s16)(envCtx->lightSettings.light1Color[i] + adjLight1) < 0) {
                 envCtx->dirLight1.params.dir.color[i] = 0;
             } else {
-                envCtx->dirLight1.params.dir.color[i] =
-                    (s16)(envCtx->lightSettings.light1Color[i] + envCtx->adjLight1Color[i]);
+                envCtx->dirLight1.params.dir.color[i] = (s16)(envCtx->lightSettings.light1Color[i] + adjLight1);
             }
 
-            if ((s16)(envCtx->lightSettings.light2Color[i] + envCtx->adjLight1Color[i]) > 255) {
+            if ((s16)(envCtx->lightSettings.light2Color[i] + adjLight1) > 255) {
                 envCtx->dirLight2.params.dir.color[i] = 255;
-            } else if ((s16)(envCtx->lightSettings.light2Color[i] + envCtx->adjLight1Color[i]) < 0) {
+            } else if ((s16)(envCtx->lightSettings.light2Color[i] + adjLight1) < 0) {
                 envCtx->dirLight2.params.dir.color[i] = 0;
             } else {
-                envCtx->dirLight2.params.dir.color[i] =
-                    (s16)(envCtx->lightSettings.light2Color[i] + envCtx->adjLight1Color[i]);
+                envCtx->dirLight2.params.dir.color[i] = (s16)(envCtx->lightSettings.light2Color[i] + adjLight1);
             }
 
-            if ((s16)(envCtx->lightSettings.fogColor[i] + envCtx->adjFogColor[i]) > 255) {
+            if ((s16)(envCtx->lightSettings.fogColor[i] + adjFog) > 255) {
                 lightCtx->fogColor[i] = 255;
-            } else if ((s16)(envCtx->lightSettings.fogColor[i] + envCtx->adjFogColor[i]) < 0) {
+            } else if ((s16)(envCtx->lightSettings.fogColor[i] + adjFog) < 0) {
                 lightCtx->fogColor[i] = 0;
             } else {
-                lightCtx->fogColor[i] = (s16)(envCtx->lightSettings.fogColor[i] + envCtx->adjFogColor[i]);
+                lightCtx->fogColor[i] = (s16)(envCtx->lightSettings.fogColor[i] + adjFog);
             }
         }
 

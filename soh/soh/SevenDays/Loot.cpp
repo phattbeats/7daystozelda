@@ -286,7 +286,8 @@ static void OnLootResult(const nlohmann::json& r) {
     }
     if (!r.value("ok", false)) {
         if (mine && kind == "cache") {
-            Notification::Emit({ .prefix = "Supply cache", .message = "Already opened", .remainingTime = 3.0f });
+            Notification::Emit(
+                { .prefix = "Supply cache", .message = r.value("reason", "Already opened"), .remainingTime = 3.0f });
             Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
         }
         return;
@@ -369,6 +370,10 @@ static void OnBreakable(Actor* actor) {
     if (gPlayState == nullptr || actor->init != NULL) {
         return; // init-time kills (already-broken objects removing themselves) don't pay
     }
+    const RoomContext& rooms = gPlayState->roomCtx;
+    if (actor->room >= 0 && actor->room != rooms.curRoom.num && actor->room != rooms.prevRoom.num) {
+        return; // a room unloading behind a door kills its pots (func_80031B14): nothing broke
+    }
     Player* player = GET_PLAYER(gPlayState);
     if (player == nullptr || Math_Vec3f_DistXYZ(&actor->world.pos, &player->actor.world.pos) > 700.0f) {
         return; // broken by someone else far away, or culled: only what we break pays
@@ -386,7 +391,7 @@ static void OnBreakable(Actor* actor) {
     uint8_t material = RollMaterial(tier, pick);
     uint32_t amount = crate ? 1 + amt : 1 + (amt == 2 ? 1 : 0);
     SendGather(material, amount, key, 600); // a pot pays once per 10 minutes (rooms reload them)
-    QueueLootNavi(LOOTLINE_POT);
+    // Navi's pot line comes with the credit (SevenDays.cpp OnCredited), once the owner has paid.
 }
 
 // MARK: - Supply cache actor
@@ -671,6 +676,28 @@ void LootOnFrame() {
     // file loaded are marked said without a word).
     if (++sTierPoll >= 20) {
         sTierPoll = 0;
+        // Bosses beaten before this save had M7 (an M6 save) never fired OnBossDefeat
+        // here: pay their reward once, or their key blueprint (spike strip, stone wall)
+        // would lock a recipe the save could already craft. The owner's lootOpened
+        // dedupes against the live OnBossDefeat path.
+        static const struct {
+            int16_t boss;
+            bool (*beaten)();
+        } kBeaten[] = {
+            { ACTOR_BOSS_GOMA, []() { return IsUnlocked(UNLOCK_DEKU_TREE); } },
+            { ACTOR_BOSS_DODONGO, []() { return (bool)CHECK_QUEST_ITEM(QUEST_GORON_RUBY); } },
+            { ACTOR_BOSS_VA, []() { return (bool)CHECK_QUEST_ITEM(QUEST_ZORA_SAPPHIRE); } },
+        };
+        for (const auto& b : kBeaten) {
+            uint32_t key = LootKey(LOOT_BOSS, (uint32_t)(uint16_t)b.boss);
+            if (!Opened(key) && b.beaten()) {
+                nlohmann::json extra;
+                extra["boss"] = b.boss;
+                extra["tier"] = (uint8_t)UNLOCK_START;
+                RequestLoot("boss", key, extra);
+                break;
+            }
+        }
         for (uint8_t t = UNLOCK_DEKU_TREE; t <= UNLOCK_SILVER_GAUNTLETS; t++) {
             if (IsUnlocked((Unlock)t)) {
                 QueueLootNavi(LOOTLINE_TIER_DEKU + (t - UNLOCK_DEKU_TREE), !sTierBaseline);

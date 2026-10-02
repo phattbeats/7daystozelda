@@ -17,6 +17,7 @@ extern "C" {
 extern PlayState* gPlayState;
 extern f32 gSevenDaysMoonScale; // z_kankyo.c: Environment_DrawSunAndMoon
 extern u8 gSevenDaysMoonRed;
+extern s16 gSevenDaysTint[3][3]; // z_kankyo.c: Environment_Update, added to the adj colors
 }
 
 /**
@@ -30,8 +31,9 @@ extern u8 gSevenDaysMoonRed;
  *   - The final-hours clock: in the last in-game hour before a raid (17:00-18:00
  *     on a raid day, outdoors), a small clock fades in at the bottom of the
  *     screen; it fades out when the raid starts. Wordless.
- *   - Raid nights look red: the scene's ambient, light and fog colors
- *     (play->envCtx adj*) ease toward red, the sky gets a red filter, and the moon
+ *   - Raid nights look red: the scene's ambient, light and fog colors ease
+ *     toward red (gSevenDaysTint, added where Environment_Update applies the
+ *     envCtx adj colors), the sky gets a red filter, and the moon
  *     (gMoonDL in Environment_DrawSunAndMoon) grows and turns red.
  *   - The raid track: while a wave is fought in this scene, the Mini-Boss Battle
  *     theme from the ROM (gSevenDays.RaidTrack overrides the sequence id); the
@@ -69,14 +71,6 @@ struct DawnCard {
 static DawnCard sCard;
 static f32 sClockAlpha = 0.0f;
 static f32 sRed = 0.0f;
-// Our share of each envCtx adj field, and the value we last left there: when the
-// field no longer holds it, the game rewrote it (a cutscene, a lightning flash,
-// a new scene) and our share starts over from its new value.
-struct AdjShare {
-    s16 applied = 0;
-    s16 written = 0;
-};
-static AdjShare sAmbient[3], sLight[3], sFog[3], sFogNear;
 static bool sOwnSkyFilter = false;
 static bool sMusicOn = false;
 static bool sMetaMarked = false;
@@ -156,30 +150,22 @@ static bool RaidNightLook() {
     return RaidTonight() || RaidWaveHere();
 }
 
-static void ApplyAdj(s16* field, AdjShare* share, s16 want) {
-    if (*field != share->written) {
-        share->applied = 0; // rewritten by the game: build on its value
-    }
-    *field = (s16)(*field + (want - share->applied));
-    share->applied = want;
-    share->written = *field;
-}
-
 static void UpdateRedNight() {
     f32 target = RaidNightLook() ? 1.0f : 0.0f;
     Math_StepToF(&sRed, target, 1.0f / 100.0f); // about five seconds to ease in or out
     EnvironmentContext* env = &gPlayState->envCtx;
     // A blood-moon tint, not a red screen: night fog is close in most fields, so
-    // the fog gets the gentlest push.
+    // the fog gets the gentlest push. It is added to the final light colors and
+    // never written into envCtx's adj fields, which bombs, lightning and bosses
+    // step relatively (a share kept there compounded with their steps).
     static const s16 kAmbient[3] = { 40, -12, -18 };
     static const s16 kLight[3] = { 50, -15, -20 };
     static const s16 kFog[3] = { 45, -6, -10 };
     for (int i = 0; i < 3; i++) {
-        ApplyAdj(&env->adjAmbientColor[i], &sAmbient[i], (s16)(kAmbient[i] * sRed));
-        ApplyAdj(&env->adjLight1Color[i], &sLight[i], (s16)(kLight[i] * sRed));
-        ApplyAdj(&env->adjFogColor[i], &sFog[i], (s16)(kFog[i] * sRed));
+        gSevenDaysTint[0][i] = (s16)(kAmbient[i] * sRed);
+        gSevenDaysTint[1][i] = (s16)(kLight[i] * sRed);
+        gSevenDaysTint[2][i] = (s16)(kFog[i] * sRed);
     }
-    ApplyAdj(&env->adjFogNear, &sFogNear, 0);
     if (sRed > 0.01f) {
         env->customSkyboxFilter = true;
         env->skyboxFilterColor[0] = 160;
@@ -196,23 +182,10 @@ static void UpdateRedNight() {
 }
 
 static void ClearRedNight(bool sceneReset) {
-    if (!sceneReset && gPlayState != nullptr) {
-        EnvironmentContext* env = &gPlayState->envCtx;
-        for (int i = 0; i < 3; i++) {
-            ApplyAdj(&env->adjAmbientColor[i], &sAmbient[i], 0);
-            ApplyAdj(&env->adjLight1Color[i], &sLight[i], 0);
-            ApplyAdj(&env->adjFogColor[i], &sFog[i], 0);
-        }
-        ApplyAdj(&env->adjFogNear, &sFogNear, 0);
-        if (sOwnSkyFilter) {
-            env->customSkyboxFilter = false;
-        }
+    if (!sceneReset && gPlayState != nullptr && sOwnSkyFilter) {
+        gPlayState->envCtx.customSkyboxFilter = false;
     }
-    // A new scene's Environment_Init starts the adj colors from zero.
-    for (int i = 0; i < 3; i++) {
-        sAmbient[i] = sLight[i] = sFog[i] = {};
-    }
-    sFogNear = {};
+    memset(gSevenDaysTint, 0, sizeof(gSevenDaysTint));
     sOwnSkyFilter = false;
     sRed = 0.0f;
     gSevenDaysMoonScale = 1.0f;
@@ -225,16 +198,31 @@ static u16 RaidTrack() {
     return (u16)std::clamp(CVarGetInteger(CVAR_SEVEN_DAYS("RaidTrack"), NA_BGM_MINI_BOSS), 0, 0x7F);
 }
 
+// Forget what the scene last started, so Environment_PlaySceneSequence picks the
+// scene's music (or night ambience) again instead of keeping the raid track.
+static void ForgetSceneMusic(PlayState* play) {
+    gSaveContext.seqId = (u8)NA_BGM_DISABLED;
+    gSaveContext.natureAmbienceId = NATURE_ID_DISABLED;
+    if (play->sequenceCtx.seqId == NA_BGM_NO_MUSIC && play->sequenceCtx.natureAmbienceId == NATURE_ID_NONE) {
+        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_STOP); // a silent scene starts nothing that would replace the raid track
+    }
+}
+
 static void UpdateMusic() {
-    bool want = RaidWaveHere() && gPlayState->gameOverCtx.state == GAMEOVER_INACTIVE;
+    bool gameOver = gPlayState->gameOverCtx.state != GAMEOVER_INACTIVE;
+    bool want = RaidWaveHere() && !gameOver;
     if (want && !sMusicOn) {
         func_800F5ACC(RaidTrack()); // the mini-boss path: it remembers what was playing
         sMusicOn = true;
     } else if (!want && sMusicOn) {
         sMusicOn = false;
+        if (gameOver) {
+            // Death already stopped the music for the Game Over fanfare (and a fairy
+            // revive keeps the raid track); the respawn's scene load picks the music.
+            return;
+        }
         // Back to the scene's own music, or its night ambience: let the scene pick.
-        gSaveContext.seqId = (u8)NA_BGM_DISABLED;
-        gSaveContext.natureAmbienceId = NATURE_ID_DISABLED;
+        ForgetSceneMusic(gPlayState);
         Environment_PlaySceneSequence(gPlayState);
     }
 }
@@ -443,7 +431,13 @@ namespace SevenDays {
 
 void NightsRegisterHooks(bool enabled) {
     COND_HOOK(OnSceneInit, enabled, [](int16_t sceneNum) {
-        // A new scene: fresh environment and its own music.
+        // A new scene: fresh environment and its own music. OnSceneInit runs before
+        // Play_Init plays the scene's sequence, so forgetting the raid track here
+        // makes the new scene start its own, even through a "continue the music"
+        // door (Link's house from Kokiri Forest).
+        if (sMusicOn && gPlayState != nullptr) {
+            ForgetSceneMusic(gPlayState);
+        }
         sMusicOn = false;
         ClearRedNight(true);
         sClockAlpha = 0.0f;
@@ -451,8 +445,7 @@ void NightsRegisterHooks(bool enabled) {
     if (!enabled) {
         if (sMusicOn && gPlayState != nullptr) {
             sMusicOn = false;
-            gSaveContext.seqId = (u8)NA_BGM_DISABLED;
-            gSaveContext.natureAmbienceId = NATURE_ID_DISABLED;
+            ForgetSceneMusic(gPlayState);
             Environment_PlaySceneSequence(gPlayState);
         }
         ClearRedNight(gPlayState == nullptr);
@@ -501,8 +494,9 @@ const char* sevendays_test_nights_state() {
     }
     if (gPlayState != nullptr) {
         auto& e = gPlayState->envCtx;
-        j["env"] = { { "ambient", { e.adjAmbientColor[0], e.adjAmbientColor[1], e.adjAmbientColor[2] } },
-                     { "fog", { e.adjFogColor[0], e.adjFogColor[1], e.adjFogColor[2] } },
+        j["env"] = { { "ambient", { gSevenDaysTint[0][0], gSevenDaysTint[0][1], gSevenDaysTint[0][2] } },
+                     { "fog", { gSevenDaysTint[2][0], gSevenDaysTint[2][1], gSevenDaysTint[2][2] } },
+                     { "adjAmbient", { e.adjAmbientColor[0], e.adjAmbientColor[1], e.adjAmbientColor[2] } },
                      { "skyFilter", e.customSkyboxFilter } };
     }
     out = j.dump();
