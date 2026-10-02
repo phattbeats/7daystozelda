@@ -260,7 +260,8 @@ void SevenDaysMenu(WidgetInfo& info) {
                                 .DefaultValue(true)
                                 .Color(THEME_COLOR)
                                 .Tooltip("Gather Fiber, Stone, Wood, Bone and Rot into the room's shared pool and "
-                                         "craft at the workbench (Tab or the Craft button)."));
+                                         "craft on the pause menu's Workbench page (R from Equipment; Tab or the Craft button opens "
+                                         "it)."));
     UIWidgets::CVarCheckbox("Tunic in my lobby color", CVAR_SEVEN_DAYS("TunicColors"),
                             UIWidgets::CheckboxOptions({ { .disabled = off } })
                                 .DefaultValue(true)
@@ -271,7 +272,7 @@ void SevenDaysMenu(WidgetInfo& info) {
                                 .DefaultValue(true)
                                 .Color(THEME_COLOR)
                                 .Tooltip("Build barricades, spike strips, workbenches and storage chests from kits "
-                                         "(Base tab of the workbench). A new save starts in a boarded-up Kokiri "
+                                         "(the Workbench page's Base tab). A new save starts in a boarded-up Kokiri "
                                          "village."));
     UIWidgets::CVarCheckbox("Raids on the base", CVAR_SEVEN_DAYS("Raids"),
                             UIWidgets::CheckboxOptions({ { .disabled = off || !SevenDays::BaseEnabled() } })
@@ -298,7 +299,7 @@ void SevenDaysMenu(WidgetInfo& info) {
         ImGui::TextWrapped("%s", SevenDays::BaseCountsLine().c_str());
     }
     if (SevenDays::CraftingEnabled()) {
-        if (ImGui::Button("Open Workbench")) {
+        if (ImGui::Button("Open Workbench window")) {
             SevenDays::ToggleCraftingWindow();
         }
     }

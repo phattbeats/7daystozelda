@@ -385,6 +385,10 @@ void RegisterOnKaleidoscopeUpdateHook() {
             }
         }
 
+        if (pauseCtx->pageIndex > PAUSE_EQUIP) { // 7 Days to Zelda's Workbench page has no cursor slots
+            return;
+        }
+
         uint16_t cursorIndex =
             (pauseCtx->pageIndex == PAUSE_MAP && !inDungeonScene) ? PAUSE_WORLD_MAP : pauseCtx->pageIndex;
         if (prevCursorIndex == cursorIndex && prevCursorSpecialPos == pauseCtx->cursorSpecialPos &&

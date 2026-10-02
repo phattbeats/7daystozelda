@@ -1,4 +1,5 @@
 #include "global.h"
+#include "soh/SevenDays/SevenDaysKaleido.h"
 
 s16 sKaleidoSetupKscpPos0[] = { PAUSE_QUEST, PAUSE_EQUIP, PAUSE_ITEM, PAUSE_MAP };
 f32 sKaleidoSetupEyeX0[] = { 0.0f, 64.0f, 0.0f, -64.0f };
@@ -8,9 +9,69 @@ s16 sKaleidoSetupKscpPos1[] = { PAUSE_MAP, PAUSE_QUEST, PAUSE_EQUIP, PAUSE_ITEM 
 f32 sKaleidoSetupEyeX1[] = { -64.0f, 0.0f, 64.0f, 0.0f };
 f32 sKaleidoSetupEyeZ1[] = { 0.0f, -64.0f, 0.0f, 64.0f };
 
+// #region 7 Days to Zelda: the Workbench page (see SevenDaysKaleido.h)
+u8 gKaleidoFaceContent[4] = { PAUSE_ITEM, PAUSE_MAP, PAUSE_QUEST, PAUSE_EQUIP };
+static s16 sRequestedOpenPage = -1;
+static s16 sRequestedOpenFrames = 0;
+
+u8 KaleidoFace_Of(u16 page) {
+    for (u8 face = 0; face < 4; face++) {
+        if (gKaleidoFaceContent[face] == page) {
+            return face;
+        }
+    }
+    return (page < 4) ? page : 0;
+}
+
+u16 KaleidoFace_NextPage(u16 page, s32 dir) {
+    static const u16 sRing[] = { PAUSE_ITEM, PAUSE_MAP, PAUSE_QUEST, PAUSE_EQUIP, PAUSE_SEVENDAYS };
+    s32 count = SevenDaysKaleido_PageOn() ? 5 : 4;
+    s32 i = 0;
+    while (i < count && sRing[i] != page) {
+        i++;
+    }
+    if (i == count) {
+        i = 0;
+    }
+    return sRing[(i + dir + count) % count];
+}
+
+void KaleidoFace_Arrange(u16 page) {
+    u8 face = (page < 4) ? page : 0;
+    if (SevenDaysKaleido_PageOn() && gKaleidoFaceContent[KaleidoFace_Of(page)] == page) {
+        face = KaleidoFace_Of(page); // keep the page where it was: no visible jump
+    }
+    gKaleidoFaceContent[face] = page;
+    gKaleidoFaceContent[(face + 1) % 4] = KaleidoFace_NextPage(page, 1);
+    gKaleidoFaceContent[(face + 3) % 4] = KaleidoFace_NextPage(page, -1);
+    gKaleidoFaceContent[(face + 2) % 4] = KaleidoFace_NextPage(KaleidoFace_NextPage(page, 1), 1);
+}
+
+void KaleidoFace_PrepareTurn(u16 page, s32 dir) {
+    u8 face = KaleidoFace_Of(page);
+    u16 next = KaleidoFace_NextPage(page, dir);
+    gKaleidoFaceContent[(face + 4 + dir) % 4] = next;
+    gKaleidoFaceContent[(face + 2) % 4] = KaleidoFace_NextPage(next, dir);
+}
+
+void KaleidoSetup_RequestOpen(u16 page) {
+    sRequestedOpenPage = page;
+    sRequestedOpenFrames = 40;
+}
+// #endregion
+
 void KaleidoSetup_Update(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     Input* input = &play->state.input[0];
+    // 7 Days to Zelda: a placed workbench or the Tab key opens the pause menu on a page.
+    bool requestedOpen = false;
+    if (sRequestedOpenPage >= 0) {
+        if (pauseCtx->state == 0 && play->msgCtx.msgMode == MSGMODE_NONE) {
+            requestedOpen = true;
+        } else if (--sRequestedOpenFrames <= 0) {
+            sRequestedOpenPage = -1;
+        }
+    }
 
     if (pauseCtx->state == 0 && pauseCtx->debugState == 0 && play->gameOverCtx.state == GAMEOVER_INACTIVE &&
         play->transitionTrigger == TRANS_TRIGGER_OFF && play->transitionMode == TRANS_MODE_OFF &&
@@ -23,7 +84,15 @@ void KaleidoSetup_Update(PlayState* play) {
             if (BREG(0)) {
                 pauseCtx->debugState = 3;
             }
-        } else if (CHECK_BTN_ALL(input->press.button, BTN_START)) {
+        } else if (CHECK_BTN_ALL(input->press.button, BTN_START) || requestedOpen) {
+            if (requestedOpen) {
+                pauseCtx->pageIndex = sRequestedOpenPage;
+                pauseCtx->cursorSpecialPos = 0; // the cursor starts on the page, not on another page's arrow
+                sRequestedOpenPage = -1;
+            }
+            if (pauseCtx->pageIndex == PAUSE_SEVENDAYS && !SevenDaysKaleido_PageOn()) {
+                pauseCtx->pageIndex = PAUSE_ITEM;
+            }
 
             gSaveContext.unk_13EE = gSaveContext.unk_13EA;
 
@@ -38,17 +107,21 @@ void KaleidoSetup_Update(PlayState* play) {
             pauseCtx->unk_1EA = 0;
             pauseCtx->unk_1E4 = 1;
 
+            // The eye tables and the spin are per face; the page on each face comes from the mapping.
+            KaleidoFace_Arrange(pauseCtx->pageIndex);
+            u8 face = KaleidoFace_Of(pauseCtx->pageIndex);
             if (ZREG(48) == 0) {
-                pauseCtx->eye.x = sKaleidoSetupEyeX0[pauseCtx->pageIndex];
-                pauseCtx->eye.z = sKaleidoSetupEyeZ0[pauseCtx->pageIndex];
-                pauseCtx->pageIndex = sKaleidoSetupKscpPos0[pauseCtx->pageIndex];
+                pauseCtx->eye.x = sKaleidoSetupEyeX0[face];
+                pauseCtx->eye.z = sKaleidoSetupEyeZ0[face];
+                face = sKaleidoSetupKscpPos0[face];
             } else {
-                pauseCtx->eye.x = sKaleidoSetupEyeX1[pauseCtx->pageIndex];
-                pauseCtx->eye.z = sKaleidoSetupEyeZ1[pauseCtx->pageIndex];
-                pauseCtx->pageIndex = sKaleidoSetupKscpPos1[pauseCtx->pageIndex];
+                pauseCtx->eye.x = sKaleidoSetupEyeX1[face];
+                pauseCtx->eye.z = sKaleidoSetupEyeZ1[face];
+                face = sKaleidoSetupKscpPos1[face];
             }
+            pauseCtx->pageIndex = gKaleidoFaceContent[face];
 
-            pauseCtx->mode = (u16)(pauseCtx->pageIndex * 2) + 1;
+            pauseCtx->mode = (u16)(face * 2) + 1;
             pauseCtx->state = 1;
 
             osSyncPrintf("Ｍｏｄｅ=%d  eye.x=%f,  eye.z=%f  kscp_pos=%d\n", pauseCtx->mode, pauseCtx->eye.x,

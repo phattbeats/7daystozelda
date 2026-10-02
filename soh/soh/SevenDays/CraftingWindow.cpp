@@ -1,22 +1,36 @@
 #include "SevenDays.h"
 #include "SevenDaysNet.h"
 #include "soh/OTRGlobals.h"
+#include "soh/ShipUtils.h"
 #include "soh/SohGui/SohGui.hpp"
+#include "soh/Enhancements/cosmetics/cosmeticsTypes.h"
+
+#include <algorithm>
+#include <functional>
 
 extern "C" {
 #include "z64.h"
+#include "macros.h"
 #include "variables.h"
+#include "functions.h"
+#include "textures/icon_item_static/icon_item_static.h"
+#include "textures/parameter_static/parameter_static.h"
 extern PlayState* gPlayState;
+void KaleidoScope_MoveCursorToSpecialPos(PlayState* play, u16 specialPos);
+void FrameInterpolation_RecordOpenChild(const void* a, int b);
+void FrameInterpolation_RecordCloseChild(void);
 }
+#include "SevenDaysKaleido.h"
 
 namespace SohGui {
 extern std::shared_ptr<SevenDaysCraftingWindow> mSevenDaysCraftingWindow;
 }
 
 /**
- * Crafting v0: an ImGui window (like AnchorRoomWindow). Opens from the Tab key,
- * the on-screen Craft button, or the Anchor menu; a placed Workbench opens it in
- * M5. Buttons are sized for the touch layout.
+ * The Workbench lives on the pause menu as a fifth page (Craft, Trade and Base
+ * tabs, the game's cursor, stick or D-pad and A), next to Equipment and Select
+ * Item. The Tab key, the on-screen Craft button and a placed workbench open the
+ * pause menu on it. The ImGui window below stays reachable from the Anchor menu.
  */
 
 static constexpr float kButtonHeight = 48.0f;
@@ -30,12 +44,12 @@ void ToggleCraftingWindow() {
 }
 
 static int sRequestedTab = -1;
+static int sRequestedPageTab = -1;
 
+// Opens the pause menu on the Workbench page (tab: 0 Craft, 1 Trade, 2 Base).
 void OpenCraftingWindow(int tab) {
-    sRequestedTab = tab;
-    if (SohGui::mSevenDaysCraftingWindow && !SohGui::mSevenDaysCraftingWindow->IsVisible()) {
-        SohGui::mSevenDaysCraftingWindow->Show();
-    }
+    sRequestedPageTab = tab;
+    KaleidoSetup_RequestOpen(PAUSE_SEVENDAYS);
 }
 
 int TakeRequestedCraftingTab() {
@@ -246,13 +260,18 @@ void SevenDaysCraftingWindow::Draw() {
         return;
     }
 
+    bool paused = gPlayState->pauseCtx.state != 0 || gPlayState->pauseCtx.debugState != 0;
     ImGuiIO& io = ImGui::GetIO();
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
-        ToggleVisibility();
+    if (!io.WantTextInput && !paused && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+        Hide();
+        OpenCraftingWindow(-1);
     }
 
     auto vp = ImGui::GetMainViewport();
     if (!IsVisible()) {
+        if (paused) {
+            return;
+        }
         // A thumb-sized button on the right edge for touch players.
         ImGui::SetNextWindowViewport(vp->ID);
         ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 8.0f, vp->WorkPos.y + vp->WorkSize.y * 0.35f),
@@ -263,7 +282,7 @@ void SevenDaysCraftingWindow::Draw() {
                          ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoDocking |
                          ImGuiWindowFlags_NoSavedSettings);
         if (ImGui::Button(ICON_FA_WRENCH " Craft", ImVec2(0, kButtonHeight))) {
-            ToggleVisibility();
+            OpenCraftingWindow(-1);
         }
         ImGui::End();
         return;
@@ -327,4 +346,561 @@ void SevenDaysCraftingWindow::DrawElement() {
     if (ImGui::Button("Close", ImVec2(-FLT_MIN, kButtonHeight))) {
         Hide();
     }
+}
+
+// MARK: - The Workbench page on the pause menu
+
+namespace SevenDays {
+namespace {
+
+// OPEN_DISPS declares these at block scope; give them C linkage here.
+extern "C" {
+void FrameInterpolation_RecordOpenChild(const void* a, int b);
+void FrameInterpolation_RecordCloseChild(void);
+}
+
+enum PageTab : int { PAGE_CRAFT, PAGE_TRADE, PAGE_BASE };
+
+struct PageRow {
+    std::string name;
+    std::string right; // cost, or how many kits are in the pool
+    std::string hint;  // the bottom panel: what A does, or why it can't
+    const char* icon = nullptr;
+    bool rupee = false; // icon is the HUD rupee (IA8 16x16) instead of a 32x32 item icon
+    bool enabled = false;
+    std::function<void()> action;
+};
+
+struct PageState {
+    int tab = PAGE_CRAFT; // a PageTab
+    int row = -1;         // -1: the tab strip
+    int top = 0;          // first visible row
+    bool confirmPackAll = false;
+};
+
+PageState sPage;
+
+constexpr int kVisibleRows = 5;
+constexpr s16 kRowTop = 18;
+constexpr s16 kRowHeight = 18;
+
+Color_RGB8 kPageDark = { 58, 36, 16 };
+Color_RGB8 kPageLight = { 128, 88, 44 };
+
+const char* RecipeIcon(const Recipe& recipe) {
+    static const std::map<std::string, const char*> sIcons = {
+        { "sticks", gItemIconDekuStickTex },      { "nuts", gItemIconDekuNutTex },
+        { "seeds", gItemIconDekuSeedsTex },       { "arrows", gItemIconBowTex },
+        { "bombs", gItemIconBombTex },            { "workbench", gItemIconHammerTex },
+        { "barricade", gItemIconShieldDekuTex },  { "torch", gItemIconDinsFireTex },
+        { "spikes", gItemIconMaskSkullTex },      { "chest", gItemIconBombBag20Tex },
+        { "stonewall", gItemIconShieldHylianTex }, { "bombtrap", gItemIconBombchuTex },
+        { "gate", gItemIconHookshotTex },
+    };
+    auto it = sIcons.find(recipe.id);
+    return it != sIcons.end() ? it->second : nullptr;
+}
+
+std::string CostLine(const Recipe& recipe) {
+    std::string out;
+    for (uint8_t i = 0; i < recipe.inputCount; i++) {
+        out += fmt::format("{}{} {}", out.empty() ? "" : " ", recipe.inputs[i].amount,
+                           GetMaterialInfo(recipe.inputs[i].material).name);
+    }
+    return out;
+}
+
+std::vector<int> AvailableTabs() {
+    std::vector<int> tabs;
+    if (CraftingEnabled()) {
+        tabs.push_back(PAGE_CRAFT);
+        tabs.push_back(PAGE_TRADE);
+    }
+    if (BaseEnabled()) {
+        tabs.push_back(PAGE_BASE);
+    }
+    return tabs;
+}
+
+const char* TabName(int tab) {
+    switch (tab) {
+        case PAGE_CRAFT:
+            return "Craft";
+        case PAGE_TRADE:
+            return "Trade";
+        default:
+            return "Base";
+    }
+}
+
+const char* TabHint(int tab) {
+    switch (tab) {
+        case PAGE_CRAFT:
+            return "Uses the shared pool";
+        case PAGE_TRADE:
+            return "Materials for rupees";
+        default:
+            return "Place and pack up kits";
+    }
+}
+
+void ClosePauseMenu(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Interface_SetDoAction(play, DO_ACTION_NONE);
+    pauseCtx->state = 0x12;
+    WREG(2) = -6240;
+    func_800F64E0(0);
+}
+
+std::vector<PageRow> BuildRows(PlayState* play, int tab) {
+    std::vector<PageRow> rows;
+    if (tab == PAGE_CRAFT || tab == PAGE_TRADE) {
+        const PoolState& pool = GetPool();
+        for (const Recipe& recipe : GetRecipes()) {
+            bool trade = recipe.kind == RECIPE_TRADE;
+            if (trade != (tab == PAGE_TRADE)) {
+                continue;
+            }
+            PageRow row;
+            std::string blocker = CraftBlocker(recipe);
+            row.enabled = blocker.empty();
+            row.right = CostLine(recipe);
+            if (recipe.kind == RECIPE_CONSUMABLE) {
+                row.name = fmt::format("{} x{}", recipe.name, recipe.outputCount);
+                row.icon = RecipeIcon(recipe);
+                row.hint = row.enabled ? "Craft" : blocker;
+            } else if (recipe.kind == RECIPE_KIT) {
+                auto it = pool.kits.find(recipe.id);
+                uint32_t have = it != pool.kits.end() ? it->second : 0;
+                row.name = have > 0 ? fmt::format("{} ({})", recipe.name, have) : std::string(recipe.name);
+                row.icon = RecipeIcon(recipe);
+                row.hint = row.enabled ? "Build a kit" : blocker;
+            } else {
+                row.name = fmt::format("Sell {}", CostLine(recipe));
+                row.right = fmt::format("{} Rupees", recipe.outputCount);
+                row.rupee = true;
+                row.hint = row.enabled ? "Sell" : blocker;
+            }
+            std::string id = recipe.id;
+            row.action = [id]() {
+                if (RequestCraft(id)) {
+                    Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+                } else {
+                    Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
+                }
+            };
+            rows.push_back(std::move(row));
+        }
+        return rows;
+    }
+
+    // Base: place a kit (the pause menu closes for the ghost), or pack pieces up.
+    const PoolState& pool = GetPool();
+    for (int t = 0; t < PLACEABLE_COUNT; t++) {
+        const PlaceableInfo& info = GetPlaceableInfo((uint8_t)t);
+        if (info.kit[0] == '\0') {
+            continue;
+        }
+        auto it = pool.kits.find(info.kit);
+        uint32_t count = it != pool.kits.end() ? it->second : 0;
+        PageRow row;
+        row.name = fmt::format("Place {}", info.name);
+        row.right = fmt::format("x{}", count);
+        const Recipe* recipe = FindRecipe(info.kit);
+        row.icon = recipe != nullptr ? RecipeIcon(*recipe) : nullptr;
+        row.enabled = count > 0 && !InPlacement();
+        row.hint = count == 0 ? "Build a kit on Craft" : (InPlacement() ? "Already placing" : "Place it");
+        uint8_t type = (uint8_t)t;
+        row.action = [type, play]() {
+            Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+            ClosePauseMenu(play);
+            BeginPlacement(type);
+        };
+        rows.push_back(std::move(row));
+    }
+
+    uint16_t nearest = NearestPlaceable(150.0f);
+    const Placeable* p = nearest ? FindPlaceable(nearest) : nullptr;
+    PageRow pack;
+    pack.name = p ? fmt::format("Pack up {}", GetPlaceableInfo(p->type).name) : std::string("Pack up nearby piece");
+    pack.icon = gItemIconHammerTex;
+    pack.enabled = p != nullptr && p->type != PLACEABLE_SIGN;
+    pack.hint = pack.enabled ? "Back into a kit" : "Stand next to a piece";
+    pack.action = [nearest]() {
+        Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+        RequestPackUp(nearest);
+    };
+    rows.push_back(std::move(pack));
+
+    PageRow all;
+    all.name = sPage.confirmPackAll ? "Really pack it all?" : "Pack up the whole base";
+    all.icon = gItemIconHammerTex;
+    all.enabled = !GetBase().placeables.empty();
+    all.hint = sPage.confirmPackAll ? "Again: every kit comes back" : BaseCountsLine();
+    all.action = []() {
+        if (!sPage.confirmPackAll) {
+            sPage.confirmPackAll = true;
+            Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+            return;
+        }
+        sPage.confirmPackAll = false;
+        Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+        RequestPackUpBase(gSaveContext.linkAge == 0 ? ERA_ADULT : ERA_CHILD);
+    };
+    rows.push_back(std::move(all));
+    return rows;
+}
+
+// Text in the game's font, laid out in the current matrix: y up, (x, top) the top-left.
+float TextWidth(const std::string& text, float scale) {
+    float width = 0.0f;
+    for (char c : text) {
+        width += Ship_GetCharFontWidth((u8)c) * scale;
+    }
+    return width;
+}
+
+void DrawText(PlayState* play, const std::string& text, float x, float top, float scale, Color_RGB8 color,
+              u8 alpha) {
+    if (text.empty()) {
+        return;
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    Vtx* vtx = (Vtx*)Graph_Alloc(play->state.gfxCtx, text.size() * 4 * sizeof(Vtx));
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, color.r, color.g, color.b, alpha);
+    float cx = x;
+    for (size_t i = 0; i < text.size(); i++) {
+        float advance = Ship_GetCharFontWidth((u8)text[i]);
+        Vtx* v = &vtx[i * 4];
+        s16 x0 = (s16)cx;
+        s16 x1 = (s16)(cx + advance * scale + 0.5f);
+        s16 y0 = (s16)top;
+        s16 y1 = (s16)(top - FONT_CHAR_TEX_HEIGHT * scale);
+        s16 tw = (s16)(advance * 32.0f);
+        s16 th = FONT_CHAR_TEX_HEIGHT << 5;
+        v[0] = { { { x0, y0, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } };
+        v[1] = { { { x1, y0, 0 }, 0, { tw, 0 }, { 255, 255, 255, 255 } } };
+        v[2] = { { { x0, y1, 0 }, 0, { 0, th }, { 255, 255, 255, 255 } } };
+        v[3] = { { { x1, y1, 0 }, 0, { tw, th }, { 255, 255, 255, 255 } } };
+        cx += advance * scale;
+        if (text[i] == ' ') {
+            continue;
+        }
+        gDPLoadTextureBlock_4b(POLY_OPA_DISP++, Ship_GetCharFontTexture((u8)text[i]), G_IM_FMT_I, FONT_CHAR_TEX_WIDTH,
+                               FONT_CHAR_TEX_HEIGHT, 0, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP,
+                               G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+        gSPVertex(POLY_OPA_DISP++, (uintptr_t)v, 4, 0);
+        gSP1Quadrangle(POLY_OPA_DISP++, 0, 2, 3, 1, 0);
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+void DrawShadowText(PlayState* play, const std::string& text, float x, float top, float scale, Color_RGB8 color,
+                    u8 alpha) {
+    DrawText(play, text, x + 1.0f, top - 1.0f, scale, { 0, 0, 0 }, alpha);
+    DrawText(play, text, x, top, scale, color, alpha);
+}
+
+void DrawIcon(PlayState* play, const char* icon, bool rupee, s16 x, s16 top, bool gray, u8 alpha) {
+    if (icon == nullptr && !rupee) {
+        return;
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    Vtx* v = (Vtx*)Graph_Alloc(play->state.gfxCtx, 4 * sizeof(Vtx));
+    s16 size = rupee ? 16 : 32;
+    s16 t = size << 5;
+    v[0] = { { { x, top, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } };
+    v[1] = { { { (s16)(x + 16), top, 0 }, 0, { t, 0 }, { 255, 255, 255, 255 } } };
+    v[2] = { { { x, (s16)(top - 16), 0 }, 0, { 0, t }, { 255, 255, 255, 255 } } };
+    v[3] = { { { (s16)(x + 16), (s16)(top - 16), 0 }, 0, { t, t }, { 255, 255, 255, 255 } } };
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+    if (gray) {
+        gDPSetGrayscaleColor(POLY_OPA_DISP++, 109, 109, 109, 255);
+        gSPGrayscale(POLY_OPA_DISP++, true);
+    }
+    if (rupee) {
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 200, 255, 100, alpha);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, gRupeeCounterIconTex, G_IM_FMT_IA, G_IM_SIZ_8b, 16, 16, 0,
+                            G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
+                            G_TX_NOLOD, G_TX_NOLOD);
+    } else {
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, alpha);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, icon, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
+                            G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
+                            G_TX_NOLOD, G_TX_NOLOD);
+    }
+    gSPVertex(POLY_OPA_DISP++, (uintptr_t)v, 4, 0);
+    gSP1Quadrangle(POLY_OPA_DISP++, 0, 2, 3, 1, 0);
+    if (gray) {
+        gSPGrayscale(POLY_OPA_DISP++, false);
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// The game's four-corner cursor around a box (left, top, width, height), page coordinates.
+void SetCursorBox(PauseContext* pauseCtx, s16 left, s16 top, s16 width, s16 height) {
+    Vtx* c = pauseCtx->cursorVtx;
+    s16 right = left + width - 16;
+    s16 bottom = top - height + 16;
+    s16 xs[4] = { left, right, left, right };
+    s16 ys[4] = { top, top, bottom, bottom };
+    for (int corner = 0; corner < 4; corner++) {
+        Vtx* q = &c[corner * 4];
+        q[0].v.ob[0] = q[2].v.ob[0] = xs[corner];
+        q[1].v.ob[0] = q[3].v.ob[0] = xs[corner] + 16;
+        q[0].v.ob[1] = q[1].v.ob[1] = ys[corner];
+        q[2].v.ob[1] = q[3].v.ob[1] = ys[corner] - 16;
+    }
+}
+
+float TabCenter(size_t index, size_t count) {
+    float span = 200.0f;
+    return -span / 2 + span * (index + 0.5f) / count;
+}
+
+int TabIndex(const std::vector<int>& tabs) {
+    for (size_t i = 0; i < tabs.size(); i++) {
+        if (tabs[i] == sPage.tab) {
+            return (int)i;
+        }
+    }
+    return 0;
+}
+
+void HandleInput(PlayState* play, const std::vector<int>& tabs, std::vector<PageRow>& rows) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+    bool dpad = CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0);
+    bool up = pauseCtx->stickRelY > 30 || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DUP));
+    bool down = pauseCtx->stickRelY < -30 || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DDOWN));
+    bool left = pauseCtx->stickRelX < -30 || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DLEFT));
+    bool right = pauseCtx->stickRelX > 30 || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DRIGHT));
+
+    if (pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_LEFT) {
+        if (right) {
+            pauseCtx->cursorSpecialPos = 0;
+            Sfx_PlaySfxCentered(NA_SE_SY_CURSOR);
+        }
+        return;
+    }
+    if (pauseCtx->cursorSpecialPos == PAUSE_CURSOR_PAGE_RIGHT) {
+        if (left) {
+            pauseCtx->cursorSpecialPos = 0;
+            Sfx_PlaySfxCentered(NA_SE_SY_CURSOR);
+        }
+        return;
+    }
+    if (pauseCtx->cursorSpecialPos != 0) {
+        return;
+    }
+
+    int before = sPage.row;
+    int tabIndex = TabIndex(tabs);
+    if (sPage.row < 0) {
+        if (left) {
+            if (tabIndex > 0) {
+                sPage.tab = tabs[tabIndex - 1];
+                sPage.top = 0;
+                Sfx_PlaySfxCentered(NA_SE_SY_CURSOR);
+            } else {
+                KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_LEFT);
+            }
+        } else if (right) {
+            if (tabIndex + 1 < (int)tabs.size()) {
+                sPage.tab = tabs[tabIndex + 1];
+                sPage.top = 0;
+                Sfx_PlaySfxCentered(NA_SE_SY_CURSOR);
+            } else {
+                KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_RIGHT);
+            }
+        } else if (down && !rows.empty()) {
+            sPage.row = 0;
+        }
+    } else {
+        if (up) {
+            sPage.row--;
+        } else if (down && sPage.row + 1 < (int)rows.size()) {
+            sPage.row++;
+        } else if (left) {
+            KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_LEFT);
+        } else if (right) {
+            KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_RIGHT);
+        } else if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+            PageRow& row = rows[sPage.row];
+            if (row.enabled && row.action) {
+                row.action();
+                return;
+            }
+            Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
+        }
+    }
+    if (sPage.row != before) {
+        sPage.confirmPackAll = false;
+        Sfx_PlaySfxCentered(NA_SE_SY_CURSOR);
+    }
+}
+
+} // namespace
+} // namespace SevenDays
+
+extern "C" s32 SevenDaysKaleido_PageOn(void) {
+    return SevenDays::Enabled() && (SevenDays::CraftingEnabled() || SevenDays::BaseEnabled());
+}
+
+// The page's frame: the blank save frame in workbench browns.
+extern "C" void SevenDaysKaleido_InitPageVtx(PlayState* play, Vtx* vtx) {
+    using namespace SevenDays;
+    Color_RGB8 colors[4] = { kPageDark, kPageLight, kPageLight, kPageDark };
+    for (int i = 0; i < 60; i++) {
+        int column = i / 20;
+        bool rightEdge = (i % 4) == 1 || (i % 4) == 3;
+        Color_RGB8 c = colors[column + (rightEdge ? 1 : 0)];
+        vtx[i].v.cn[0] = c.r;
+        vtx[i].v.cn[1] = c.g;
+        vtx[i].v.cn[2] = c.b;
+    }
+}
+
+extern "C" void SevenDaysKaleido_DrawPage(PlayState* play, s32 current) {
+    using namespace SevenDays;
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u8 alpha = (u8)pauseCtx->alpha;
+    s16 dy = pauseCtx->offsetY;
+
+    std::vector<int> tabs = AvailableTabs();
+    if (tabs.empty()) {
+        return;
+    }
+    if (sRequestedPageTab >= 0 && current) {
+        int want = sRequestedPageTab == 2 ? PAGE_BASE : (sRequestedPageTab == 1 ? PAGE_TRADE : PAGE_CRAFT);
+        sRequestedPageTab = -1;
+        if (std::find(tabs.begin(), tabs.end(), want) != tabs.end()) {
+            sPage.tab = want;
+            sPage.row = -1;
+            sPage.top = 0;
+        }
+    }
+    if (std::find(tabs.begin(), tabs.end(), sPage.tab) == tabs.end()) {
+        sPage.tab = tabs[0];
+        sPage.row = -1;
+        sPage.top = 0;
+    }
+
+    std::vector<PageRow> rows = BuildRows(play, sPage.tab);
+    if (current && pauseCtx->state == 6 && pauseCtx->unk_1E4 == 0) {
+        HandleInput(play, tabs, rows);
+        if (pauseCtx->state != 6) {
+            return; // the pause menu is closing for placement
+        }
+        rows = BuildRows(play, sPage.tab); // the action may have changed counts or the confirm
+    }
+    if (sPage.row >= (int)rows.size()) {
+        sPage.row = (int)rows.size() - 1;
+    }
+    if (sPage.row >= 0) {
+        sPage.top = std::clamp(sPage.top, sPage.row - kVisibleRows + 1, sPage.row);
+    }
+    sPage.top = std::max(0, std::min(sPage.top, std::max(0, (int)rows.size() - kVisibleRows)));
+
+    Gfx_SetupDL_42Opa(play->state.gfxCtx);
+
+    // Title, tabs and the shared pool.
+    std::string title = "Workbench";
+    DrawShadowText(play, title, -TextWidth(title, 1.0f) / 2, 76 + dy, 1.0f, { 255, 255, 255 }, alpha);
+
+    int tabIndex = TabIndex(tabs);
+    for (size_t i = 0; i < tabs.size(); i++) {
+        std::string name = TabName(tabs[i]);
+        float w = TextWidth(name, 0.85f);
+        Color_RGB8 color = (int)i == tabIndex ? Color_RGB8{ 255, 255, 0 } : Color_RGB8{ 150, 150, 150 };
+        DrawShadowText(play, name, TabCenter(i, tabs.size()) - w / 2, 56 + dy, 0.85f, color, alpha);
+    }
+
+    const PoolState& pool = GetPool();
+    std::string mats;
+    for (uint8_t m = 0; m < MAT_COUNT; m++) {
+        mats += fmt::format("{}{} {}", m ? "  " : "", GetMaterialInfo(m).name, pool.materials[m]);
+    }
+    DrawShadowText(play, mats, -TextWidth(mats, 0.6f) / 2, 38 + dy, 0.6f, { 220, 220, 200 }, alpha);
+
+    // The list.
+    for (int i = sPage.top; i < (int)rows.size() && i < sPage.top + kVisibleRows; i++) {
+        const PageRow& row = rows[i];
+        s16 top = kRowTop - (i - sPage.top) * kRowHeight + dy;
+        DrawIcon(play, row.icon, row.rupee, -106, top - 1, !row.enabled, alpha);
+        Color_RGB8 nameColor = row.enabled ? Color_RGB8{ 255, 255, 255 } : Color_RGB8{ 130, 130, 130 };
+        DrawShadowText(play, row.name, -86, top - 2, 0.75f, nameColor, alpha);
+        float rw = TextWidth(row.right, 0.6f);
+        Color_RGB8 rightColor = row.enabled ? Color_RGB8{ 230, 210, 150 } : Color_RGB8{ 130, 120, 100 };
+        DrawShadowText(play, row.right, 108 - rw, top - 4, 0.6f, rightColor, alpha);
+    }
+    if (sPage.top > 0) {
+        DrawText(play, "^", 112, kRowTop + 2 + dy, 0.6f, { 255, 255, 255 }, alpha);
+    }
+    if (sPage.top + kVisibleRows < (int)rows.size()) {
+        DrawText(play, "v", 112, kRowTop - (kVisibleRows - 1) * kRowHeight - 6 + dy, 0.6f, { 255, 255, 255 }, alpha);
+    }
+
+    if (!current) {
+        return;
+    }
+    // The cursor: around the tab, or along the row. Green (A) when A does something.
+    if (sPage.row < 0) {
+        float w = TextWidth(TabName(sPage.tab), 0.85f);
+        SetCursorBox(pauseCtx, (s16)(TabCenter(tabIndex, tabs.size()) - w / 2 - 6), 60 + dy, (s16)(w + 12), 20);
+        pauseCtx->cursorColorSet = 0;
+    } else {
+        s16 top = kRowTop - (sPage.row - sPage.top) * kRowHeight + dy;
+        SetCursorBox(pauseCtx, -110, top + 1, 224, 20);
+        pauseCtx->cursorColorSet = rows[sPage.row].enabled ? 8 : 0;
+    }
+}
+
+// The bottom panel: what A does on this row, or why it can't.
+extern "C" void SevenDaysKaleido_DrawInfo(PlayState* play, s16 top) {
+    using namespace SevenDays;
+    PauseContext* pauseCtx = &play->pauseCtx;
+    if (pauseCtx->state != 6) {
+        return;
+    }
+    std::string line;
+    bool canA = false;
+    if (sPage.row < 0) {
+        line = TabHint(sPage.tab);
+    } else {
+        std::vector<PageRow> rows = BuildRows(play, sPage.tab);
+        if (sPage.row < (int)rows.size()) {
+            line = rows[sPage.row].hint;
+            canA = rows[sPage.row].enabled;
+        }
+    }
+    // Shrink a long line to fit the panel (about 150 units wide).
+    std::string aGlyph = "\x9F";
+    float scale = 0.8f;
+    float natural = (canA ? TextWidth(aGlyph + " ", 1.0f) : 0.0f) + TextWidth(line, 1.0f);
+    if (natural * scale > 150.0f) {
+        scale = std::max(0.45f, 150.0f / natural);
+    }
+    float aw = canA ? TextWidth(aGlyph + " ", scale) : 0.0f;
+    float x = -(aw + TextWidth(line, scale)) / 2;
+    if (canA) {
+        Color_RGB8 aColor = { 80, 150, 255 };
+        if (CVarGetInteger(CVAR_COSMETIC("HUD.AButton.Changed"), 0)) {
+            aColor = CVarGetColor24(CVAR_COSMETIC("HUD.AButton.Value"), aColor);
+        } else if (CVarGetInteger(CVAR_COSMETIC("DefaultColorScheme"), COLORSCHEME_N64) == COLORSCHEME_GAMECUBE) {
+            aColor = { 80, 255, 150 };
+        }
+        DrawText(play, aGlyph, x, top, scale, aColor, 255);
+    }
+    Color_RGB8 color = canA ? Color_RGB8{ 255, 255, 255 } : Color_RGB8{ 200, 200, 200 };
+    DrawText(play, line, x + aw, top, scale, color, 255);
+}
+
+extern "C" void SevenDaysKaleido_DrawPageLabel(PlayState* play, s16 top) {
+    std::string label = "To Workbench";
+    float w = SevenDays::TextWidth(label, 1.0f);
+    SevenDays::DrawText(play, label, 1 - w / 2, top, 1.0f, { 255, 200, 0 }, 255);
 }
