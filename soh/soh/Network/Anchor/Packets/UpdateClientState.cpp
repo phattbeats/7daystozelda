@@ -23,7 +23,11 @@ extern PlayState* gPlayState;
 nlohmann::json Anchor::PrepClientState() {
     nlohmann::json payload;
     payload["name"] = CVarGetString(CVAR_REMOTE_ANCHOR("Name"), "");
-    payload["color"] = CVarGetColor24(CVAR_REMOTE_ANCHOR("Color"), { 100, 255, 100 });
+    // `color` stays the aura so older clients keep tinting our fairy the same.
+    payload["color"] = AnchorLocalFairyOuter();
+    payload["fairyInner"] = AnchorLocalFairyInner();
+    payload["fairyOuter"] = AnchorLocalFairyOuter();
+    payload["tunic"] = AnchorLocalTunic();
     payload["clientVersion"] = clientVersion;
     payload["teamId"] = CVarGetString(CVAR_REMOTE_ANCHOR("TeamId"), "default");
     payload["online"] = true;
@@ -65,6 +69,9 @@ void Anchor::HandlePacket_UpdateClientState(nlohmann::json payload) {
         clients[clientId].clientId = clientId;
         clients[clientId].name = client.name;
         clients[clientId].color = client.color;
+        clients[clientId].fairyInner = client.fairyInner;
+        clients[clientId].fairyOuter = client.fairyOuter;
+        clients[clientId].tunic = client.tunic;
         clients[clientId].clientVersion = client.clientVersion;
         clients[clientId].teamId = client.teamId;
         clients[clientId].online = client.online;

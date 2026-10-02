@@ -120,16 +120,32 @@
       border-radius: 8px; padding: .55rem .65rem; font: inherit; font-size: 16px;
     }
     label.f input:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: transparent; }
-    .tunics { display: flex; gap: .5rem; margin-top: .3rem; flex-wrap: wrap; }
-    .tunic {
-      display: inline-flex; align-items: center; gap: .4rem; cursor: pointer;
-      padding: .35rem .6rem .35rem .4rem; border: 1px solid var(--line); border-radius: 999px;
-      font-size: .84rem; background: var(--bg-2);
+    .colors { display: flex; gap: .9rem; align-items: center; margin-top: .35rem; }
+    .colors .preview { flex: none; width: 92px; display: flex; flex-direction: column; align-items: center; gap: .3rem; }
+    .colors .preview svg { width: 92px; height: 92px; display: block; }
+    .pickers { flex: 1; min-width: 0; display: grid; gap: .45rem; }
+    .cpick { display: grid; grid-template-columns: 4.6rem auto 5.2rem 1fr; gap: .4rem; align-items: center; font-size: .8rem; }
+    .cpick > span { color: var(--muted); }
+    .cpick input[type=color] { width: 28px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-2); cursor: pointer; }
+    .cpick input.hex {
+      width: 100%; padding: .3rem .4rem; border-radius: 6px; font: .8rem ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: var(--bg-2); color: var(--text); border: 1px solid var(--line); text-transform: uppercase;
     }
-    .tunic input { position: absolute; opacity: 0; pointer-events: none; }
-    .tunic i { width: 16px; height: 16px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 2px rgba(0,0,0,.25); }
-    .tunic:has(input:checked) { border-color: var(--gold); background: #1a2330; }
-    .tunic:has(input:focus-visible) { outline: 2px solid var(--focus); }
+    .cpick input.hex:invalid { border-color: var(--bad); }
+    .swatches { display: flex; gap: .25rem; flex-wrap: wrap; }
+    .swatches button {
+      width: 18px; height: 18px; border-radius: 50%; padding: 0; cursor: pointer;
+      border: 1px solid rgba(255,255,255,.18); box-shadow: inset 0 0 0 2px rgba(0,0,0,.25);
+    }
+    .swatches button:focus-visible { outline: 2px solid var(--focus); }
+    .swatches button.on { outline: 2px solid var(--gold); outline-offset: 1px; }
+    #tunic-warn { color: var(--gold); font-size: .8rem; margin-top: .45rem; }
+    @media (max-width: 420px) {
+      .colors { flex-direction: column; align-items: stretch; }
+      .colors .preview { flex-direction: row; width: auto; justify-content: center; }
+      .cpick { grid-template-columns: 4.2rem auto 4.8rem; }
+      .cpick .swatches { grid-column: 1 / -1; }
+    }
     .check { display: flex; gap: .55rem; align-items: flex-start; margin-top: .85rem; cursor: pointer; font-size: .9rem; }
     .check input { margin-top: .2rem; accent-color: var(--gold); width: 16px; height: 16px; flex: none; }
     .actions { display: flex; gap: .6rem; margin-top: 1rem; flex-wrap: wrap; }
@@ -283,14 +299,20 @@
           </label>
         </div>
         <div class="f" style="margin-top:.8rem">
-          <span class="muted" style="font-size:.8rem">Fairy color</span>
-          <span class="muted" style="font-size:.76rem;opacity:.8;display:block">How your fairy glows on everyone else's screen.</span>
-          <div class="tunics" role="radiogroup" aria-label="Fairy color">
-            <label class="tunic"><input type="radio" name="tunic" value="3CB043"><i style="background:#3cb043"></i>Green</label>
-            <label class="tunic"><input type="radio" name="tunic" value="D0312D"><i style="background:#d0312d"></i>Red</label>
-            <label class="tunic"><input type="radio" name="tunic" value="2A6FDB"><i style="background:#2a6fdb"></i>Blue</label>
-            <label class="tunic"><input type="radio" name="tunic" value="8E44AD"><i style="background:#8e44ad"></i>Purple</label>
+          <span class="muted" style="font-size:.8rem">Your colors</span>
+          <span class="muted" style="font-size:.76rem;opacity:.8;display:block">Everyone sees your fairy's glow and your Link's tunic in these. Change them in game under Settings &rarr; Network &rarr; Anchor.</span>
+          <div class="colors">
+            <div class="preview" aria-hidden="true">
+              <svg viewBox="0 0 100 100"><defs><radialGradient id="pv-glow"><stop id="pv-in" offset="0" stop-color="#ffffff"/><stop id="pv-mid" offset=".38" stop-color="#3cb043" stop-opacity=".9"/><stop id="pv-out" offset="1" stop-color="#3cb043" stop-opacity="0"/></radialGradient></defs><circle cx="50" cy="50" r="46" fill="url(#pv-glow)"/><g fill="#e8f2ff" fill-opacity=".55"><ellipse cx="50" cy="35" rx="6.5" ry="15" transform="rotate(38 50 50)"/><ellipse cx="50" cy="35" rx="6.5" ry="15" transform="rotate(-38 50 50)"/></g><g fill="#e8f2ff" fill-opacity=".4"><ellipse cx="50" cy="40" rx="5" ry="10" transform="rotate(128 50 50)"/><ellipse cx="50" cy="40" rx="5" ry="10" transform="rotate(-128 50 50)"/></g><circle id="pv-core" cx="50" cy="50" r="8" fill="#ffffff"/></svg>
+              <svg viewBox="0 0 40 40" style="width:40px;height:40px"><path id="pv-tunic" d="M14 4 L26 4 L31 10 L36 20 L31 22 L29 17 L29 36 L11 36 L11 17 L9 22 L4 20 L9 10 Z" fill="#3cb043" stroke="rgba(0,0,0,.45)" stroke-width="1.2"/><rect x="11" y="24" width="18" height="3" fill="#6b4a26"/></svg>
+            </div>
+            <div class="pickers">
+              <div class="cpick" data-c="inner"><span>Fairy core</span><input type="color" aria-label="Fairy core color"><input class="hex" maxlength="7" pattern="#?[0-9A-Fa-f]{6}" aria-label="Fairy core hex" spellcheck="false"><div class="swatches"></div></div>
+              <div class="cpick" data-c="outer"><span>Fairy aura</span><input type="color" aria-label="Fairy aura color"><input class="hex" maxlength="7" pattern="#?[0-9A-Fa-f]{6}" aria-label="Fairy aura hex" spellcheck="false"><div class="swatches"></div></div>
+              <div class="cpick" data-c="tunic"><span>Tunic</span><input type="color" aria-label="Tunic color"><input class="hex" maxlength="7" pattern="#?[0-9A-Fa-f]{6}" aria-label="Tunic hex" spellcheck="false"><div class="swatches"></div></div>
+            </div>
           </div>
+          <div id="tunic-warn" role="status" aria-live="polite" hidden></div>
         </div>
         <label class="check">
           <input type="checkbox" id="f-horde">
@@ -298,7 +320,7 @@
         </label>
         <label class="check">
           <input type="checkbox" id="f-sevendays">
-          <span>7 Days to Zelda<br><span class="muted small">Gather materials into a shared pool, craft on the pause menu&#39;s Workbench page (R from Equipment) and fortify the boarded-up Kokiri village with barricades and spikes. Your tunic wears your color.</span></span>
+          <span>7 Days to Zelda<br><span class="muted small">Gather materials into a shared pool, craft on the pause menu&#39;s Workbench page (R from Equipment) and fortify the boarded-up Kokiri village with barricades and spikes. Every Link wears its player's tunic color.</span></span>
         </label>
         <div class="actions">
           <button class="btn primary" id="btn-join" type="submit" disabled>Join room</button>
@@ -452,20 +474,98 @@
       $('canvas').focus();
     }
 
+    // ---- Colors: fairy core/aura gradient and tunic (web_main.cpp reads fairy + tunic) ----
+    var Colors = (function() {
+      var SWATCHES = ['3CB043', 'D0312D', '2A6FDB', '8E44AD', 'E8B93B', 'F06EB4', '3BD6D6', 'FFFFFF', '222222'];
+      var NAMES = ['Green', 'Red', 'Blue', 'Purple', 'Gold', 'Pink', 'Cyan', 'White', 'Black'];
+      var cur = { inner: 'FFFFFF', outer: '3CB043', tunic: '3CB043' };
+      var invited = null; // colors in an invite link that isn't ours: the inviter's
+      function hex(v) { v = String(v || '').replace(/^#/, '').toUpperCase(); return /^[0-9A-F]{6}$/.test(v) ? v : ''; }
+      function row(k) { return document.querySelector('.cpick[data-c=' + k + ']'); }
+      function fromLink(p) {
+        var f = String(p.fairy || '').split('-');
+        return { inner: hex(f[0]), outer: hex(f[1]) || hex(p.color), tunic: hex(p.tunic) || hex(p.color) };
+      }
+      function paint() {
+        ['inner', 'outer', 'tunic'].forEach(function(k) {
+          var r = row(k), v = cur[k];
+          r.querySelector('input[type=color]').value = '#' + v.toLowerCase();
+          var h = r.querySelector('input.hex');
+          if (document.activeElement !== h) h.value = '#' + v;
+          r.querySelectorAll('.swatches button').forEach(function(b) { b.classList.toggle('on', b.dataset.v === v); });
+        });
+        $('pv-in').setAttribute('stop-color', '#' + cur.inner);
+        $('pv-core').setAttribute('fill', '#' + cur.inner);
+        $('pv-mid').setAttribute('stop-color', '#' + cur.outer);
+        $('pv-out').setAttribute('stop-color', '#' + cur.outer);
+        $('pv-tunic').setAttribute('fill', '#' + cur.tunic);
+        warn();
+      }
+      function set(k, v) { v = hex(v); if (!v) return; cur[k] = v; paint(); }
+      // Rough perceptual distance (CIE76 in Lab), the same check as the in-game picker.
+      function lab(h) {
+        var v = [0, 2, 4].map(function(i) {
+          var x = parseInt(h.substr(i, 2), 16) / 255;
+          return x > 0.04045 ? Math.pow((x + 0.055) / 1.055, 2.4) : x / 12.92;
+        });
+        var X = (v[0] * .4124 + v[1] * .3576 + v[2] * .1805) / .95047, Y = v[0] * .2126 + v[1] * .7152 + v[2] * .0722;
+        var Z = (v[0] * .0193 + v[1] * .1192 + v[2] * .9505) / 1.08883;
+        var f = function(t) { return t > .008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116; };
+        return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+      }
+      function dist(a, b) { var p = lab(a), q = lab(b); return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); }
+      // Others' tunics: the inviter's (from the link) and whoever the game saw in this room last time.
+      function others() {
+        var list = [];
+        if (invited && invited.tunic) list.push({ name: 'your inviter', tunic: invited.tunic });
+        var room = $('f-room').value.trim(), me = $('f-name').value.trim();
+        try { (JSON.parse(recall('roster.' + room) || '[]') || []).forEach(function(p) { if (p && p.name !== me && hex(p.tunic)) list.push(p); }); } catch (e) {}
+        return list;
+      }
+      function warn() {
+        var close = others().filter(function(p) { return dist(cur.tunic, hex(p.tunic)) < 25; });
+        var el = $('tunic-warn');
+        el.hidden = !close.length;
+        el.textContent = close.length ? 'Your tunic looks a lot like the one ' + close.map(function(p) { return p.name; }).join(', ') +
+          ' wears. Pick another so you can tell your Links apart.' : '';
+      }
+      function init() {
+        var saved = { inner: hex(recall('fairy').split('-')[0]), outer: hex(recall('fairy').split('-')[1]) || hex(recall('color')), tunic: hex(recall('tunic')) };
+        var link = fromLink(hashParams);
+        var own = !!hashParams.name; // a rejoin link is ours; an invite carries someone else's colors
+        if (!own && (link.outer || link.tunic)) invited = link;
+        var src = own ? link : {};
+        cur.inner = src.inner || saved.inner || 'FFFFFF';
+        cur.outer = src.outer || saved.outer || '3CB043';
+        cur.tunic = src.tunic || saved.tunic || cur.outer;
+        ['inner', 'outer', 'tunic'].forEach(function(k) {
+          var r = row(k), sw = r.querySelector('.swatches');
+          SWATCHES.forEach(function(v, i) {
+            var b = document.createElement('button');
+            b.type = 'button'; b.dataset.v = v; b.title = NAMES[i]; b.setAttribute('aria-label', NAMES[i]);
+            b.style.background = '#' + v;
+            b.addEventListener('click', function() { set(k, v); });
+            sw.appendChild(b);
+          });
+          r.querySelector('input[type=color]').addEventListener('input', function(e) { set(k, e.target.value); });
+          var h = r.querySelector('input.hex');
+          h.addEventListener('input', function() { if (hex(h.value)) set(k, h.value); });
+          h.addEventListener('blur', function() { h.value = '#' + cur[k]; });
+        });
+        paint();
+      }
+      return { init: init, warn: warn, get: function() { return { inner: cur.inner, outer: cur.outer, tunic: cur.tunic }; } };
+    })();
+
     // ---- Form ----
     (function initForm() {
       $('f-name').value = hashParams.name || recall('name');
       $('f-room').value = hashParams.room || recall('room');
-      var tunic = (hashParams.color || recall('color') || '3CB043').toUpperCase();
-      var radios = document.querySelectorAll('input[name=tunic]');
-      var matched = false;
-      for (var i = 0; i < radios.length; i++) {
-        if (radios[i].value === tunic) { radios[i].checked = true; matched = true; }
-      }
-      if (!matched) radios[0].checked = true;
+      Colors.init();
       $('f-horde').checked = hashParams.horde === '1' || (!('horde' in hashParams) && recall('horde') === '1');
       $('f-sevendays').checked = hashParams.sevendays === '1' || (!('sevendays' in hashParams) && recall('sevendays') === '1');
       ['f-name', 'f-room'].forEach(function(id) { $(id).addEventListener('input', refreshButtons); });
+      $('f-room').addEventListener('input', Colors.warn);
       if (isTouch) document.body.classList.add('touch');
       if (isTouch) {
         $('drop-title').textContent = 'Choose your Ocarina of Time ROM';
@@ -477,11 +577,13 @@
     })();
 
     function formValues() {
-      var t = document.querySelector('input[name=tunic]:checked');
+      var c = Colors.get();
       return {
         name: $('f-name').value.trim().slice(0, 24),
         room: $('f-room').value.trim().slice(0, 32),
-        color: t ? t.value : '3CB043',
+        color: c.outer, // older builds read only this: the fairy aura
+        fairy: c.inner + '-' + c.outer,
+        tunic: c.tunic,
         horde: $('f-horde').checked,
         sevendays: $('f-sevendays').checked
       };
@@ -491,6 +593,8 @@
       var parts = ['room=' + encodeURIComponent(v.room)];
       if (withName) parts.push('name=' + encodeURIComponent(v.name));
       if (withName) parts.push('color=' + v.color);
+      // Invites carry the sender's colors too: a friend's lobby warns when their tunic is close.
+      parts.push('fairy=' + v.fairy, 'tunic=' + v.tunic);
       if (v.horde) parts.push('horde=1');
       if (v.sevendays) parts.push('sevendays=1');
       ['team', 'ws', 'hordeforce'].forEach(function(k) {
@@ -631,7 +735,7 @@
           var v = formValues();
           if (v.name) remember('name', v.name);
           if (v.room) remember('room', v.room);
-          remember('color', v.color);
+          remember('color', v.color); remember('fairy', v.fairy); remember('tunic', v.tunic);
           remember('horde', v.horde ? '1' : '0');
           remember('sevendays', v.sevendays ? '1' : '0');
           setStatus('Unpacked. Reloading to start fresh...');
@@ -829,12 +933,13 @@
 
       if (v) {
         remember('name', v.name); remember('room', v.room); remember('color', v.color);
+        remember('fairy', v.fairy); remember('tunic', v.tunic);
         remember('horde', v.horde ? '1' : '0');
         remember('sevendays', v.sevendays ? '1' : '0');
         // The link now reflects this session, so a reload rejoins directly.
         try { history.replaceState(null, '', location.pathname + location.search + buildHash(v, true)); } catch (e) {}
         window._anchorConfig = {
-          room: v.room, name: v.name, color: v.color, team: hashParams.team || 'default',
+          room: v.room, name: v.name, color: v.color, fairy: v.fairy, tunic: v.tunic, team: hashParams.team || 'default',
           ws: hashParams.ws || '', horde: v.horde ? '1' : '0', hordeforce: hashParams.hordeforce || '',
           sevendays: v.sevendays ? '1' : '0'
         };
@@ -941,7 +1046,19 @@
         }
       };
     })();
-    window.SohNet = { state: function(s) { NetPill.state(s); } };
+    window.SohNet = {
+      state: function(s) { NetPill.state(s); },
+      // PuppetFairy.cpp: the room's other players and their tunics, for next visit's warning.
+      roster: function(json) {
+        var room = window._anchorConfig && window._anchorConfig.room;
+        if (!room) return;
+        try {
+          var seen = {};
+          JSON.parse(recall('roster.' + room) || '[]').concat(JSON.parse(json)).forEach(function(p) { if (p && p.name) seen[p.name] = p; });
+          remember('roster.' + room, JSON.stringify(Object.keys(seen).slice(-12).map(function(k) { return seen[k]; })));
+        } catch (e) {}
+      }
+    };
 
     // ---- Crash handling ----
     var crashed = false;

@@ -6,6 +6,12 @@
 #include <string>
 #include <unordered_map>
 #include <cmath>
+#include <cstdio>
+#include <chrono>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 extern "C" {
 #include "variables.h"
@@ -13,6 +19,24 @@ extern "C" {
 #include "src/overlays/actors/ovl_En_Elf/z_en_elf.h"
 
 extern PlayState* gPlayState;
+
+// z_actor.c: while active, idle Navi (pointing at nobody) glows in these colors
+// instead of the cosmetics editor's idle colors. Targeting colors are untouched.
+extern Color_RGB8 gAnchorNaviInner;
+extern Color_RGB8 gAnchorNaviOuter;
+extern u8 gAnchorNaviActive;
+}
+
+Color_RGB8 AnchorLocalFairyOuter() {
+    return CVarGetColor24(CVAR_REMOTE_ANCHOR("Color"), { 100, 255, 100 });
+}
+
+Color_RGB8 AnchorLocalFairyInner() {
+    return CVarGetColor24(CVAR_REMOTE_ANCHOR("FairyInner"), { 255, 255, 255 });
+}
+
+Color_RGB8 AnchorLocalTunic() {
+    return CVarGetColor24(CVAR_REMOTE_ANCHOR("Tunic"), AnchorLocalFairyOuter());
 }
 
 // One cosmetic companion fairy per remote-player puppet so every screen shows a
@@ -50,6 +74,16 @@ static f32 ClampFairyVel(f32 v) {
         v = 20.0f;
     }
     return v * sign;
+}
+
+// Core (prim) and aura (env) of the fairy's glow. Alpha stays the engine's.
+static void ApplyFairyColors(EnElf* elf, const AnchorClient& client) {
+    elf->innerColor.r = (f32)client.fairyInner.r;
+    elf->innerColor.g = (f32)client.fairyInner.g;
+    elf->innerColor.b = (f32)client.fairyInner.b;
+    elf->outerColor.r = (f32)client.fairyOuter.r;
+    elf->outerColor.g = (f32)client.fairyOuter.g;
+    elf->outerColor.b = (f32)client.fairyOuter.b;
 }
 
 static void SnapFairyAway(EnElf* elf) {
@@ -90,6 +124,9 @@ static void DrivePuppetFairy(uint32_t clientId, Actor* actor) {
         SnapFairyAway(elf);
         return;
     }
+
+    // Re-applied every frame so a mid-session color change shows at once.
+    ApplyFairyColors(elf, *client);
 
     Vec3f puppetPos = puppet->actor.world.pos;
     f32 hover = (1500.0f * elf->actor.scale.y) + 40.0f; // matches z_en_elf.c:687
@@ -192,22 +229,110 @@ static void PuppetFairyLifecycle() {
             continue;
         }
 
-        // Tint the outer (aura) color with the client's color; the inner core
-        // stays white. Draw reads outerColor.rgb + a timer-driven env alpha, so
-        // this is all the tint the fairy needs.
-        EnElf* elf = (EnElf*)fairy;
-        elf->outerColor.r = (f32)client.color.r;
-        elf->outerColor.g = (f32)client.color.g;
-        elf->outerColor.b = (f32)client.color.b;
+        // Tint the core and aura with the client's fairy gradient. Draw reads
+        // innerColor/outerColor rgb + a timer-driven alpha, so this is all the
+        // tint the fairy needs.
+        ApplyFairyColors((EnElf*)fairy, client);
 
         sFairies[clientId] = fairy;
     }
+}
+
+// Our own colors as last sent in client state, so a change made mid-session
+// (ImGui picker, console) goes out on its own instead of waiting for a scene change.
+static Color_RGB8 sSentColors[3];
+static std::chrono::steady_clock::time_point sLastColorSend;
+static std::string sRosterSig;
+
+static bool SameColor(const Color_RGB8& a, const Color_RGB8& b) {
+    return a.r == b.r && a.g == b.g && a.b == b.b;
+}
+
+// Sends at once, then at most every 150 ms while a picker is dragged; the last value
+// always goes out because it still differs from what was sent.
+static void ResendColorsWhenChanged() {
+    Color_RGB8 now[3] = { AnchorLocalFairyInner(), AnchorLocalFairyOuter(), AnchorLocalTunic() };
+    if (SameColor(now[0], sSentColors[0]) && SameColor(now[1], sSentColors[1]) &&
+        SameColor(now[2], sSentColors[2])) {
+        return;
+    }
+    auto t = std::chrono::steady_clock::now();
+    if (t - sLastColorSend < std::chrono::milliseconds(150)) {
+        return;
+    }
+    sLastColorSend = t;
+    for (int i = 0; i < 3; i++) {
+        sSentColors[i] = now[i];
+    }
+    Anchor::Instance->SendPacket_UpdateClientState();
+}
+
+// Idle Navi wears our lobby fairy, so we see what everyone else sees. Off in the
+// global room and when "My Navi uses my fairy colors" is unchecked.
+static void UpdateLocalNavi() {
+    gAnchorNaviActive = CVarGetInteger(CVAR_REMOTE_ANCHOR("NaviUsesFairyColors"), 1) && !IsGlobalRoom();
+    gAnchorNaviInner = AnchorLocalFairyInner();
+    gAnchorNaviOuter = AnchorLocalFairyOuter();
+
+    // Navi only copies the idle colors when she switches targets, so repaint an idle,
+    // settled Navi directly; a mid-session change then shows on our screen at once.
+    if (!gAnchorNaviActive || gPlayState == nullptr || !GameInteractor::IsSaveLoaded()) {
+        return;
+    }
+    Player* player = GET_PLAYER(gPlayState);
+    if (player == nullptr || player->naviActor == nullptr ||
+        gPlayState->actorCtx.targetCtx.activeCategory != ACTORCAT_PLAYER) {
+        return;
+    }
+    EnElf* navi = (EnElf*)player->naviActor;
+    if (navi->unk_29C != 0.0f) {
+        return;
+    }
+    navi->innerColor.r = gAnchorNaviInner.r;
+    navi->innerColor.g = gAnchorNaviInner.g;
+    navi->innerColor.b = gAnchorNaviInner.b;
+    navi->outerColor.r = gAnchorNaviOuter.r;
+    navi->outerColor.g = gAnchorNaviOuter.g;
+    navi->outerColor.b = gAnchorNaviOuter.b;
+}
+
+// Web lobby: remember who was in the room and their tunic, so the next visit can warn
+// about a tunic that is hard to tell apart (shell.html, SohNet.roster).
+static void PublishRoster() {
+#ifdef __EMSCRIPTEN__
+    std::string sig;
+    char buf[16];
+    for (auto& [clientId, client] : Anchor::Instance->clients) {
+        if (client.self) {
+            continue;
+        }
+        std::string name;
+        for (char c : client.name) {
+            if (c != '"' && c != '\\' && (unsigned char)c >= 0x20) {
+                name += c;
+            }
+        }
+        snprintf(buf, sizeof(buf), "%02X%02X%02X", client.tunic.r, client.tunic.g, client.tunic.b);
+        sig += (sig.empty() ? "" : ",") + std::string("{\"name\":\"") + name + "\",\"tunic\":\"" + buf + "\"}";
+    }
+    if (sig == sRosterSig) {
+        return;
+    }
+    sRosterSig = sig;
+    std::string json = "[" + sig + "]";
+    EM_ASM({ if (window.SohNet && window.SohNet.roster) window.SohNet.roster(UTF8ToString($0)); }, json.c_str());
+#endif
 }
 
 // Per-frame entry point, called by the Anchor per-frame dispatcher in explicit tick
 // order (see HookHandlers.cpp).
 void PuppetFairyTick() {
     PuppetFairyLifecycle();
+    UpdateLocalNavi();
+    if (Anchor::Instance != nullptr) {
+        ResendColorsWhenChanged();
+        PublishRoster();
+    }
 }
 
 void RegisterPuppetFairyHooks(bool isConnected) {
@@ -219,6 +344,13 @@ void RegisterPuppetFairyHooks(bool isConnected) {
     // EnemySync::RegisterHooks' Reset-on-disconnect.
     if (!isConnected) {
         sFairies.clear();
+        gAnchorNaviActive = 0;
+    } else {
+        // The handshake / scene-change client state carries the current colors.
+        sSentColors[0] = AnchorLocalFairyInner();
+        sSentColors[1] = AnchorLocalFairyOuter();
+        sSentColors[2] = AnchorLocalTunic();
+        sRosterSig.clear();
     }
 
     // NOTE: the spawn/reap lifecycle is NOT registered here; it is driven by the Anchor
@@ -255,3 +387,78 @@ void RegisterPuppetFairyHooks(bool isConnected) {
     // Belt-and-suspenders: a fresh scene starts with an empty map.
     COND_HOOK(OnSceneInit, isConnected, [](int16_t sceneNum) { sFairies.clear(); });
 }
+
+#ifdef __EMSCRIPTEN__
+#include <nlohmann/json.hpp>
+
+// Test hooks for the web two-player color test (tools/webtest/colors-test.py).
+static nlohmann::json ColorJson(const Color_RGB8& c) {
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%02X%02X%02X", c.r, c.g, c.b);
+    return buf;
+}
+
+static nlohmann::json ColorJson(f32 r, f32 g, f32 b) {
+    return ColorJson(Color_RGB8{ (u8)r, (u8)g, (u8)b });
+}
+
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE
+const char* anchor_test_colors() {
+    static std::string out;
+    nlohmann::json j;
+    j["mine"] = { { "fairyInner", ColorJson(AnchorLocalFairyInner()) },
+                  { "fairyOuter", ColorJson(AnchorLocalFairyOuter()) },
+                  { "tunic", ColorJson(AnchorLocalTunic()) } };
+    j["naviActive"] = gAnchorNaviActive;
+    if (gPlayState != nullptr && GameInteractor::IsSaveLoaded()) {
+        Player* player = GET_PLAYER(gPlayState);
+        if (player != nullptr && player->naviActor != nullptr) {
+            EnElf* navi = (EnElf*)player->naviActor;
+            j["navi"] = { { "inner", ColorJson(navi->innerColor.r, navi->innerColor.g, navi->innerColor.b) },
+                          { "outer", ColorJson(navi->outerColor.r, navi->outerColor.g, navi->outerColor.b) } };
+        }
+    }
+    j["clients"] = nlohmann::json::array();
+    if (Anchor::Instance != nullptr) {
+        for (auto& [clientId, client] : Anchor::Instance->clients) {
+            nlohmann::json c = { { "id", clientId },
+                                 { "name", client.name },
+                                 { "self", client.self },
+                                 { "color", ColorJson(client.color) },
+                                 { "fairyInner", ColorJson(client.fairyInner) },
+                                 { "fairyOuter", ColorJson(client.fairyOuter) },
+                                 { "tunic", ColorJson(client.tunic) } };
+            auto it = sFairies.find(clientId);
+            if (it != sFairies.end()) {
+                EnElf* elf = (EnElf*)it->second;
+                c["fairy"] = { { "inner", ColorJson(elf->innerColor.r, elf->innerColor.g, elf->innerColor.b) },
+                               { "outer", ColorJson(elf->outerColor.r, elf->outerColor.g, elf->outerColor.b) },
+                               { "x", elf->actor.world.pos.x },
+                               { "y", elf->actor.world.pos.y },
+                               { "z", elf->actor.world.pos.z } };
+            }
+            j["clients"].push_back(c);
+        }
+    }
+    out = j.dump();
+    return out.c_str();
+}
+
+// which: "inner", "outer" or "tunic"; hex: "RRGGBB". Same CVars as the ImGui pickers.
+EMSCRIPTEN_KEEPALIVE
+void anchor_test_set_color(const char* which, const char* hex) {
+    unsigned int r = 0, g = 0, b = 0;
+    if (sscanf(hex, "%02x%02x%02x", &r, &g, &b) != 3) {
+        return;
+    }
+    std::string w = which;
+    const char* cvar = w == "inner"   ? CVAR_REMOTE_ANCHOR("FairyInner")
+                       : w == "tunic" ? CVAR_REMOTE_ANCHOR("Tunic")
+                                      : CVAR_REMOTE_ANCHOR("Color");
+    CVarSetColor24(cvar, { (u8)r, (u8)g, (u8)b });
+}
+
+} // extern "C"
+#endif

@@ -134,6 +134,8 @@ void web_apply_anchor_config() {
     char* horde = (char*)web_anchor_config_get("horde");
     char* hordeForce = (char*)web_anchor_config_get("hordeforce");
     char* sevenDays = (char*)web_anchor_config_get("sevendays");
+    char* fairy = (char*)web_anchor_config_get("fairy");
+    char* tunic = (char*)web_anchor_config_get("tunic");
 
     if (ws && ws[0]) {
         wsUrl = ws;
@@ -150,6 +152,20 @@ void web_apply_anchor_config() {
         unsigned int r = 100, g = 255, b = 100;
         sscanf(color, "%02x%02x%02x", &r, &g, &b);
         CVarSetColor24(CVAR_REMOTE_ANCHOR("Color"), { (uint8_t)r, (uint8_t)g, (uint8_t)b });
+    }
+    // Fairy gradient "RRGGBB-RRGGBB" (core-aura). The aura is the old single color.
+    if (fairy && strlen(fairy) == 13 && fairy[6] == '-') {
+        unsigned int r = 255, g = 255, b = 255;
+        sscanf(fairy, "%02x%02x%02x", &r, &g, &b);
+        CVarSetColor24(CVAR_REMOTE_ANCHOR("FairyInner"), { (uint8_t)r, (uint8_t)g, (uint8_t)b });
+        r = 100, g = 255, b = 100;
+        sscanf(fairy + 7, "%02x%02x%02x", &r, &g, &b);
+        CVarSetColor24(CVAR_REMOTE_ANCHOR("Color"), { (uint8_t)r, (uint8_t)g, (uint8_t)b });
+    }
+    if (tunic && strlen(tunic) == 6) {
+        unsigned int r = 100, g = 255, b = 100;
+        sscanf(tunic, "%02x%02x%02x", &r, &g, &b);
+        CVarSetColor24(CVAR_REMOTE_ANCHOR("Tunic"), { (uint8_t)r, (uint8_t)g, (uint8_t)b });
     }
     if (team && team[0]) {
         CVarSetString(CVAR_REMOTE_ANCHOR("TeamId"), team);
@@ -176,7 +192,7 @@ void web_apply_anchor_config() {
     }
 
     printf("[Web] Anchor configured. room=%s name=%s url=%s\n", room ? room : "", name ? name : "", wsUrl.c_str());
-    free(room); free(name); free(color); free(team); free(ws); free(horde); free(hordeForce); free(sevenDays);
+    free(room); free(name); free(color); free(team); free(ws); free(horde); free(hordeForce); free(sevenDays); free(fairy); free(tunic);
 }
 
 static int s_otr_loaded = 0;

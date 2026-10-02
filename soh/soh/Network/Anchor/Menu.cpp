@@ -4,6 +4,8 @@
 #include "soh/SohGui/SohMenu.h"
 #include "soh/util.h"
 #include "soh/SevenDays/SevenDays.h"
+#include <algorithm>
+#include <cmath>
 
 namespace SohGui {
 extern std::shared_ptr<SohMenu> mSohMenu;
@@ -13,6 +15,93 @@ extern std::shared_ptr<AnchorRoomWindow> mAnchorRoomWindow;
 static const char* pvpModes[3] = { "Off", "On", "On + Friendly Fire" };
 static std::vector<const char*> teleportModes = { "None", "Team Only", "All" };
 static std::vector<const char*> showLocationsModes = { "None", "Team Only", "All" };
+
+// Lobby color presets, the same as the web lobby's swatches (shell.html).
+static const struct {
+    const char* name;
+    Color_RGB8 color;
+} sColorSwatches[] = {
+    { "Green", { 0x3C, 0xB0, 0x43 } },  { "Red", { 0xD0, 0x31, 0x2D } },   { "Blue", { 0x2A, 0x6F, 0xDB } },
+    { "Purple", { 0x8E, 0x44, 0xAD } }, { "Gold", { 0xE8, 0xB9, 0x3B } },  { "Pink", { 0xF0, 0x6E, 0xB4 } },
+    { "Cyan", { 0x3B, 0xD6, 0xD6 } },   { "White", { 0xFF, 0xFF, 0xFF } }, { "Black", { 0x22, 0x22, 0x22 } },
+};
+
+// A full picker (hex + RGB) and the preset swatches for one Color24 CVar.
+static void LobbyColorPicker(const char* label, const char* cvar, Color_RGB8 current) {
+    ImGui::PushID(cvar);
+    ImGui::Text("%s", label);
+    float rgb[3] = { current.r / 255.0f, current.g / 255.0f, current.b / 255.0f };
+    ImGui::SetNextItemWidth(std::min(ImGui::GetContentRegionAvail().x, ImGui::GetFontSize() * 9));
+    bool changed = ImGui::ColorEdit3("##pick", rgb, ImGuiColorEditFlags_DisplayHex | ImGuiColorEditFlags_NoLabel);
+    Color_RGB8 next = { (u8)(rgb[0] * 255.0f + 0.5f), (u8)(rgb[1] * 255.0f + 0.5f), (u8)(rgb[2] * 255.0f + 0.5f) };
+    // Swatches on their own row, wrapping in narrow columns.
+    float size = ImGui::GetFrameHeight();
+    float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+    for (size_t i = 0; i < std::size(sColorSwatches); i++) {
+        const Color_RGB8& c = sColorSwatches[i].color;
+        if (i > 0 && ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + size <= right) {
+            ImGui::SameLine();
+        }
+        if (ImGui::ColorButton(sColorSwatches[i].name, ImVec4(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, 1.0f),
+                               ImGuiColorEditFlags_NoAlpha, ImVec2(size, size))) {
+            next = c;
+            changed = true;
+        }
+    }
+    if (changed) {
+        CVarSetColor24(cvar, next);
+        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+    }
+    ImGui::PopID();
+}
+
+// Rough perceptual distance (CIE76 in Lab); below ~25 two tunics are hard to tell apart.
+static float ColorDistance(Color_RGB8 a, Color_RGB8 b) {
+    auto lab = [](Color_RGB8 c, float out[3]) {
+        float v[3] = { c.r / 255.0f, c.g / 255.0f, c.b / 255.0f };
+        for (float& x : v) {
+            x = x > 0.04045f ? powf((x + 0.055f) / 1.055f, 2.4f) : x / 12.92f;
+        }
+        float X = (v[0] * 0.4124f + v[1] * 0.3576f + v[2] * 0.1805f) / 0.95047f;
+        float Y = v[0] * 0.2126f + v[1] * 0.7152f + v[2] * 0.0722f;
+        float Z = (v[0] * 0.0193f + v[1] * 0.1192f + v[2] * 0.9505f) / 1.08883f;
+        auto f = [](float t) { return t > 0.008856f ? cbrtf(t) : 7.787f * t + 16.0f / 116.0f; };
+        out[0] = 116.0f * f(Y) - 16.0f;
+        out[1] = 500.0f * (f(X) - f(Y));
+        out[2] = 200.0f * (f(Y) - f(Z));
+    };
+    float la[3], lb[3];
+    lab(a, la);
+    lab(b, lb);
+    return sqrtf((la[0] - lb[0]) * (la[0] - lb[0]) + (la[1] - lb[1]) * (la[1] - lb[1]) +
+                 (la[2] - lb[2]) * (la[2] - lb[2]));
+}
+
+// Fairy gradient and tunic: what everyone else sees on our fairy and our Link.
+// Changes go out within a second (PuppetFairy.cpp resends the client state).
+static void AnchorColorsMenu() {
+    ImGui::SeparatorText("Your Colors (everyone sees these)");
+    LobbyColorPicker("Fairy core", CVAR_REMOTE_ANCHOR("FairyInner"), AnchorLocalFairyInner());
+    LobbyColorPicker("Fairy aura", CVAR_REMOTE_ANCHOR("Color"), AnchorLocalFairyOuter());
+    LobbyColorPicker("Tunic", CVAR_REMOTE_ANCHOR("Tunic"), AnchorLocalTunic());
+    UIWidgets::CVarCheckbox("My Navi uses my fairy colors", CVAR_REMOTE_ANCHOR("NaviUsesFairyColors"),
+                            UIWidgets::CheckboxOptions().DefaultValue(true).Color(THEME_COLOR).Tooltip(
+                                "While in a room, your own Navi glows in your fairy colors when idle, as others see "
+                                "her. Off: keep the Cosmetics Editor's Navi colors."));
+
+    auto anchor = Anchor::Instance;
+    if (anchor == nullptr || !anchor->isConnected) {
+        return;
+    }
+    Color_RGB8 mine = AnchorLocalTunic();
+    for (auto& [clientId, client] : anchor->clients) {
+        if (client.self || !client.online || ColorDistance(mine, client.tunic) >= 25.0f) {
+            continue;
+        }
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s Your tunic is close to %s's. Pick another so you can "
+                           "tell your Links apart.", ICON_FA_EXCLAMATION_TRIANGLE, client.name.c_str());
+    }
+}
 
 void AnchorMainMenu(WidgetInfo& info) {
     auto anchor = Anchor::Instance;
@@ -140,6 +229,9 @@ void AnchorMainMenu(WidgetInfo& info) {
     ImGui::EndDisabled();
     ImGui::Spacing();
 
+    AnchorColorsMenu();
+    ImGui::Spacing();
+
     if (!anchor->isEnabled) {
         return;
     }
@@ -262,11 +354,11 @@ void SevenDaysMenu(WidgetInfo& info) {
                                 .Tooltip("Gather Fiber, Stone, Wood, Bone and Rot into the room's shared pool and "
                                          "craft on the pause menu's Workbench page (R from Equipment; Tab or the Craft button opens "
                                          "it)."));
-    UIWidgets::CVarCheckbox("Tunic in my lobby color", CVAR_SEVEN_DAYS("TunicColors"),
+    UIWidgets::CVarCheckbox("Tunic in my lobby tunic color", CVAR_SEVEN_DAYS("TunicColors"),
                             UIWidgets::CheckboxOptions({ { .disabled = off } })
                                 .DefaultValue(true)
                                 .Color(THEME_COLOR)
-                                .Tooltip("Every player's Link wears their own lobby color (tunic and cap)."));
+                                .Tooltip("Every player's Link wears their own lobby tunic color (tunic and cap), set under Network > Anchor."));
     UIWidgets::CVarCheckbox("Bases and the village", CVAR_SEVEN_DAYS("Base"),
                             UIWidgets::CheckboxOptions({ { .disabled = off } })
                                 .DefaultValue(true)
