@@ -1,4 +1,5 @@
 #include "SevenDays.h"
+#include "SevenDaysNet.h"
 #include "soh/ShipInit.hpp"
 #include "soh/SaveManager.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -6,6 +7,10 @@
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Anchor/EnemySync.h"
 #include "soh/Notification/Notification.h"
+
+extern "C" {
+#include "overlays/actors/ovl_En_Ishi/z_en_ishi.h"
+}
 
 #include <chrono>
 #include <deque>
@@ -33,6 +38,14 @@ extern u8 gSevenDaysTunicColorActive;
  */
 
 namespace SevenDays {
+
+using Net::ActingOwner;
+using Net::Broadcast;
+using Net::Connected;
+using Net::IsOwner;
+using Net::Now;
+using Net::OwnId;
+using Net::SendTo;
 
 static const std::string GATHER = "GATHER";
 static const std::string CRAFT_REQUEST = "CRAFT_REQUEST";
@@ -71,7 +84,7 @@ static InFlightCraft sInFlight;
 static uint32_t sNextReqId = 1;
 static uint32_t sLastActingOwner = UINT32_MAX;
 
-static double Now() {
+double Net::Now() {
     using namespace std::chrono;
     return duration<double>(steady_clock::now().time_since_epoch()).count();
 }
@@ -82,6 +95,10 @@ bool Enabled() {
 
 bool CraftingEnabled() {
     return Enabled() && CVarGetInteger(CVAR_SEVEN_DAYS("Crafting"), 1) != 0;
+}
+
+bool BaseEnabled() {
+    return Enabled() && CVarGetInteger(CVAR_SEVEN_DAYS("Base"), 1) != 0;
 }
 
 bool TunicColorsEnabled() {
@@ -98,13 +115,13 @@ bool IsSevenDaysText(uint16_t textId) {
 
 // MARK: - Authority
 
-static bool Connected() {
+bool Net::Connected() {
     return Anchor::Instance != nullptr && Anchor::Instance->isConnected;
 }
 
 // The room owner decides the pool. While it's offline or still on file select,
 // the lowest online, save-loaded client acts for it from its cached copy.
-static uint32_t ActingOwner() {
+uint32_t Net::ActingOwner() {
     if (!Connected()) {
         return 0;
     }
@@ -124,20 +141,20 @@ static uint32_t ActingOwner() {
     return anchor->ownClientId;
 }
 
-static bool IsOwner() {
+bool Net::IsOwner() {
     return !Connected() || ActingOwner() == Anchor::Instance->ownClientId;
 }
 
-static uint32_t OwnId() {
+uint32_t Net::OwnId() {
     return Connected() ? Anchor::Instance->ownClientId : 0;
 }
 
-static void SendTo(uint32_t clientId, nlohmann::json payload) {
+void Net::SendTo(uint32_t clientId, nlohmann::json payload) {
     payload["targetClientId"] = clientId;
     Anchor::Instance->SendJsonToRemote(payload);
 }
 
-static void Broadcast(nlohmann::json payload) {
+void Net::Broadcast(nlohmann::json payload) {
     if (Connected()) {
         Anchor::Instance->SendJsonToRemote(payload);
     }
@@ -175,6 +192,37 @@ static void BroadcastPool(const nlohmann::json& credit) {
     Broadcast(payload);
 }
 
+PoolState& Net::MutablePool() {
+    return sPool;
+}
+
+void Net::BroadcastPool() {
+    SevenDays::BroadcastPool(nlohmann::json());
+}
+
+// MARK: - Late join (Anchor team state)
+
+nlohmann::json TeamStateJson() {
+    nlohmann::json j;
+    j["pool"] = PoolToJson();
+    j["base"] = BaseToJson();
+    return j;
+}
+
+void ApplyTeamStateJson(const nlohmann::json& j) {
+    if (!Enabled() || !j.is_object()) {
+        return;
+    }
+    // Two copies disagree: the higher rev wins (the owner re-broadcasts its own
+    // copy if it is newer, see MATERIALS_REQUEST / BASE_REQUEST).
+    if (j.contains("pool") && j["pool"].value("rev", 0u) > sPool.rev) {
+        PoolFromJson(j["pool"]);
+    }
+    if (j.contains("base") && BaseEnabled()) {
+        BaseAdoptIfNewer(j["base"], false);
+    }
+}
+
 // MARK: - Navi
 
 static void QueueNavi(uint8_t first) {
@@ -209,6 +257,7 @@ static void RegisterMessages() {
     }
     registered = true;
     CustomMessageManager::Instance->AddCustomMessageTable(CUSTOM_MESSAGE_TABLE);
+    RegisterVillageMessages(CUSTOM_MESSAGE_TABLE);
     for (uint8_t m = 0; m < MAT_COUNT; m++) {
         CustomMessageManager::Instance->CreateMessage(
             CUSTOM_MESSAGE_TABLE, SEVEN_DAYS_TEXT_BASE + FIRST_GATHER_BASE + m,
@@ -477,7 +526,7 @@ bool RequestCraft(const std::string& recipeId) {
 
 bool IsPacket(const std::string& type) {
     return type == GATHER || type == CRAFT_REQUEST || type == CRAFT_RESULT || type == MATERIALS_STATE ||
-           type == MATERIALS_REQUEST;
+           type == MATERIALS_REQUEST || BaseOwnsPacket(type);
 }
 
 static void SendMaterialsRequest() {
@@ -497,7 +546,9 @@ void HandlePacket(const nlohmann::json& payload) {
     std::string type = payload.value("type", "");
     uint32_t from = payload.value("clientId", 0u);
 
-    if (type == GATHER) {
+    if (BaseOwnsPacket(type)) {
+        BaseHandlePacket(type, payload, from);
+    } else if (type == GATHER) {
         if (IsOwner()) {
             ApplyGather(payload, from);
         }
@@ -547,6 +598,25 @@ static void OnFrame() {
     // remote player's color around its draw).
     RestoreLocalTunicOverride();
 
+    // Ownership moved (owner left, or we just connected): sync up with the new one.
+    // The pool and the base travel together: kits are spent by placement.
+    uint32_t acting = ActingOwner();
+    if (acting != sLastActingOwner) {
+        sLastActingOwner = acting;
+        if (IsOwner()) {
+            BroadcastPool(nullptr);
+        } else {
+            SendMaterialsRequest();
+        }
+        if (BaseEnabled()) {
+            BaseOnOwnerChanged(IsOwner());
+        }
+    }
+
+    if (BaseEnabled()) {
+        BaseOnFrame();
+    }
+
     if (!CraftingEnabled()) {
         return;
     }
@@ -556,17 +626,6 @@ static void OnFrame() {
     if (CraftInFlight() && Now() - sInFlight.sentAt > 5.0) {
         sInFlight = {};
         Notification::Emit({ .prefix = "Crafting", .message = "The host didn't answer", .remainingTime = 3.0f });
-    }
-
-    // Ownership moved (owner left, or we just connected): sync up with the new one.
-    uint32_t acting = ActingOwner();
-    if (acting != sLastActingOwner) {
-        sLastActingOwner = acting;
-        if (IsOwner()) {
-            BroadcastPool(nullptr);
-        } else {
-            SendMaterialsRequest();
-        }
     }
 }
 
@@ -579,6 +638,13 @@ static void InitSave(bool isDebug) {
     sSeenSources.clear();
     sInFlight = {};
     sLastActingOwner = UINT32_MAX;
+    // Spare boards by the village workbench: Kokiri Forest has no trees to roll
+    // into before the Lost Woods, and the first craft should be a barricade.
+    // (A loaded save's own pool replaces this.)
+    sPool.materials[MAT_WOOD] = 8;
+    // A new save starts in the boarded-up village; loading a v2 section replaces it.
+    BaseResetSession();
+    SeedVillage();
 }
 
 static void SaveSection(SaveContext* saveContext, int sectionID, bool fullSave) {
@@ -594,6 +660,8 @@ static void SaveSection(SaveContext* saveContext, int sectionID, bool fullSave) 
         });
     });
     SaveManager::Instance->SaveData("firsts", sFirsts);
+    // v2 (M5): the base, counters and loot flags, as one JSON object.
+    SaveManager::Instance->SaveData("base", BaseToJson());
 }
 
 static void LoadSection() {
@@ -615,6 +683,16 @@ static void LoadSection() {
         });
     });
     SaveManager::Instance->LoadData("firsts", sFirsts);
+}
+
+// v2 = v1 + "base". A v1 save (M4) keeps the village seeded by InitSave.
+static void LoadSectionV2() {
+    LoadSection();
+    nlohmann::json base;
+    SaveManager::Instance->LoadData("base", base);
+    if (base.is_object()) {
+        BaseFromJson(base);
+    }
 }
 
 // MARK: - Test hooks
@@ -682,7 +760,16 @@ static void RegisterSevenDaysM4() {
         if (actor->init != NULL) {
             return;
         }
-        if ((actor->id == ACTOR_EN_ISHI && (actor->params & 1) == 0) || actor->id == ACTOR_OBJ_BOMBIWA) {
+        if (actor->id == ACTOR_EN_ISHI && (actor->params & 1) == 0) {
+            // Only a rock that was broken: thrown (it left home) or smashed where it
+            // sat (AC hit). Obj_Mure2 rock circles despawn their rocks with
+            // Actor_Kill when Link walks away, which must not pay out.
+            EnIshi* rock = (EnIshi*)actor;
+            bool thrown = Math_Vec3f_DistXZ(&actor->world.pos, &actor->home.pos) > 10.0f;
+            if (thrown || (rock->collider.base.acFlags & AC_HIT)) {
+                Gather(actor);
+            }
+        } else if (actor->id == ACTOR_OBJ_BOMBIWA) {
             Gather(actor);
         }
     });
@@ -693,6 +780,7 @@ static void RegisterSevenDaysM4() {
         }
     });
     COND_HOOK(OnGameFrameUpdate, Enabled(), OnFrame);
+    BaseRegisterHooks(BaseEnabled());
 
     if (!Enabled()) {
         gSevenDaysTunicColorActive = 0;
@@ -703,11 +791,12 @@ static void RegisterSevenDaysOnce() {
     RegisterMessages();
     SaveManager::Instance->AddInitFunction(InitSave);
     SaveManager::Instance->AddLoadFunction("sevenDays", 1, LoadSection);
-    SaveManager::Instance->AddSaveFunction("sevenDays", 1, SaveSection, true, SECTION_PARENT_NONE);
+    SaveManager::Instance->AddLoadFunction("sevenDays", 2, LoadSectionV2);
+    SaveManager::Instance->AddSaveFunction("sevenDays", 2, SaveSection, true, SECTION_PARENT_NONE);
 }
 
 static RegisterShipInitFunc initOnce(RegisterSevenDaysOnce);
 static RegisterShipInitFunc initFunc(RegisterSevenDaysM4, { CVAR_SEVEN_DAYS("Enabled"), CVAR_SEVEN_DAYS("Crafting"),
-                                                            CVAR_SEVEN_DAYS("TunicColors") });
+                                                            CVAR_SEVEN_DAYS("TunicColors"), CVAR_SEVEN_DAYS("Base") });
 
 } // namespace SevenDays

@@ -6,6 +6,7 @@
 #include "soh/Enhancements/randomizer/dungeon.h"
 #include "soh/OTRGlobals.h"
 #include "soh/Notification/Notification.h"
+#include "soh/SevenDays/SevenDays.h"
 
 extern "C" {
 #include "variables.h"
@@ -44,6 +45,10 @@ void Anchor::SendPacket_UpdateTeamState() {
     payload["state"]["sceneFlags"][gPlayState->sceneNum * 4 + 1] = gPlayState->actorCtx.flags.swch;
     payload["state"]["sceneFlags"][gPlayState->sceneNum * 4 + 2] = gPlayState->actorCtx.flags.clear;
     payload["state"]["sceneFlags"][gPlayState->sceneNum * 4 + 3] = gPlayState->actorCtx.flags.collect;
+    // 7 Days to Zelda: the base and the pool ride along, so late joiners get them (higher rev wins).
+    if (SevenDays::Enabled()) {
+        payload["state"]["sevenDays"] = SevenDays::TeamStateJson();
+    }
 
     // The commented out code below is an attempt at sending the entire randomizer seed over, in hopes that a player
     // doesn't have to generate the seed themselves Currently it doesn't work :)
@@ -133,6 +138,9 @@ void Anchor::HandlePacket_UpdateTeamState(nlohmann::json payload) {
     // }
 
     if (payload.contains("state")) {
+        if (payload["state"].contains("sevenDays")) {
+            SevenDays::ApplyTeamStateJson(payload["state"]["sevenDays"]);
+        }
         SaveContext loadedData = payload["state"].get<SaveContext>();
 
         gSaveContext.healthCapacity = loadedData.healthCapacity;

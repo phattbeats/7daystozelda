@@ -298,7 +298,7 @@
         </label>
         <label class="check">
           <input type="checkbox" id="f-sevendays">
-          <span>7 Days to Zelda<br><span class="muted small">Gather materials into a shared pool and craft at the workbench (Tab or the Craft button). Your tunic wears your color.</span></span>
+          <span>7 Days to Zelda<br><span class="muted small">Gather materials into a shared pool, craft at the workbench (Tab or the Craft button) and fortify the boarded-up Kokiri village with barricades and spikes. Your tunic wears your color.</span></span>
         </label>
         <div class="actions">
           <button class="btn primary" id="btn-join" type="submit" disabled>Join room</button>
@@ -841,6 +841,9 @@
         NetPill.start(v.room);
       } else {
         delete window._anchorConfig;
+        // Solo still honours the 7 Days to Zelda checkbox (web_apply_anchor_config).
+        window._sevenDaysSolo = $('f-sevendays').checked ? '1' : '0';
+        remember('sevendays', window._sevenDaysSolo);
       }
 
       romView('loading');

@@ -266,6 +266,16 @@ void SevenDaysMenu(WidgetInfo& info) {
                                 .DefaultValue(true)
                                 .Color(THEME_COLOR)
                                 .Tooltip("Every player's Link wears their own lobby color (tunic and cap)."));
+    UIWidgets::CVarCheckbox("Bases and the village", CVAR_SEVEN_DAYS("Base"),
+                            UIWidgets::CheckboxOptions({ { .disabled = off } })
+                                .DefaultValue(true)
+                                .Color(THEME_COLOR)
+                                .Tooltip("Build barricades, spike strips, workbenches and storage chests from kits "
+                                         "(Base tab of the workbench). A new save starts in a boarded-up Kokiri "
+                                         "village."));
+    if (SevenDays::BaseEnabled()) {
+        ImGui::TextWrapped("%s", SevenDays::BaseCountsLine().c_str());
+    }
     if (SevenDays::CraftingEnabled()) {
         if (ImGui::Button("Open Workbench")) {
             SevenDays::ToggleCraftingWindow();

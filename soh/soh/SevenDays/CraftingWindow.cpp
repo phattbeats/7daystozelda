@@ -28,6 +28,21 @@ void ToggleCraftingWindow() {
     }
 }
 
+static int sRequestedTab = -1;
+
+void OpenCraftingWindow(int tab) {
+    sRequestedTab = tab;
+    if (SohGui::mSevenDaysCraftingWindow && !SohGui::mSevenDaysCraftingWindow->IsVisible()) {
+        SohGui::mSevenDaysCraftingWindow->Show();
+    }
+}
+
+int TakeRequestedCraftingTab() {
+    int tab = sRequestedTab;
+    sRequestedTab = -1;
+    return tab;
+}
+
 static bool InGameplay() {
     return gPlayState != nullptr && GET_PLAYER(gPlayState) != nullptr && gSaveContext.fileNum >= 0 &&
            gSaveContext.fileNum <= 2 && gSaveContext.gameMode == GAMEMODE_NORMAL;
@@ -84,12 +99,73 @@ static void DrawRecipes(RecipeKind a, RecipeKind b) {
     }
 }
 
+// M5: kits in the pool become pieces of the base.
+static void DrawBaseTab() {
+    const PoolState& pool = GetPool();
+    ImGui::TextWrapped("%s", BaseCountsLine().c_str());
+    ImGui::Spacing();
+    bool any = false;
+    for (int t = 0; t < PLACEABLE_COUNT; t++) {
+        const PlaceableInfo& info = GetPlaceableInfo((uint8_t)t);
+        if (info.kit[0] == '\0') {
+            continue;
+        }
+        auto it = pool.kits.find(info.kit);
+        uint32_t count = it != pool.kits.end() ? it->second : 0;
+        any = any || count > 0;
+        ImGui::PushID(t);
+        ImGui::BeginDisabled(count == 0 || InPlacement());
+        std::string label = fmt::format("Place {} ({})", info.name, count);
+        if (ImGui::Button(label.c_str(), ImVec2(ImGui::GetFontSize() * 14.0f, kButtonHeight))) {
+            BeginPlacement((uint8_t)t);
+            if (SohGui::mSevenDaysCraftingWindow) {
+                SohGui::mSevenDaysCraftingWindow->Hide();
+            }
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1, 1, 1, 0.6f), info.maxHp > 0 ? "%u HP" : " ", info.maxHp);
+        ImGui::PopID();
+    }
+    if (!any) {
+        ImGui::TextColored(ImVec4(1, 1, 1, 0.6f), "No kits yet: craft them on the Craft tab.");
+    }
+    ImGui::TextColored(ImVec4(1, 1, 1, 0.6f), "Placing: C-Left/C-Right rotate, A place, B cancel.");
+    ImGui::Separator();
+
+    uint16_t nearest = NearestPlaceable(150.0f);
+    const Placeable* p = nearest ? FindPlaceable(nearest) : nullptr;
+    ImGui::BeginDisabled(p == nullptr || p->type == PLACEABLE_SIGN);
+    std::string pack = p ? fmt::format("Pack up the nearby {}", GetPlaceableInfo(p->type).name)
+                         : std::string("Pack up (stand next to a piece)");
+    if (ImGui::Button(pack.c_str(), ImVec2(ImGui::GetFontSize() * 14.0f, kButtonHeight))) {
+        RequestPackUp(nearest);
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    static bool confirm = false;
+    if (!confirm) {
+        if (ImGui::Button("Pack up the whole base", ImVec2(0, kButtonHeight))) {
+            confirm = true;
+        }
+    } else {
+        if (ImGui::Button("Really? Every kit comes back", ImVec2(0, kButtonHeight))) {
+            confirm = false;
+            RequestPackUpBase(gSaveContext.linkAge == 0 ? ERA_ADULT : ERA_CHILD);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Keep it", ImVec2(0, kButtonHeight))) {
+            confirm = false;
+        }
+    }
+}
+
 } // namespace SevenDays
 
 using namespace SevenDays;
 
 void SevenDaysCraftingWindow::Draw() {
-    if (!CraftingEnabled() || !InGameplay()) {
+    if ((!CraftingEnabled() && !BaseEnabled()) || !InGameplay()) {
         return;
     }
 
@@ -151,13 +227,21 @@ void SevenDaysCraftingWindow::DrawElement() {
     }
     ImGui::Separator();
 
+    int tab = TakeRequestedCraftingTab();
+    auto flags = [tab](int i) { return tab == i ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None; };
     if (ImGui::BeginTabBar("SevenDaysTabs")) {
-        if (ImGui::BeginTabItem("Craft")) {
-            DrawRecipes(RECIPE_CONSUMABLE, RECIPE_KIT);
-            ImGui::EndTabItem();
+        if (CraftingEnabled()) {
+            if (ImGui::BeginTabItem("Craft", nullptr, flags(0))) {
+                DrawRecipes(RECIPE_CONSUMABLE, RECIPE_KIT);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Trade", nullptr, flags(1))) {
+                DrawRecipes(RECIPE_TRADE, RECIPE_TRADE);
+                ImGui::EndTabItem();
+            }
         }
-        if (ImGui::BeginTabItem("Trade")) {
-            DrawRecipes(RECIPE_TRADE, RECIPE_TRADE);
+        if (BaseEnabled() && ImGui::BeginTabItem("Base", nullptr, flags(2))) {
+            DrawBaseTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

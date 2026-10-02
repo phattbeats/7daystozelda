@@ -115,6 +115,14 @@ void web_apply_anchor_config() {
         // session's Enabled=1 would otherwise auto-connect a solo game next time.
         CVarSetString(CVAR_REMOTE_ANCHOR("WebSocketURL"), wsUrl.c_str());
         CVarSetInteger(CVAR_REMOTE_ANCHOR("Enabled"), 0);
+        // The lobby's 7 Days to Zelda checkbox applies to solo play too.
+        int soloSevenDays = EM_ASM_INT({
+            return (typeof window._sevenDaysSolo === 'string') ? (window._sevenDaysSolo === '1' ? 1 : 0) : -1;
+        });
+        if (soloSevenDays >= 0) {
+            CVarSetInteger("gSevenDays.Enabled", soloSevenDays);
+            ShipInit::Init("gSevenDays.Enabled");
+        }
         return;
     }
 
