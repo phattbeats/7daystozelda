@@ -187,6 +187,14 @@ bool RaidTonight() {
     return b.nextRaidDay != 0 && CurrentDay() >= b.nextRaidDay;
 }
 
+uint32_t NightsUntilRaid() {
+    const BaseState& b = GetBase();
+    if (b.nextRaidDay == 0) {
+        return UINT32_MAX;
+    }
+    return b.nextRaidDay > CurrentDay() ? b.nextRaidDay - CurrentDay() : 0;
+}
+
 static bool PrologueOver() {
     return (GetBase().story & STORY_FIRST_RAID) != 0;
 }
@@ -893,6 +901,17 @@ static void WaveTick() {
 
 // MARK: - The clock
 
+bool RaidWaveHere() {
+    if (gPlayState == nullptr) {
+        return false;
+    }
+    if (sDir.active && sDir.kind == KIND_RAID && gPlayState->sceneNum == sDir.scene) {
+        return sDir.status == WAVE_INCOMING || sDir.status == WAVE_ASSAULT;
+    }
+    return sPeer.scene == gPlayState->sceneNum && Now() - sPeer.heardAt < 12.0 &&
+           (sPeer.status == WAVE_INCOMING || sPeer.status == WAVE_ASSAULT);
+}
+
 static bool HoldingNight() {
     if (gPlayState == nullptr) {
         return false;
@@ -964,7 +983,17 @@ static void SendToOwner(nlohmann::json payload) {
 
 static void ShowNotice(const nlohmann::json& n) {
     std::string prefix = n.value("prefix", ""), message = n.value("message", "");
-    if (prefix.size() + message.size() > 48 && !message.empty()) {
+    if (n.contains("dawn") && NightsEnabled()) {
+        // M7: the dawn's title is the Majora-style card; the report stays a toast.
+        const auto& d = n["dawn"];
+        ShowDawnCard(d.value("day", 1u), d.value("until", UINT32_MAX), d.value("days", 0u), d.value("raids", 0u));
+        prefix = "";
+    }
+    if (prefix.empty()) {
+        if (!message.empty()) {
+            Emit("", message, n.value("secs", 7.0f) + 2.0f);
+        }
+    } else if (prefix.size() + message.size() > 48 && !message.empty()) {
         // A toast is one line: the title on its own, then the report.
         Emit(prefix, "", n.value("secs", 7.0f));
         Emit("", message, n.value("secs", 7.0f) + 2.0f);
@@ -1104,7 +1133,17 @@ static void OwnerDawn() {
     if (report.empty() && wasDusk) {
         report = "The night things went back into the ground.";
     }
-    Notice(title, report, navi);
+    nlohmann::json n;
+    n["type"] = RAID_NOTICE;
+    n["prefix"] = title;
+    n["message"] = report;
+    n["navi"] = navi;
+    n["dawn"] = { { "day", CurrentDay() },
+                  { "until", b.nextRaidDay != 0 ? until : UINT32_MAX },
+                  { "days", b.daysSurvived },
+                  { "raids", b.hordeNightsSurvived } };
+    Broadcast(n);
+    ShowNotice(n);
     ESYNC_LOG("[Raids] dawn: day {} raid={} fought={} failed={} -> {}", CurrentDay(), wasRaid, !report.empty(),
               b.nightsFailed, report);
 }
@@ -1420,6 +1459,15 @@ void sevendays_test_raid(const char* cmdC) {
         StartTransition(DUSK_TIME);
     } else if (cmd == "dawn" || cmd == "fast") {
         StartTransition(DAWN_TIME);
+    } else if (cmd == "calm") {
+        // Spend the wave's budget and send its raiders home: the night stays a raid
+        // night (red sky, held clock) with nobody left to fight.
+        sDir.spent = sDir.budget;
+        for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
+            if (IsRaiderType(a->id)) {
+                Actor_Kill(a);
+            }
+        }
     } else if (cmd == "heal") {
         gSaveContext.health = gSaveContext.healthCapacity; // a bottled fairy, for scripted fights
     } else if (cmd == "lost") {

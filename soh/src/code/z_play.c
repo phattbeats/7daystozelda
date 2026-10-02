@@ -1325,6 +1325,8 @@ skip:
                        play->state.gfxCtx);
 }
 
+void SevenDays_DrawOverlay(PlayState* play); // soh/SevenDays/Nights.cpp
+
 void Play_DrawOverlayElements(PlayState* play) {
     if ((play->pauseCtx.state != 0) || (play->pauseCtx.debugState != 0)) {
         KaleidoScopeCall_Draw(play);
@@ -1343,6 +1345,9 @@ void Play_DrawOverlayElements(PlayState* play) {
             GameOver_FadeInLights(play);
         }
     }
+
+    // 7 Days to Zelda: the dawn card, the final-hours clock and the pause counters, on top.
+    SevenDays_DrawOverlay(play);
 }
 
 void Play_Draw(PlayState* play) {

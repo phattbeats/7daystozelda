@@ -42,17 +42,17 @@ static const std::vector<Recipe> sRecipes = {
     { "sticks",         "Deku Sticks",      RECIPE_CONSUMABLE, { { MAT_WOOD, 3 } },                          1, ITEM_STICKS_5,    ITEM_NONE,      5,  UNLOCK_START },
     { "nuts",           "Deku Nuts",        RECIPE_CONSUMABLE, { { MAT_FIBER, 3 }, { MAT_ROT, 1 } },         2, ITEM_NUTS_5,      ITEM_NONE,      5,  UNLOCK_DEKU_TREE },
     { "seeds",          "Deku Seeds",       RECIPE_CONSUMABLE, { { MAT_FIBER, 4 } },                         1, ITEM_SEEDS_30,    ITEM_SLINGSHOT, 30, UNLOCK_START },
-    { "arrows",         "Arrows",           RECIPE_CONSUMABLE, { { MAT_WOOD, 2 }, { MAT_BONE, 1 } },         2, ITEM_ARROWS_SMALL,ITEM_BOW,       5,  UNLOCK_DEKU_TREE },
-    { "bombs",          "Bombs",            RECIPE_CONSUMABLE, { { MAT_STONE, 3 }, { MAT_ROT, 1 } },         2, ITEM_BOMBS_5,     ITEM_BOMB,      5,  UNLOCK_BOMB_BAG },
+    { "arrows",         "Arrows",           RECIPE_CONSUMABLE, { { MAT_WOOD, 2 }, { MAT_BONE, 1 } },         2, ITEM_ARROWS_SMALL,ITEM_BOW,       5,  UNLOCK_DEKU_TREE, true },
+    { "bombs",          "Bombs",            RECIPE_CONSUMABLE, { { MAT_STONE, 3 }, { MAT_ROT, 1 } },         2, ITEM_BOMBS_5,     ITEM_BOMB,      5,  UNLOCK_BOMB_BAG, true },
 
     { "workbench",      "Workbench",        RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_STONE, 4 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
     { "barricade",      "Barricade",        RECIPE_KIT,        { { MAT_WOOD, 6 }, { MAT_FIBER, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
     { "torch",          "Torch",            RECIPE_KIT,        { { MAT_WOOD, 2 }, { MAT_FIBER, 1 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
-    { "spikes",         "Spike strip",      RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_BONE, 3 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
+    { "spikes",         "Spike strip",      RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_BONE, 3 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE, true },
     { "chest",          "Storage chest",    RECIPE_KIT,        { { MAT_WOOD, 8 } },                          1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
-    { "stonewall",      "Stone wall",       RECIPE_KIT,        { { MAT_STONE, 6 }, { MAT_WOOD, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG },
-    { "bombtrap",       "Bomb-flower trap", RECIPE_KIT,        { { MAT_STONE, 4 }, { MAT_ROT, 2 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG },
-    { "gate",           "Player gate",      RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_STONE, 4 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_HOOKSHOT },
+    { "stonewall",      "Stone wall",       RECIPE_KIT,        { { MAT_STONE, 6 }, { MAT_WOOD, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG, true },
+    { "bombtrap",       "Bomb-flower trap", RECIPE_KIT,        { { MAT_STONE, 4 }, { MAT_ROT, 2 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG, true },
+    { "gate",           "Player gate",      RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_STONE, 4 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_HOOKSHOT, true },
 
     { "trade_fiber",    "Sell Fiber",       RECIPE_TRADE,      { { MAT_FIBER, 5 } },                         1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },
     { "trade_wood",     "Sell Wood",        RECIPE_TRADE,      { { MAT_WOOD, 3 } },                          1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },
@@ -61,6 +61,146 @@ static const std::vector<Recipe> sRecipes = {
     { "trade_rot",      "Sell Rot",         RECIPE_TRADE,      { { MAT_ROT, 2 } },                           1, ITEM_NONE,        ITEM_NONE,      10, UNLOCK_START },
 };
 // clang-format on
+
+// MARK: - M7 loot
+
+// Material weights (Fiber, Stone, Wood, Bone, Rot) by area tier. Pots, crates and
+// supply caches roll on these: low tiers pay the forest's materials, deeper
+// dungeons pay stone, bone and rot.
+// clang-format off
+static const uint8_t sLootWeights[][MAT_COUNT] = {
+    /* UNLOCK_START            */ { 40, 10, 40, 10, 0  },
+    /* UNLOCK_DEKU_TREE        */ { 30, 10, 35, 20, 5  },
+    /* UNLOCK_BOMB_BAG         */ { 10, 40, 20, 20, 10 },
+    /* UNLOCK_HOOKSHOT         */ { 10, 35, 20, 20, 15 },
+    /* UNLOCK_HAMMER           */ { 5,  40, 15, 20, 20 },
+    /* UNLOCK_SILVER_GAUNTLETS */ { 5,  35, 15, 25, 20 },
+};
+
+struct SceneTierRow {
+    int16_t scene;
+    uint8_t tier;
+};
+static const SceneTierRow sSceneTiers[] = {
+    { SCENE_DEKU_TREE,               UNLOCK_DEKU_TREE },
+    { SCENE_DODONGOS_CAVERN,         UNLOCK_BOMB_BAG },
+    { SCENE_JABU_JABU,               UNLOCK_BOMB_BAG },
+    { SCENE_BOTTOM_OF_THE_WELL,      UNLOCK_BOMB_BAG },
+    { SCENE_FOREST_TEMPLE,           UNLOCK_HOOKSHOT },
+    { SCENE_ICE_CAVERN,              UNLOCK_HOOKSHOT },
+    { SCENE_WATER_TEMPLE,            UNLOCK_HOOKSHOT },
+    { SCENE_FIRE_TEMPLE,             UNLOCK_HAMMER },
+    { SCENE_SHADOW_TEMPLE,           UNLOCK_HAMMER },
+    { SCENE_SPIRIT_TEMPLE,           UNLOCK_SILVER_GAUNTLETS },
+    { SCENE_GERUDO_TRAINING_GROUND,  UNLOCK_SILVER_GAUNTLETS },
+    { SCENE_GROTTOS,                 UNLOCK_DEKU_TREE },
+};
+
+// Supply caches: 2-4 per dungeon plus three grottos. Each sits beside an anchor
+// taken from the room's vanilla actor list (a chest, pot or crate), so it is on a
+// floor the player can reach; the exact spot is raycast when it spawns.
+static const std::vector<CacheSpot> sCacheSpots = {
+    // scene                          room  anchor x, y, z         tier
+    { SCENE_DEKU_TREE,                0,    333,   360,   253,     UNLOCK_DEKU_TREE },  // 2F ledge, by the chest
+    { SCENE_DEKU_TREE,                2,    -1391, 480,   1391,    UNLOCK_DEKU_TREE },  // slingshot room
+    { SCENE_DEKU_TREE,                3,    53,    -845,  -278,    UNLOCK_DEKU_TREE },  // basement, by the chest
+    { SCENE_DODONGOS_CAVERN,          1,    1708,  0,     -471,    UNLOCK_BOMB_BAG },   // east corridor pots
+    { SCENE_DODONGOS_CAVERN,          3,    2653,  100,   -2031,   UNLOCK_BOMB_BAG },
+    { SCENE_DODONGOS_CAVERN,          9,    1656,  591,   -531,    UNLOCK_BOMB_BAG },
+    { SCENE_JABU_JABU,                1,    -189,  -340,  -1925,   UNLOCK_BOMB_BAG },   // by the crates
+    { SCENE_JABU_JABU,                6,    -1355, 80,    -3612,   UNLOCK_BOMB_BAG },
+    { SCENE_JABU_JABU,                14,   645,   -1073, -2408,   UNLOCK_BOMB_BAG },
+    { SCENE_BOTTOM_OF_THE_WELL,       0,    463,   0,     -174,    UNLOCK_BOMB_BAG },
+    { SCENE_BOTTOM_OF_THE_WELL,       1,    -95,   -720,  -673,    UNLOCK_BOMB_BAG },
+    { SCENE_BOTTOM_OF_THE_WELL,       3,    874,   0,     -1294,   UNLOCK_BOMB_BAG },
+    { SCENE_FOREST_TEMPLE,            11,   -1645, 1156,  -1297,   UNLOCK_HOOKSHOT },
+    { SCENE_FOREST_TEMPLE,            14,   2312,  1093,  -874,    UNLOCK_HOOKSHOT },
+    { SCENE_FOREST_TEMPLE,            17,   -404,  -779,  -1041,   UNLOCK_HOOKSHOT },
+    { SCENE_ICE_CAVERN,               3,    433,   0,     -732,    UNLOCK_HOOKSHOT },
+    { SCENE_ICE_CAVERN,               6,    -1422, 265,   586,     UNLOCK_HOOKSHOT },
+    { SCENE_WATER_TEMPLE,             3,    -2314, 320,   770,     UNLOCK_HOOKSHOT },
+    { SCENE_WATER_TEMPLE,             16,   -1417, 108,   -3025,   UNLOCK_HOOKSHOT },
+    { SCENE_WATER_TEMPLE,             17,   1123,  0,     62,      UNLOCK_HOOKSHOT },
+    { SCENE_WATER_TEMPLE,             21,   -2226, 260,   -2487,   UNLOCK_HOOKSHOT },
+    { SCENE_FIRE_TEMPLE,              14,   -2072, 4180,  -1135,   UNLOCK_HAMMER },
+    { SCENE_FIRE_TEMPLE,              17,   -240,  0,     -369,    UNLOCK_HAMMER },
+    { SCENE_FIRE_TEMPLE,              25,   -668,  2800,  -1300,   UNLOCK_HAMMER },
+    { SCENE_SHADOW_TEMPLE,            10,   614,   -1343, 3579,    UNLOCK_HAMMER },
+    { SCENE_SHADOW_TEMPLE,            16,   5942,  -1143, 2188,    UNLOCK_HAMMER },
+    { SCENE_SHADOW_TEMPLE,            20,   4222,  -1363, -916,    UNLOCK_HAMMER },
+    { SCENE_SPIRIT_TEMPLE,            0,    -181,  -150,  233,     UNLOCK_SILVER_GAUNTLETS },
+    { SCENE_SPIRIT_TEMPLE,            5,    -600,  333,   -1213,   UNLOCK_SILVER_GAUNTLETS },
+    { SCENE_SPIRIT_TEMPLE,            16,   819,   887,   -333,    UNLOCK_SILVER_GAUNTLETS },
+    { SCENE_GERUDO_TRAINING_GROUND,   9,    2183,  -108,  -1584,   UNLOCK_SILVER_GAUNTLETS },
+    { SCENE_GERUDO_TRAINING_GROUND,   10,   -1488, 139,   -3721,   UNLOCK_SILVER_GAUNTLETS },
+    // Grottos share rooms between many holes: the key also carries where the hole is.
+    { SCENE_GROTTOS,                  0,    13,    -40,   -508,    UNLOCK_DEKU_TREE },  // generic grotto
+    { SCENE_GROTTOS,                  4,    3390,  -2,    -258,    UNLOCK_DEKU_TREE },
+    { SCENE_GROTTOS,                  8,    1843,  -14,   1014,    UNLOCK_DEKU_TREE },
+};
+// clang-format on
+
+const std::vector<CacheSpot>& GetCacheSpots() {
+    return sCacheSpots;
+}
+
+const uint8_t* LootWeights(uint8_t tier) {
+    return sLootWeights[tier < 6 ? tier : 5];
+}
+
+uint8_t SceneTier(int16_t scene) {
+    for (auto& row : sSceneTiers) {
+        if (row.scene == scene) {
+            return row.tier;
+        }
+    }
+    return UNLOCK_START;
+}
+
+// The strong pieces come from caches and bosses (spec: "Tiers and blueprints").
+// Caches hold the ones no boss gives; bosses give their tier's key piece.
+const std::vector<const char*>& CacheBlueprints() {
+    static const std::vector<const char*> list = { "bombtrap", "bombs", "gate", "arrows" };
+    return list;
+}
+
+const char* BossBlueprint(int16_t bossActorId) {
+    switch (bossActorId) {
+        case ACTOR_BOSS_GOMA:
+            return "spikes"; // Gohma: the spike strip
+        case ACTOR_BOSS_DODONGO:
+            return "stonewall"; // King Dodongo: the stone wall
+        case ACTOR_BOSS_VA:
+            return "gate"; // Barinade: the gate that opens for players
+    }
+    return nullptr;
+}
+
+const char* BossName(int16_t bossActorId) {
+    switch (bossActorId) {
+        case ACTOR_BOSS_GOMA:
+            return "Gohma";
+        case ACTOR_BOSS_DODONGO:
+            return "King Dodongo";
+        case ACTOR_BOSS_VA:
+            return "Barinade";
+        case ACTOR_BOSS_GANONDROF:
+            return "Phantom Ganon";
+        case ACTOR_BOSS_FD:
+        case ACTOR_BOSS_FD2:
+            return "Volvagia";
+        case ACTOR_BOSS_MO:
+            return "Morpha";
+        case ACTOR_BOSS_SST:
+            return "Bongo Bongo";
+        case ACTOR_BOSS_TW:
+            return "Twinrova";
+        case ACTOR_BOSS_GANON:
+        case ACTOR_BOSS_GANON2:
+            return "Ganon";
+    }
+    return nullptr;
+}
 
 const std::vector<Recipe>& GetRecipes() {
     return sRecipes;

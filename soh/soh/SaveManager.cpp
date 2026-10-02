@@ -1,4 +1,5 @@
 #include "SaveManager.h"
+#include "soh/SevenDays/SevenDays.h"
 #include "OTRGlobals.h"
 #ifdef __EMSCRIPTEN__
 extern "C" void web_save_to_idb(void);
@@ -490,6 +491,7 @@ void SaveManager::InitMeta(int fileNum) {
     fileMetaInfo[fileNum].hasWallet = Flags_GetRandomizerInf(RAND_INF_HAS_WALLET) || !IS_RANDO;
     fileMetaInfo[fileNum].defense = gSaveContext.inventory.defenseHearts;
     fileMetaInfo[fileNum].health = gSaveContext.health;
+    SevenDays::TakeMetaCounters(fileNum); // 7 Days to Zelda: the file's counters, for FileSelectMoreInfo
     auto randoContext = Rando::Context::GetInstance();
 
     for (int i = 0; i < ARRAY_COUNT(fileMetaInfo[fileNum].seedHash); i++) {

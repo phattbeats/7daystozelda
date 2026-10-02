@@ -1298,6 +1298,10 @@ void Environment_Update(PlayState* play, EnvironmentContext* envCtx, LightContex
     }
 }
 
+// 7 Days to Zelda (soh/SevenDays/Nights.cpp): the moon on a raid night.
+f32 gSevenDaysMoonScale = 1.0f;
+u8 gSevenDaysMoonRed = 0;
+
 void Environment_DrawSunAndMoon(PlayState* play) {
     f32 alpha;
     f32 color;
@@ -1381,6 +1385,7 @@ void Environment_DrawSunAndMoon(PlayState* play) {
 
         scale = -15.0f * color + 25.0f;
         scale *= CVarGetFloat(CVAR_COSMETIC("Moon.Size"), 1.0f);
+        scale *= gSevenDaysMoonScale; // 7 Days to Zelda: a raid night's moon looms
         Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
 
         temp = -y / 80.0f;
@@ -1399,6 +1404,13 @@ void Environment_DrawSunAndMoon(PlayState* play) {
             } else {
                 gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 240, 255, 180, alpha);
                 gDPSetEnvColor(POLY_OPA_DISP++, 80, 70, 20, alpha);
+            }
+            if (gSevenDaysMoonRed != 0) {
+                // 7 Days to Zelda: a raid night's moon burns red.
+                f32 t = gSevenDaysMoonRed / 255.0f;
+                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, (u8)(240 + 15 * t), (u8)(255 - 205 * t), (u8)(180 - 150 * t),
+                                alpha);
+                gDPSetEnvColor(POLY_OPA_DISP++, (u8)(80 + 60 * t), (u8)(70 - 65 * t), (u8)(20 - 15 * t), alpha);
             }
             gSPDisplayList(POLY_OPA_DISP++, gMoonDL);
         }

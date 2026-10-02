@@ -698,9 +698,13 @@ static void DrawCounters(FileChooseContext* this, s16 fileIndex, u8 alpha) {
     CLOSE_DISPS(this->state.gfxCtx);
 }
 
+void SevenDays_DrawFileInfo(GraphicsContext* gfx, s16 fileIndex, u8 alpha, s16 x, s16 y); // soh/SevenDays/Nights.cpp
+
 static void DrawMoreInfo(FileChooseContext* this, s16 fileIndex, u8 alpha) {
     DrawItems(this, fileIndex, alpha);
     DrawCounters(this, fileIndex, alpha);
+    // 7 Days to Zelda: the file's days and raids survived.
+    SevenDays_DrawFileInfo(this->state.gfxCtx, fileIndex, alpha, LEFT_OFFSET + 97, TOP_OFFSET - 14);
 }
 
 #define MIN_QUEST (ResourceMgr_GameHasOriginal() ? QUEST_NORMAL : QUEST_MASTER)

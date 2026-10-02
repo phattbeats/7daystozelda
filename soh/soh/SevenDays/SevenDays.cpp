@@ -12,6 +12,7 @@ extern "C" {
 #include "overlays/actors/ovl_En_Ishi/z_en_ishi.h"
 }
 
+#include <algorithm>
 #include <chrono>
 #include <deque>
 #include <unordered_map>
@@ -103,6 +104,19 @@ bool BaseEnabled() {
 
 bool RaidsEnabled() {
     return BaseEnabled() && CVarGetInteger(CVAR_SEVEN_DAYS("Raids"), 1) != 0;
+}
+
+bool LootEnabled() {
+    return CraftingEnabled() && BaseEnabled() && CVarGetInteger(CVAR_SEVEN_DAYS("Loot"), 1) != 0;
+}
+
+bool NightsEnabled() {
+    return RaidsEnabled() && CVarGetInteger(CVAR_SEVEN_DAYS("Nights"), 1) != 0;
+}
+
+bool HasBlueprint(const std::string& recipeId) {
+    const auto& b = GetBase().blueprints;
+    return std::find(b.begin(), b.end(), recipeId) != b.end();
 }
 
 bool TunicColorsEnabled() {
@@ -251,6 +265,27 @@ void QueueRaidNavi(uint8_t line) {
     sPendingNavi.push_back(SEVEN_DAYS_TEXT_BASE + RAID_TEXT_OFFSET + line);
 }
 
+// Loot lines: bits 20+ of the firsts bitfield, text ids 0x28+.
+constexpr uint8_t LOOT_FIRST_BIT = 20;
+constexpr uint16_t LOOT_TEXT_OFFSET = 0x28;
+static_assert(RAID_FIRST_BIT + RAIDLINE_COUNT <= LOOT_FIRST_BIT, "raid and loot firsts overlap");
+static_assert(LOOT_FIRST_BIT + LOOTLINE_COUNT <= 32, "firsts bitfield");
+static_assert(LOOT_TEXT_OFFSET + LOOTLINE_COUNT <= SEVEN_DAYS_TEXT_COUNT, "loot text ids");
+
+void QueueLootNavi(uint8_t line, bool silent) {
+    if (line >= LOOTLINE_COUNT || (sFirsts & (1u << (LOOT_FIRST_BIT + line)))) {
+        return;
+    }
+    sFirsts |= 1u << (LOOT_FIRST_BIT + line);
+    if (!silent) {
+        sPendingNavi.push_back(SEVEN_DAYS_TEXT_BASE + LOOT_TEXT_OFFSET + line);
+    }
+}
+
+bool LootLineSaid(uint8_t line) {
+    return line < LOOTLINE_COUNT && (sFirsts & (1u << (LOOT_FIRST_BIT + line))) != 0;
+}
+
 static void ShowPendingNavi() {
     if (sPendingNavi.empty() || gPlayState == nullptr) {
         return;
@@ -277,6 +312,7 @@ static void RegisterMessages() {
     CustomMessageManager::Instance->AddCustomMessageTable(CUSTOM_MESSAGE_TABLE);
     RegisterVillageMessages(CUSTOM_MESSAGE_TABLE);
     RaidsRegisterMessages(CUSTOM_MESSAGE_TABLE);
+    LootRegisterMessages(CUSTOM_MESSAGE_TABLE);
     for (uint8_t m = 0; m < MAT_COUNT; m++) {
         CustomMessageManager::Instance->CreateMessage(
             CUSTOM_MESSAGE_TABLE, SEVEN_DAYS_TEXT_BASE + FIRST_GATHER_BASE + m,
@@ -291,7 +327,7 @@ static void RegisterMessages() {
 
 // MARK: - Gathering
 
-static void OnCredited(uint8_t material, uint32_t amount) {
+static void OnCredited(uint8_t material, uint32_t amount, bool quiet = false) {
     if (material >= MAT_COUNT) {
         return;
     }
@@ -303,7 +339,9 @@ static void OnCredited(uint8_t material, uint32_t amount) {
         .mute = true,
     });
     Sfx_PlaySfxCentered(NA_SE_SY_GET_ITEM);
-    QueueNavi(FIRST_GATHER_BASE + material);
+    if (!quiet) {
+        QueueNavi(FIRST_GATHER_BASE + material); // pots and crates have their own line (Loot.cpp)
+    }
 }
 
 // Owner: dedupe by sourceKey, apply, broadcast. Returns true when it paid.
@@ -333,9 +371,10 @@ static bool ApplyGather(const nlohmann::json& payload, uint32_t gatherer) {
     credit["clientId"] = gatherer;
     credit["material"] = material;
     credit["amount"] = amount;
+    credit["quiet"] = payload.value("quiet", false);
     BroadcastPool(credit);
     if (gatherer == OwnId()) {
-        OnCredited(material, amount);
+        OnCredited(material, amount, credit["quiet"].get<bool>());
     }
     return true;
 }
@@ -352,6 +391,28 @@ static uint64_t StaticSourceKey(Actor* actor, uint32_t salt) {
     mix(salt);
     uint64_t key = EnemySync::PackKey(actor->room, (uint16_t)(h ^ (h >> 16)), actor->id, (uint16_t)actor->params);
     return key ^ ((uint64_t)(uint8_t)gPlayState->sceneNum << 56);
+}
+
+uint64_t SourceKeyFor(Actor* actor, uint32_t salt) {
+    return StaticSourceKey(actor, salt);
+}
+
+void SendGather(uint8_t material, uint32_t amount, uint64_t sourceKey, uint32_t dedupeSeconds) {
+    if (!CraftingEnabled() || material >= MAT_COUNT || amount == 0) {
+        return;
+    }
+    nlohmann::json payload;
+    payload["quiet"] = true; // no first-gather line ("Grass fiber!") for a pot
+    payload["type"] = GATHER;
+    payload["material"] = material;
+    payload["amount"] = amount;
+    payload["sourceKey"] = sourceKey;
+    payload["dedupe"] = dedupeSeconds;
+    if (IsOwner()) {
+        ApplyGather(payload, OwnId());
+    } else {
+        SendTo(ActingOwner(), payload);
+    }
 }
 
 static void Gather(Actor* actor) {
@@ -421,6 +482,9 @@ static bool AmmoFull(uint8_t item) {
 std::string CraftBlocker(const Recipe& recipe) {
     if (!IsUnlocked(recipe.unlock)) {
         return UnlockName(recipe.unlock);
+    }
+    if (recipe.blueprint && LootEnabled() && !HasBlueprint(recipe.id)) {
+        return "Needs its blueprint";
     }
     if (recipe.kind == RECIPE_CONSUMABLE) {
         if (recipe.requiredItem != ITEM_NONE && INV_CONTENT(recipe.requiredItem) != recipe.requiredItem) {
@@ -545,7 +609,7 @@ bool RequestCraft(const std::string& recipeId) {
 
 bool IsPacket(const std::string& type) {
     return type == GATHER || type == CRAFT_REQUEST || type == CRAFT_RESULT || type == MATERIALS_STATE ||
-           type == MATERIALS_REQUEST || BaseOwnsPacket(type) || RaidOwnsPacket(type);
+           type == MATERIALS_REQUEST || BaseOwnsPacket(type) || RaidOwnsPacket(type) || LootOwnsPacket(type);
 }
 
 static void SendMaterialsRequest() {
@@ -569,6 +633,8 @@ void HandlePacket(const nlohmann::json& payload) {
         BaseHandlePacket(type, payload, from);
     } else if (RaidOwnsPacket(type)) {
         RaidHandlePacket(type, payload, from);
+    } else if (LootOwnsPacket(type)) {
+        LootHandlePacket(type, payload, from);
     } else if (type == GATHER) {
         if (IsOwner()) {
             ApplyGather(payload, from);
@@ -594,7 +660,8 @@ void HandlePacket(const nlohmann::json& payload) {
         }
         PoolFromJson(payload["pool"]);
         if (payload.contains("credit") && payload["credit"].value("clientId", 0u) == OwnId()) {
-            OnCredited(payload["credit"].value("material", (uint8_t)0xFF), payload["credit"].value("amount", 0u));
+            OnCredited(payload["credit"].value("material", (uint8_t)0xFF), payload["credit"].value("amount", 0u),
+                       payload["credit"].value("quiet", false));
         }
     } else if (type == MATERIALS_REQUEST) {
         if (!IsOwner()) {
@@ -640,6 +707,12 @@ static void OnFrame() {
     if (RaidsEnabled()) {
         RaidsOnFrame();
     }
+    if (LootEnabled()) {
+        LootOnFrame();
+    }
+    if (NightsEnabled()) {
+        NightsOnFrame();
+    }
 
     ShowPendingNavi();
 
@@ -669,6 +742,8 @@ static void InitSave(bool isDebug) {
     // A new save starts in the boarded-up village; loading a v2 section replaces it.
     BaseResetSession();
     RaidsResetSession();
+    LootResetSession();
+    NightsResetSession();
     SeedVillage();
 }
 
@@ -687,6 +762,7 @@ static void SaveSection(SaveContext* saveContext, int sectionID, bool fullSave) 
     SaveManager::Instance->SaveData("firsts", sFirsts);
     // v2 (M5): the base, counters and loot flags, as one JSON object.
     SaveManager::Instance->SaveData("base", BaseToJson());
+    MarkMetaCounters(); // file select's details read this file's counters next
 }
 
 static void LoadSection() {
@@ -708,6 +784,7 @@ static void LoadSection() {
         });
     });
     SaveManager::Instance->LoadData("firsts", sFirsts);
+    MarkMetaCounters();
 }
 
 // v2 = v1 + "base". A v1 save (M4) keeps the village seeded by InitSave.
@@ -719,6 +796,9 @@ static void LoadSectionV2() {
         BaseFromJson(base);
     }
     RaidsResetSession();
+    LootResetSession();
+    NightsResetSession();
+    MarkMetaCounters();
 }
 
 // MARK: - Test hooks
@@ -743,6 +823,22 @@ void sevendays_test_gather(int material, int amount, double sourceKey) {
         ApplyGather(payload, OwnId());
     } else {
         SendTo(ActingOwner(), payload);
+    }
+}
+
+// Set an integer CVar (tests: FileSelectMoreInfo, the M7 switches, mode on/off).
+EMSCRIPTEN_KEEPALIVE
+void sevendays_test_cvar(const char* name, int value) {
+    CVarSetInteger(name, value);
+    ShipInit::Init(name);
+}
+
+// Save the file (what the pause screen's Save does), so file select's details
+// can be checked after a reload.
+EMSCRIPTEN_KEEPALIVE
+void sevendays_test_save() {
+    if (GameInteractor::IsSaveLoaded(true)) {
+        SaveManager::Instance->SaveFile(gSaveContext.fileNum);
     }
 }
 
@@ -808,6 +904,8 @@ static void RegisterSevenDaysM4() {
     COND_HOOK(OnGameFrameUpdate, Enabled(), OnFrame);
     BaseRegisterHooks(BaseEnabled());
     RaidsRegisterHooks(RaidsEnabled());
+    LootRegisterHooks(LootEnabled());
+    NightsRegisterHooks(NightsEnabled());
 
     if (!Enabled()) {
         gSevenDaysTunicColorActive = 0;
@@ -825,6 +923,7 @@ static void RegisterSevenDaysOnce() {
 static RegisterShipInitFunc initOnce(RegisterSevenDaysOnce);
 static RegisterShipInitFunc initFunc(RegisterSevenDaysM4, { CVAR_SEVEN_DAYS("Enabled"), CVAR_SEVEN_DAYS("Crafting"),
                                                             CVAR_SEVEN_DAYS("TunicColors"), CVAR_SEVEN_DAYS("Base"),
-                                                            CVAR_SEVEN_DAYS("Raids") });
+                                                            CVAR_SEVEN_DAYS("Raids"), CVAR_SEVEN_DAYS("Loot"),
+                                                            CVAR_SEVEN_DAYS("Nights") });
 
 } // namespace SevenDays

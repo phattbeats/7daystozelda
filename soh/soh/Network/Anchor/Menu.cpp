@@ -280,6 +280,20 @@ void SevenDaysMenu(WidgetInfo& info) {
                                 .Tooltip("The dead come for the workbench every third night once Gohma falls. "
                                          "Outdoor scenes get a clock; dungeons and interiors stay frozen. Takes over "
                                          "from Horde Night while on."));
+    UIWidgets::CVarCheckbox("Loot: caches, pots and blueprints", CVAR_SEVEN_DAYS("Loot"),
+                            UIWidgets::CheckboxOptions({ { .disabled = off || !SevenDays::BaseEnabled() } })
+                                .DefaultValue(true)
+                                .Color(THEME_COLOR)
+                                .Tooltip("Supply caches in dungeons and grottos (each opens once per save), material "
+                                         "rolls from pots and crates, blueprints that unlock the strong recipes, and "
+                                         "rewards for bosses and every 10 Gold Skulltula tokens."));
+    UIWidgets::CVarCheckbox("Majora-style nights", CVAR_SEVEN_DAYS("Nights"),
+                            UIWidgets::CheckboxOptions({ { .disabled = off || !SevenDays::RaidsEnabled() } })
+                                .DefaultValue(true)
+                                .Color(THEME_COLOR)
+                                .Tooltip("The dawn card, the final-hours clock before a raid, red raid nights with a "
+                                         "red moon, the raid track, and days/raids survived on the pause screen and "
+                                         "in file select details."));
     if (SevenDays::BaseEnabled()) {
         ImGui::TextWrapped("%s", SevenDays::BaseCountsLine().c_str());
     }

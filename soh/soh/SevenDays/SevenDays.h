@@ -8,6 +8,9 @@
  * M6: raids on the base (gamestage budgets, ring spawns, routing to the
  *     workbench, barricade damage, the raid clock, the prologue's scripted
  *     nights, raids on an empty base, the losing-a-night penalty).
+ * M7: loot and Majora-style nights (supply caches, pot and crate rolls,
+ *     blueprints, boss and Gold Skulltula rewards; the dawn card, the
+ *     final-hours clock, red raid nights and moon, the raid track, counters).
  *
  * Everything sits behind gSevenDays.Enabled, and each milestone behind its own
  * switch under it, so plain co-op runs untouched with the master switch off.
@@ -17,6 +20,10 @@
  *   gSevenDays.TunicColors   0/1  tunic + cap in the player's lobby color (default 1)
  *   gSevenDays.Base          0/1  M5 placeables, placement mode, the base, the village (default 1)
  *   gSevenDays.Raids         0/1  M6 raids, the raid clock, the prologue's nights (default 1; needs Base)
+ *   gSevenDays.Loot          0/1  M7 supply caches, pot/crate rolls, blueprints, boss/Skulltula rewards
+ *                                 (default 1; needs Crafting)
+ *   gSevenDays.Nights        0/1  M7 dawn card, final-hours clock, red raid nights, raid track,
+ *                                 counters on pause and file select (default 1; needs Raids)
  *
  * Authority: the shared material pool is decided by the Anchor room owner
  * (roomState.ownerClientId, or the lowest online client id while the owner is
@@ -92,6 +99,7 @@ struct Recipe {
     uint8_t requiredItem;   // RECIPE_CONSUMABLE: ITEM_* the player must own (ITEM_NONE: none)
     uint16_t outputCount;   // kits made / rupees paid / ammo shown in the UI
     Unlock unlock;
+    bool blueprint = false; // M7: also needs its blueprint (gSevenDays.Loot on)
 };
 const std::vector<Recipe>& GetRecipes();
 const Recipe* FindRecipe(const std::string& id);
@@ -194,7 +202,8 @@ struct BaseState {
     uint32_t nextRaidDay = 0;
     uint32_t story = 0;
     uint32_t nightsFailed = 0;
-    std::vector<uint32_t> lootOpened; // M7 supply caches, kept so the format is stable
+    std::vector<uint32_t> lootOpened;    // M7: opened caches, paid Skulltula tens, paid bosses (LootKey)
+    std::vector<std::string> blueprints; // M7: recipe ids the room has the blueprint for
 };
 const BaseState& GetBase();
 nlohmann::json BaseToJson();
@@ -282,6 +291,73 @@ void RaidHandlePacket(const std::string& type, const nlohmann::json& payload, ui
 void RaidHandleHordeEvent(const nlohmann::json& payload); // HORDE_EVENT with "raid": true
 int32_t Gamestage();
 bool RaidTonight(); // tonight (or this day's night) is a raid night
+bool RaidWaveHere(); // a raid wave is being fought in this scene (ours or the authority's)
+uint32_t NightsUntilRaid(); // 0: tonight; UINT32_MAX: none scheduled
+
+// MARK: - M7: loot (Loot.cpp, data in SevenDaysData.cpp)
+
+bool LootEnabled();
+bool NightsEnabled();
+bool HasBlueprint(const std::string& recipeId);
+
+// Loot keys in BaseState::lootOpened: the kind in the top 4 bits.
+enum LootKind : uint32_t { LOOT_CACHE = 1, LOOT_SKULL = 2, LOOT_BOSS = 3 };
+constexpr uint32_t LootKey(LootKind kind, uint32_t value) {
+    return ((uint32_t)kind << 28) | (value & 0x0FFFFFFF);
+}
+
+// A supply cache's place: next to an anchor (a pot, chest or crate in the
+// room's vanilla actor list), floor found by raycast when it spawns.
+struct CacheSpot {
+    int16_t scene;
+    int8_t room;
+    int16_t x, y, z; // the anchor
+    uint8_t tier;    // area tier (Unlock) for its rolls
+};
+const std::vector<CacheSpot>& GetCacheSpots();
+// Pot/crate/cache roll table for an area tier: weights per material.
+const uint8_t* LootWeights(uint8_t tier);
+uint8_t SceneTier(int16_t scene); // the area tier of a scene (dungeons by table, else the start tier)
+// Blueprints caches can hold, and each boss's key blueprint.
+const std::vector<const char*>& CacheBlueprints();
+const char* BossBlueprint(int16_t bossActorId); // nullptr: none of its own
+const char* BossName(int16_t bossActorId);
+
+// Navi's loot lines share the firsts bitfield (SevenDays.cpp).
+enum LootLine : uint8_t {
+    LOOTLINE_BLUEPRINT,
+    LOOTLINE_CACHE,
+    LOOTLINE_POT,
+    LOOTLINE_TIER_DEKU, // + (Unlock - UNLOCK_DEKU_TREE)
+    LOOTLINE_TIER_BOMB,
+    LOOTLINE_TIER_HOOKSHOT,
+    LOOTLINE_TIER_HAMMER,
+    LOOTLINE_TIER_SILVER,
+    LOOTLINE_COUNT,
+};
+void QueueLootNavi(uint8_t line, bool silent = false); // silent: mark said, don't say it
+bool LootLineSaid(uint8_t line);
+void LootRegisterMessages(const char* table);
+bool LootOwnsPacket(const std::string& type);
+void LootHandlePacket(const std::string& type, const nlohmann::json& payload, uint32_t from);
+void LootOnFrame();
+void LootRegisterHooks(bool enabled);
+void LootResetSession();
+// Pots and crates pay through the ordinary GATHER path (SevenDays.cpp).
+void SendGather(uint8_t material, uint32_t amount, uint64_t sourceKey, uint32_t dedupeSeconds);
+uint64_t SourceKeyFor(Actor* actor, uint32_t salt);
+
+// MARK: - M7: Majora-style nights (Nights.cpp)
+
+void NightsOnFrame();
+void NightsRegisterHooks(bool enabled);
+void NightsResetSession();
+// The dawn card ("Dawn of Day 7 · 2 nights until the raid"), shown on every client at dawn.
+void ShowDawnCard(uint32_t day, uint32_t untilRaid, uint32_t daysSurvived, uint32_t raidsSurvived);
+std::string PauseCountersLine();
+// File select (FileSelectMoreInfo): the counters of the file last loaded by SaveManager.
+void TakeMetaCounters(int fileNum);
+void MarkMetaCounters();
 
 } // namespace SevenDays
 
