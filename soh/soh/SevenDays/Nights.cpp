@@ -198,14 +198,20 @@ static u16 RaidTrack() {
     return (u16)std::clamp(CVarGetInteger(CVAR_SEVEN_DAYS("RaidTrack"), NA_BGM_MINI_BOSS), 0, 0x7F);
 }
 
-// Forget what the scene last started, so Environment_PlaySceneSequence picks the
-// scene's music (or night ambience) again instead of keeping the raid track.
+// Stop the raid track and forget what the scene last started, so
+// Environment_PlaySceneSequence picks the scene's music (or night ambience) again.
+// The stop has to land now: Audio_PlayNatureAmbienceSequence refuses to start the
+// night ambience while a sequence flagged "no ambience" (the Mini-Boss theme is)
+// is the main BGM, which kept the raid track playing all night after a cleared
+// wave. func_800F9474 marks the player stopped at once (a queued NA_BGM_STOP
+// only lands on the next audio update). It also covers a silent scene, which
+// starts nothing that would replace the raid track.
 static void ForgetSceneMusic(PlayState* play) {
+    if ((func_800FA0B4(SEQ_PLAYER_BGM_MAIN) & 0xFF) == RaidTrack()) {
+        func_800F9474(SEQ_PLAYER_BGM_MAIN, 0);
+    }
     gSaveContext.seqId = (u8)NA_BGM_DISABLED;
     gSaveContext.natureAmbienceId = NATURE_ID_DISABLED;
-    if (play->sequenceCtx.seqId == NA_BGM_NO_MUSIC && play->sequenceCtx.natureAmbienceId == NATURE_ID_NONE) {
-        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_STOP); // a silent scene starts nothing that would replace the raid track
-    }
 }
 
 static void UpdateMusic() {
