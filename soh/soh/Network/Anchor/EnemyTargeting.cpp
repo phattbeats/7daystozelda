@@ -56,6 +56,7 @@ struct ActiveSwap {
 
 std::unordered_map<Actor*, TargetMemory> sMemory;
 std::unordered_map<uint32_t, uint16_t> sGrabLatch; // clientId -> frames left
+std::unordered_map<uint32_t, Actor*> sGrabOwner;   // clientId -> enemy holding them
 ArmedSwap sArmed;
 ActiveSwap sActive;
 
@@ -76,12 +77,6 @@ bool IsSwapBlocked(Actor* actor) {
         // host would touch it and the remote would take the hit.
         case ACTOR_EN_ST:     // Skulltula
         case ACTOR_EN_BUBBLE: // Shabom
-        // Release a grab by clearing the flag on "the player" themselves (and Moblin
-        // carries the player): on a puppet the real victim would stay held. Needs a
-        // RELEASE effect before these can target remote players.
-        case ACTOR_EN_DH:  // Dead Hand
-        case ACTOR_EN_DHA: // Dead Hand's hands
-        case ACTOR_EN_MB:  // Moblin
             return true;
         default:
             return false;
@@ -164,6 +159,7 @@ s32 RouteGrab(PlayState* play, Player* player) {
     }
     Anchor::Instance->SendPacket_EnemyPlayerEffect(sActive.clientId, ENEMY_EFFECT_GRAB, 0, 0, 0.0f, 0.0f, 0);
     sGrabLatch[sActive.clientId] = GRAB_LATCH_FRAMES;
+    sGrabOwner[sActive.clientId] = sActive.actor;
     // The rest of this update (and later frames, via the latch) sees the grab.
     player->stateFlags2 |= PLAYER_STATE2_GRABBED_BY_ENEMY;
     return true;
@@ -269,11 +265,13 @@ void Reset() {
     // may restore the swapped PlayState fields.
     sMemory.clear();
     sGrabLatch.clear();
+    sGrabOwner.clear();
     sArmed = {};
 }
 
 void ClearGrabLatch(uint32_t clientId) {
     sGrabLatch.erase(clientId);
+    sGrabOwner.erase(clientId);
 }
 
 bool SwapActive() {
@@ -282,6 +280,18 @@ bool SwapActive() {
 
 void Forget(Actor* actor) {
     sMemory.erase(actor);
+    // The holder vanished (killed, unloaded) without a final swapped update.
+    for (auto it = sGrabOwner.begin(); it != sGrabOwner.end();) {
+        if (it->second == actor) {
+            if (Anchor::Instance != nullptr) {
+                Anchor::Instance->SendPacket_EnemyPlayerEffect(it->first, ENEMY_EFFECT_RELEASE, 0, 0, 0.0f, 0.0f, 0);
+            }
+            sGrabLatch.erase(it->first);
+            it = sGrabOwner.erase(it);
+        } else {
+            ++it;
+        }
+    }
     if (sArmed.actor == actor) {
         sArmed = {};
     }
@@ -370,6 +380,17 @@ extern "C" void Anchor_EnemyTargetEnd(PlayState* play, Actor* actor) {
 
     if (Anchor::Instance == nullptr) {
         return;
+    }
+
+    // The enemy that grabbed this player let go (flag cleared on the puppet, or it
+    // no longer holds it): the real victim must be freed on their own machine.
+    auto owner = sGrabOwner.find(clientId);
+    if (owner != sGrabOwner.end() && owner->second == actor) {
+        bool held = (puppet->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) != 0;
+        if (!held && !sGrabLatch.contains(clientId)) {
+            Anchor::Instance->SendPacket_EnemyPlayerEffect(clientId, ENEMY_EFFECT_RELEASE, 0, 0, 0.0f, 0.0f, 0);
+            sGrabOwner.erase(owner);
+        }
     }
 
     // Freeze (e.g. ReDead scream: player->actor.freezeTimer = 40). A frozen puppet

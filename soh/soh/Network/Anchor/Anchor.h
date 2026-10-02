@@ -77,6 +77,7 @@ typedef enum {
     ENEMY_EFFECT_FREEZE = 2,    // actor.freezeTimer = max(current, amount)
     ENEMY_EFFECT_KNOCKBACK = 3, // func_8002F698(speed, rot, yVel, kbType, amount)
     ENEMY_EFFECT_GRAB_REFUSED = 4, // victim -> authority: drop the grab latch
+    ENEMY_EFFECT_RELEASE = 5,      // authority -> victim: the enemy let go; clear GRABBED_BY_ENEMY
 } EnemyEffectKind;
 
 typedef struct {

@@ -90,6 +90,14 @@ void Anchor::HandlePacket_EnemyPlayerEffect(nlohmann::json payload) {
             }
             break;
         }
+        case ENEMY_EFFECT_RELEASE:
+            // Same writes the enemies make on a real Link when they let go.
+            if (self->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) {
+                self->stateFlags2 &= ~PLAYER_STATE2_GRABBED_BY_ENEMY;
+                self->actor.parent = NULL;
+                self->av2.actionVar2 = 200;
+            }
+            break;
         case ENEMY_EFFECT_FREEZE:
             if (!Player_InBlockingCsMode(gPlayState, self) && amount > self->actor.freezeTimer) {
                 self->actor.freezeTimer = (s16)amount;
