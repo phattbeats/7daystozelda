@@ -358,6 +358,10 @@ void func_8002BE98(TargetContext* targetCtx, s32 actorCategory, PlayState* play)
     }
 }
 
+Color_RGB8 gAnchorNaviInner = { 255, 255, 255 };
+Color_RGB8 gAnchorNaviOuter = { 100, 255, 100 };
+u8 gAnchorNaviActive = 0;
+
 void func_8002BF60(TargetContext* targetCtx, Actor* actor, s32 actorCategory, PlayState* play) {
     if (CVarGetInteger(CVAR_COSMETIC("Navi.IdlePrimary.Changed"), 0)) {
         sNaviColorList[ACTORCAT_PLAYER].inner =
@@ -370,6 +374,15 @@ void func_8002BF60(TargetContext* targetCtx, Actor* actor, s32 actorCategory, Pl
             CVarGetColor(CVAR_COSMETIC("Navi.IdleSecondary.Value"), defaultIdleSecondaryColor);
     } else {
         sNaviColorList[ACTORCAT_PLAYER].outer = defaultIdleSecondaryColor;
+    }
+    // Anchor co-op: idle Navi wears our lobby fairy gradient (PuppetFairy.cpp).
+    if (gAnchorNaviActive) {
+        sNaviColorList[ACTORCAT_PLAYER].inner.r = gAnchorNaviInner.r;
+        sNaviColorList[ACTORCAT_PLAYER].inner.g = gAnchorNaviInner.g;
+        sNaviColorList[ACTORCAT_PLAYER].inner.b = gAnchorNaviInner.b;
+        sNaviColorList[ACTORCAT_PLAYER].outer.r = gAnchorNaviOuter.r;
+        sNaviColorList[ACTORCAT_PLAYER].outer.g = gAnchorNaviOuter.g;
+        sNaviColorList[ACTORCAT_PLAYER].outer.b = gAnchorNaviOuter.b;
     }
 
     if (CVarGetInteger(CVAR_COSMETIC("Navi.NPCPrimary.Changed"), 0)) {

@@ -55,6 +55,10 @@ inline void from_json(const json& j, AnchorClient& client) {
     j.contains("clientId") ? j.at("clientId").get_to(client.clientId) : client.clientId = 0;
     j.contains("name") ? j.at("name").get_to(client.name) : client.name = "???";
     j.contains("color") ? j.at("color").get_to(client.color) : client.color = { 255, 255, 255 };
+    // Older clients only send `color`: it is their aura and their tunic, with a white core.
+    j.contains("fairyInner") ? j.at("fairyInner").get_to(client.fairyInner) : client.fairyInner = { 255, 255, 255 };
+    j.contains("fairyOuter") ? j.at("fairyOuter").get_to(client.fairyOuter) : client.fairyOuter = client.color;
+    j.contains("tunic") ? j.at("tunic").get_to(client.tunic) : client.tunic = client.color;
     j.contains("clientVersion") ? j.at("clientVersion").get_to(client.clientVersion) : client.clientVersion = "???";
     j.contains("teamId") ? j.at("teamId").get_to(client.teamId) : client.teamId = "default";
     j.contains("online") ? j.at("online").get_to(client.online) : client.online = false;

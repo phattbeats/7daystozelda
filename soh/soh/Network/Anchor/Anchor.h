@@ -29,7 +29,10 @@ typedef enum {
 typedef struct {
     uint32_t clientId;
     std::string name;
-    Color_RGB8 color;
+    Color_RGB8 color;      // legacy single color; mirrors fairyOuter for older clients
+    Color_RGB8 fairyInner; // fairy core
+    Color_RGB8 fairyOuter; // fairy aura
+    Color_RGB8 tunic;      // tunic and cap (7 Days to Zelda TunicColors)
     std::string clientVersion;
     std::string teamId;
     bool online;
@@ -87,6 +90,13 @@ typedef struct {
     u8 teleportMode;      // 0 = off, 1 = team, 2 = all
     u8 syncItemsAndFlags; // 0 = off, 1 = on
 } RoomState;
+
+// Our own lobby colors (PuppetFairy.cpp). The aura is the old single lobby color
+// (Anchor.Color); the core defaults to white and the tunic to the aura, so
+// settings from before the split look the same.
+Color_RGB8 AnchorLocalFairyInner();
+Color_RGB8 AnchorLocalFairyOuter();
+Color_RGB8 AnchorLocalTunic();
 
 class Anchor : public Network {
   private:
