@@ -202,6 +202,7 @@ struct BaseState {
     uint32_t nextRaidDay = 0;
     uint32_t story = 0;
     uint32_t nightsFailed = 0;
+    uint32_t raidInterval = 0; // days between raids, picked on a new save (0: not picked yet)
     std::vector<uint32_t> lootOpened;    // M7: opened caches, paid Skulltula tens, paid bosses (LootKey)
     std::vector<std::string> blueprints; // M7: recipe ids the room has the blueprint for
 };
@@ -293,6 +294,8 @@ int32_t Gamestage();
 bool RaidTonight(); // tonight (or this day's night) is a raid night
 bool RaidWaveHere(); // a raid wave is being fought in this scene (ours or the authority's)
 uint32_t NightsUntilRaid(); // 0: tonight; UINT32_MAX: none scheduled
+uint32_t RaidInterval();    // the save's days between raids (the RaidInterval setting until picked)
+void RequestRaidInterval(uint32_t days); // owner only: sets the save's interval
 
 // MARK: - M7: loot (Loot.cpp, data in SevenDaysData.cpp)
 

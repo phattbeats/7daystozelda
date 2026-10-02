@@ -230,7 +230,8 @@ nlohmann::json BaseToJson() {
                       { "hordeNightsSurvived", sBase.hordeNightsSurvived },
                       { "nextRaidDay", sBase.nextRaidDay },
                       { "story", sBase.story },
-                      { "nightsFailed", sBase.nightsFailed } };
+                      { "nightsFailed", sBase.nightsFailed },
+                      { "raidInterval", sBase.raidInterval } };
     j["lootOpened"] = sBase.lootOpened;
     j["blueprints"] = sBase.blueprints;
     return j;
@@ -257,6 +258,7 @@ void BaseFromJson(const nlohmann::json& j) {
     b.nextRaidDay = counters.value("nextRaidDay", 0u);
     b.story = counters.value("story", 0u);
     b.nightsFailed = counters.value("nightsFailed", 0u);
+    b.raidInterval = counters.value("raidInterval", 0u);
     b.lootOpened = j.value("lootOpened", std::vector<uint32_t>{});
     b.blueprints = j.value("blueprints", std::vector<std::string>{});
     sBase = b;

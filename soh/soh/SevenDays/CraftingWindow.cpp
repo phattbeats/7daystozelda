@@ -1,4 +1,5 @@
 #include "SevenDays.h"
+#include "SevenDaysNet.h"
 #include "soh/OTRGlobals.h"
 #include "soh/SohGui/SohGui.hpp"
 
@@ -99,10 +100,85 @@ static void DrawRecipes(RecipeKind a, RecipeKind b) {
     }
 }
 
+// Raid interval: picked once on a new save, changeable later from the Base tab.
+struct IntervalChoice {
+    uint32_t days;
+    const char* label;
+};
+static const IntervalChoice kIntervals[] = {
+    { 1, "Every night" },        { 2, "Every 2 days" }, { 3, "Every 3 days (recommended)" },
+    { 5, "Every 5 days" },       { 7, "Every 7 days" },
+};
+
+static std::string IntervalName(uint32_t days) {
+    return days == 1 ? std::string("every night") : fmt::format("every {} days", days);
+}
+
+// The owner (or a solo player) chooses on a new save, before the first night.
+static void DrawRaidIntervalPicker() {
+    if (!RaidsEnabled() || !InGameplay() || GetBase().raidInterval != 0 || !Net::IsOwner()) {
+        return;
+    }
+    // Not over the opening's narration: wait until Link is free to move.
+    if (gPlayState->csCtx.state != CS_STATE_IDLE || gPlayState->msgCtx.msgMode != MSGMODE_NONE ||
+        gPlayState->transitionTrigger != TRANS_TRIGGER_OFF) {
+        return;
+    }
+    auto vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowViewport(vp->ID);
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowFocus();
+    if (ImGui::Begin("How often do raids come?", nullptr,
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse |
+                         ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextUnformatted("The dead raid the village at night.");
+        ImGui::TextUnformatted("Pick how many days pass between raids.");
+        ImGui::TextColored(ImVec4(1, 1, 1, 0.6f), "The first raid comes after the Deku Tree, and it's an easy one.");
+        ImGui::Spacing();
+        for (auto& c : kIntervals) {
+            if (ImGui::Button(c.label, ImVec2(ImGui::GetFontSize() * 16.0f, kButtonHeight))) {
+                RequestRaidInterval(c.days);
+            }
+        }
+        ImGui::TextColored(ImVec4(1, 1, 1, 0.6f), "You can change it later on the Workbench's Base tab.");
+    }
+    ImGui::End();
+}
+
+static void DrawRaidIntervalRow() {
+    if (!RaidsEnabled()) {
+        return;
+    }
+    uint32_t days = RaidInterval();
+    if (!Net::IsOwner()) {
+        ImGui::TextColored(ImVec4(1, 1, 1, 0.6f), "Raids come %s (the host decides).", IntervalName(days).c_str());
+        return;
+    }
+    ImGui::TextUnformatted("Raids come");
+    for (auto& c : kIntervals) {
+        ImGui::SameLine();
+        ImGui::PushID((int)c.days);
+        bool current = c.days == days;
+        if (current) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        }
+        std::string label = c.days == 1 ? std::string("1 day") : fmt::format("{} days", c.days);
+        if (ImGui::Button(label.c_str()) && !current) {
+            RequestRaidInterval(c.days);
+        }
+        if (current) {
+            ImGui::PopStyleColor();
+        }
+        ImGui::PopID();
+    }
+}
+
 // M5: kits in the pool become pieces of the base.
 static void DrawBaseTab() {
     const PoolState& pool = GetPool();
     ImGui::TextWrapped("%s", BaseCountsLine().c_str());
+    DrawRaidIntervalRow();
     ImGui::Spacing();
     bool any = false;
     for (int t = 0; t < PLACEABLE_COUNT; t++) {
@@ -165,6 +241,7 @@ static void DrawBaseTab() {
 using namespace SevenDays;
 
 void SevenDaysCraftingWindow::Draw() {
+    DrawRaidIntervalPicker();
     if ((!CraftingEnabled() && !BaseEnabled()) || !InGameplay()) {
         return;
     }

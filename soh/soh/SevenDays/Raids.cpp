@@ -80,7 +80,7 @@ constexpr double DUSK_MAX_SECONDS = 120.0;
 // MARK: - Settings
 
 static int32_t Interval() {
-    return std::max(1, CVarGetInteger(CVAR_SEVEN_DAYS("RaidInterval"), 3));
+    return (int32_t)RaidInterval();
 }
 static double HoldSeconds() {
     return (double)std::max(0, CVarGetInteger(CVAR_SEVEN_DAYS("RaidHoldSeconds"), 240));
@@ -114,13 +114,18 @@ struct Weighted {
 
 static std::vector<Weighted> Composition(int32_t raidNo, bool prologue) {
     if (prologue) {
-        // Gohma's night: Stalchildren and Keese only (Deku Babas are rooted and can't march).
-        return { { &kStalchild, 70 }, { &kKeese, 30 } };
+        // Gohma's night is a new player's first raid: Stalchildren only (Keese reach
+        // a player anywhere, and Deku Babas are rooted and can't march).
+        return { { &kStalchild, 100 } };
     }
     if (raidNo <= 2) {
-        return { { &kStalchild, 50 }, { &kKeese, 15 }, { &kRedead, 25 }, { &kWolfos, 10 } };
+        // The second raid ramps up with Keese and the odd Wolfos; ReDeads wait a night.
+        return { { &kStalchild, 60 }, { &kKeese, 25 }, { &kWolfos, 15 } };
     }
     if (raidNo == 3) {
+        return { { &kStalchild, 50 }, { &kKeese, 15 }, { &kRedead, 25 }, { &kWolfos, 10 } };
+    }
+    if (raidNo == 4) {
         return { { &kStalchild, 35 }, { &kKeese, 10 }, { &kRedead, 25 }, { &kGibdo, 12 }, { &kWolfos, 18 } };
     }
     return { { &kStalchild, 25 }, { &kBigStalchild, 10 }, { &kKeese, 10 },
@@ -197,6 +202,33 @@ uint32_t NightsUntilRaid() {
 
 static bool PrologueOver() {
     return (GetBase().story & STORY_FIRST_RAID) != 0;
+}
+
+// Gohma's night is easy-ish: a few Stalchildren whatever the gamestage. The second
+// raid buys at 1x gamestage, the third on at the spec's 1.5x.
+static int32_t WaveBudget(int32_t gamestage, int32_t raidNo, bool prologue) {
+    if (prologue) {
+        return 2 + CountReadyPlayers();
+    }
+    return raidNo <= 2 ? gamestage : (int32_t)(gamestage * 1.5f);
+}
+
+uint32_t RaidInterval() {
+    uint32_t picked = GetBase().raidInterval;
+    return picked != 0 ? picked : (uint32_t)std::max(1, CVarGetInteger(CVAR_SEVEN_DAYS("RaidInterval"), 3));
+}
+
+void RequestRaidInterval(uint32_t days) {
+    if (!Net::IsOwner() || days == 0) {
+        return;
+    }
+    BaseState& b = Net::MutableBase();
+    b.raidInterval = days;
+    // A shorter interval can pull the next raid in; a longer one starts after it.
+    if (b.nextRaidDay > CurrentDay() + days) {
+        b.nextRaidDay = CurrentDay() + days;
+    }
+    Net::CommitBase();
 }
 
 // MARK: - Session state
@@ -569,7 +601,11 @@ void RaidHandleHordeEvent(const nlohmann::json& payload) {
         }
         Sfx_PlaySfxCentered(NA_SE_EN_REDEAD_AIM);
     } else if (status == WAVE_CLEARED && prev != WAVE_CLEARED && prev != WAVE_NONE) {
-        Emit("Wave cleared", kind == KIND_DUSK ? "The bridge is quiet again." : "Hold on until dawn.", 5.0f);
+        bool first = !(GetBase().story & STORY_FIRST_RAID_DONE);
+        Emit("Wave cleared", kind == KIND_DUSK ? "The bridge is quiet again."
+                             : first          ? "The village held. Dawn is coming."
+                                              : "Hold on until dawn.",
+             5.0f);
     }
     QueueEnemyLines(payload.value("types", 0u));
 }
@@ -591,9 +627,9 @@ static void StartWave(uint8_t kind) {
     sDir.startedAt = Now();
     sDir.spawnTimer = HordeNight::SpawnFrames() * 2;
     if (kind == KIND_DUSK) {
-        sDir.budget = 2 + (Rand_ZeroOne() < 0.5f ? 1 : 0); // two or three Stalchildren
+        sDir.budget = 2; // two Stalchildren: a scare a three-heart Link can win
     } else {
-        sDir.budget = (int32_t)(sDir.gamestage * 1.5f);
+        sDir.budget = WaveBudget(sDir.gamestage, sDir.raidNo, sDir.prologue);
     }
 
     // Raiders already here = we inherited a wave (authority handover, scene re-entry).
@@ -702,6 +738,7 @@ static void DrainBarricades() {
         return;
     }
     const f32 dt = 1.0f / 20.0f; // game logic runs at 20 Hz
+    const f32 drainScale = sDir.prologue ? 0.5f : 1.0f; // the first raid's walls hold twice as long
     for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
         if (!IsRaiderType(a->id) || a->colChkInfo.health == 0 || a->update == nullptr) {
             continue;
@@ -726,7 +763,7 @@ static void DrainBarricades() {
             const f32 r = 32.0f; // body radius + the wall push-out margin
             if (fabsf(lx) < info.halfX + r && fabsf(lz) < info.halfZ + r) {
                 f32& owed = sPendingDrain[id];
-                owed += DrainFor(a) * dt;
+                owed += DrainFor(a) * drainScale * dt;
                 if (owed >= 4.0f) {
                     int amount = (int)owed;
                     owed -= amount;
@@ -866,17 +903,20 @@ static void WaveTick() {
         if (budgetSpent && alive == 0 && sDir.spawned > 0) {
             sDir.status = WAVE_CLEARED;
             sDir.clearedAt = Now();
-            Emit("Wave cleared", sDir.kind == KIND_DUSK ? "The bridge is quiet again." : "Hold on until dawn.");
+            Emit("Wave cleared", sDir.kind == KIND_DUSK ? "The bridge is quiet again."
+                                 : sDir.prologue        ? "The village held. Dawn is coming."
+                                                        : "Hold on until dawn.");
             Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
             SendWaveEvent();
         } else if (!budgetSpent) {
             if (sDir.spawnTimer > 0) {
                 sDir.spawnTimer--;
-            } else if (gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].length >= HordeNight::MaxAlive(sDir.raidNo)) {
-                sDir.spawnTimer = HordeNight::SpawnFrames() / 2;
+            } else if (gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].length >= HordeNight::MaxAlive(sDir.raidNo) ||
+                       (sDir.prologue && alive >= 2)) {
+                sDir.spawnTimer = HordeNight::SpawnFrames() / 2; // the first raid: two at a time
             } else if (TrySpawnRaider()) {
                 sDir.status = WAVE_ASSAULT;
-                sDir.spawnTimer = HordeNight::SpawnFrames();
+                sDir.spawnTimer = HordeNight::SpawnFrames() * (sDir.prologue ? 2 : 1);
             } else {
                 sDir.spawnTimer = 5;
             }
@@ -891,6 +931,15 @@ static void WaveTick() {
         nlohmann::json story;
         story["type"] = RAID_STORY;
         story["event"] = "duskCleared";
+        SendToOwner(story);
+    }
+    // Clearing the first raid wins the night outright: the owner brings the dawn.
+    if (sDir.kind == KIND_RAID && sDir.prologue && !sDir.storyCleared && sDir.status == WAVE_CLEARED &&
+        Now() - sDir.clearedAt > 4.0) {
+        sDir.storyCleared = true;
+        nlohmann::json story;
+        story["type"] = RAID_STORY;
+        story["event"] = "firstRaidCleared";
         SendToOwner(story);
     }
 
@@ -1033,7 +1082,7 @@ static std::string SettleEmptyBase(int32_t gamestage, std::vector<uint8_t>& navi
     if (!c.valid) {
         return "";
     }
-    int32_t budget = (int32_t)(gamestage * 1.5f);
+    int32_t budget = WaveBudget(gamestage, RaidNumber(), !(b.story & STORY_FIRST_RAID_DONE));
     int32_t defense = 0;
     std::vector<Placeable*> pieces;
     for (auto& p : b.placeables) {
@@ -1224,6 +1273,9 @@ void RaidHandlePacket(const std::string& type, const nlohmann::json& payload, ui
             Script(DUSK_TIME, "raid");
         } else if (event == "duskCleared" && (b.story & STORY_DUSK_ACTIVE)) {
             Script(DAWN_TIME, "dawn");
+        } else if (event == "firstRaidCleared" && RaidTonight() && !(b.story & STORY_FIRST_RAID_DONE) &&
+                   !sNightFailed) {
+            Script(DAWN_TIME, "dawn");
         }
     } else if (type == RAID_REPORT) {
         if (payload.value("base", false)) {
@@ -1402,6 +1454,8 @@ const char* sevendays_test_raid_state() {
     j["enabled"] = RaidsEnabled();
     j["day"] = CurrentDay();
     j["nextRaidDay"] = b.nextRaidDay;
+    j["raidInterval"] = b.raidInterval;
+    j["interval"] = RaidInterval();
     j["story"] = b.story;
     j["hordeNightsSurvived"] = b.hordeNightsSurvived;
     j["nightsFailed"] = b.nightsFailed;
@@ -1420,7 +1474,7 @@ const char* sevendays_test_raid_state() {
     j["wave"] = { { "active", sDir.active },     { "kind", sDir.kind },         { "status", StatusName(sDir.status) },
                   { "night", sDir.night },       { "gamestage", sDir.gamestage }, { "budget", sDir.budget },
                   { "spent", sDir.spent },       { "spawned", sDir.spawned },   { "relocated", sDir.relocated },
-                  { "baseHere", sDir.baseHere }, { "samples", sDir.samples.size() },
+                  { "baseHere", sDir.baseHere }, { "samples", sDir.samples.size() }, { "prologue", sDir.prologue },
                   { "elapsed", sDir.active ? Now() - sDir.startedAt : 0.0 }, { "types", sDir.types } };
     j["peer"] = { { "status", StatusName(sPeer.status) }, { "scene", sPeer.scene }, { "age", Now() - sPeer.heardAt } };
     j["raiders"] = nlohmann::json::array();
@@ -1451,8 +1505,19 @@ void sevendays_test_raid(const char* cmdC) {
         Flags_SetEventChkInf(EVENTCHKINF_OBTAINED_KOKIRI_EMERALD_DEKU_TREE_DEAD);
         Flags_SetEventChkInf(EVENTCHKINF_USED_DEKU_TREE_BLUE_WARP);
         gSaveContext.inventory.questItems |= gBitFlags[QUEST_KOKIRI_EMERALD];
+        // Mido lets nobody into the Deku Tree without a Deku Shield: every player has one by now.
+        Item_Give(gPlayState, ITEM_SHIELD_DEKU);
+        Inventory_ChangeEquipment(EQUIP_TYPE_SHIELD, EQUIP_VALUE_SHIELD_DEKU);
+        // Gohma's Heart Container: a fourth heart, filled.
+        if (gSaveContext.healthCapacity < 0x40) {
+            gSaveContext.healthCapacity = 0x40;
+        }
+        gSaveContext.health = gSaveContext.healthCapacity;
     } else if (cmd == "sword") {
-        Item_Give(gPlayState, ITEM_SWORD_KOKIRI); // what the chest gives (and equips on B)
+        Item_Give(gPlayState, ITEM_SWORD_KOKIRI); // what the chest gives, equipped on B as the chest does
+        gSaveContext.equips.buttonItems[0] = ITEM_SWORD_KOKIRI;
+        Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_KOKIRI);
+        Interface_LoadItemIcon1(gPlayState, 0);
     } else if (cmd == "force") {
         CVarSetInteger(CVAR_SEVEN_DAYS("RaidForce"), 1);
     } else if (cmd == "dusk") {
