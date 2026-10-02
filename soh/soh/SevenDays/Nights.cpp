@@ -404,8 +404,15 @@ extern "C" void SevenDays_DrawOverlay(PlayState* play) {
     Gfx* savedOpa = gfx->polyOpa.p;
     gfx->polyOpa.p = gfx->overlay.p;
     if (play->pauseCtx.state == 0) {
-        DrawFinalHoursClock(gfx);
-        DrawDawnCard(gfx);
+        // Cutscenes and text boxes own the screen: the clock steps aside for both,
+        // the card for cutscenes (a dawn often comes with a Navi line under it).
+        bool cutscene = play->csCtx.state != CS_STATE_IDLE || Player_InCsMode(play);
+        if (!cutscene && play->msgCtx.msgMode == MSGMODE_NONE) {
+            DrawFinalHoursClock(gfx);
+        }
+        if (!cutscene) {
+            DrawDawnCard(gfx);
+        }
     } else {
         DrawPauseLine(play, gfx);
     }

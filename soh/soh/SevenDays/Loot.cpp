@@ -852,6 +852,21 @@ const char* sevendays_test_loot(const char* cmdC) {
         gPlayState->transitionTrigger = TRANS_TRIGGER_START;
         gPlayState->transitionType = TRANS_TYPE_FADE_BLACK;
         out = "ok";
+    } else if (cmd.rfind("room:", 0) == 0) {
+        // Load another room of this scene (the way a door does) so Link can be
+        // warped into it: call once to request, again until it answers "ready".
+        int room = std::stoi(cmd.substr(5));
+        if (gPlayState->roomCtx.curRoom.num == room) {
+            out = "ready";
+        } else if (gPlayState->roomCtx.status == 0) {
+            func_8009728C(gPlayState, &gPlayState->roomCtx, room);
+            out = "loading";
+        } else if (func_800973FC(gPlayState, &gPlayState->roomCtx)) {
+            func_80097534(gPlayState, &gPlayState->roomCtx);
+            out = gPlayState->roomCtx.curRoom.num == room ? "ready" : "swapped";
+        } else {
+            out = "loading";
+        }
     } else if (cmd == "spawn:pot" || cmd == "spawn:crate") {
         bool pot = cmd == "spawn:pot";
         s16 objectId = pot ? OBJECT_TSUBO : OBJECT_GAMEPLAY_DANGEON_KEEP;
