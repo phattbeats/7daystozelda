@@ -74,6 +74,7 @@ static f32 sRed = 0.0f;
 static bool sOwnSkyFilter = false;
 static bool sMusicOn = false;
 static bool sMetaMarked = false;
+static double sLastOverlay = 0.0; // when the overlay last ran with the pause screen closed
 
 static double CardSeconds() {
     return 6.5;
@@ -404,6 +405,12 @@ extern "C" void SevenDays_DrawOverlay(PlayState* play) {
         if (!cutscene && play->msgCtx.msgMode == MSGMODE_NONE) {
             DrawFinalHoursClock(gfx);
         }
+        // A card hidden by a cutscene or Navi's dawn line waits instead of running out unseen.
+        double now = Now();
+        if (cutscene && sCard.active && sLastOverlay > 0.0 && now - sLastOverlay < 0.25) {
+            sCard.startedAt += now - sLastOverlay;
+        }
+        sLastOverlay = now;
         if (!cutscene) {
             DrawDawnCard(gfx);
         }
