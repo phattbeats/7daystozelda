@@ -5,6 +5,9 @@
 /**
  * 7 Days to Zelda (PHA-3870). M4: materials, crafting, tunic colors.
  * M5: placeables, the base, saving and the boarded-up village.
+ * M6: raids on the base (gamestage budgets, ring spawns, routing to the
+ *     workbench, barricade damage, the raid clock, the prologue's scripted
+ *     nights, raids on an empty base, the losing-a-night penalty).
  *
  * Everything sits behind gSevenDays.Enabled, and each milestone behind its own
  * switch under it, so plain co-op runs untouched with the master switch off.
@@ -13,6 +16,7 @@
  *   gSevenDays.Crafting      0/1  M4 materials, shared pool, crafting window (default 1)
  *   gSevenDays.TunicColors   0/1  tunic + cap in the player's lobby color (default 1)
  *   gSevenDays.Base          0/1  M5 placeables, placement mode, the base, the village (default 1)
+ *   gSevenDays.Raids         0/1  M6 raids, the raid clock, the prologue's nights (default 1; needs Base)
  *
  * Authority: the shared material pool is decided by the Anchor room owner
  * (roomState.ownerClientId, or the lowest online client id while the owner is
@@ -185,6 +189,11 @@ struct BaseState {
     std::vector<Placeable> placeables;
     uint32_t daysSurvived = 0;
     uint32_t hordeNightsSurvived = 0;
+    // M6 raids (all in "counters"): the day whose night is the next raid (0 = none
+    // scheduled yet: the prologue), story beats (RaidStory bits), nights lost.
+    uint32_t nextRaidDay = 0;
+    uint32_t story = 0;
+    uint32_t nightsFailed = 0;
     std::vector<uint32_t> lootOpened; // M7 supply caches, kept so the format is stable
 };
 const BaseState& GetBase();
@@ -234,6 +243,45 @@ bool PlacementGhostValid();
 uint8_t PlacementGhostType();
 void DamagePlaceable(uint16_t id, int amount); // owner applies; others report to the owner
 bool BaseAdoptIfNewer(const nlohmann::json& j, bool force);
+bool IsOutdoorScene(int16_t scene); // a scene a base can stand in (the raid clock's scenes)
+const char* OutdoorSceneName(int16_t scene);
+int CurrentEraNow();
+std::vector<std::pair<uint16_t, Actor*>> SpawnedPlaceables(); // id -> actor in this scene
+void OnPlaceableHit(uint16_t id, Actor* actor); // the piece shakes (Placeables.cpp)
+
+// MARK: - M6: raids (Raids.cpp)
+
+enum RaidStory : uint32_t {
+    STORY_DUSK_DONE = 1 << 0,       // the Kokiri Sword's dusk happened
+    STORY_DUSK_ACTIVE = 1 << 1,     // ...and its night isn't over yet
+    STORY_FIRST_RAID = 1 << 2,      // Gohma is dead: the prologue is over, raids are scheduled
+    STORY_FIRST_RAID_DONE = 1 << 3, // the first raid's dawn came
+};
+
+// Navi's staged raid lines (PHA-3870 "Raids, explained in stages"), one save flag each.
+enum RaidLine : uint8_t {
+    RAIDLINE_EVE,   // 1. the evening before the first raid
+    RAIDLINE_START, // 2. the first raid starts
+    RAIDLINE_DAWN,  // 3. the first dawn after a raid
+    RAIDLINE_AWAY,  // 4. the first raid on the base while everyone was away
+    RAIDLINE_LOST,  //    the first lost night
+    RAIDLINE_DUSK,  //    the Kokiri Sword's dusk
+    RAIDLINE_ENEMY, // 5. each new enemy type's first raid (+ RaidEnemy)
+    RAIDLINE_COUNT = RAIDLINE_ENEMY + 5,
+};
+enum RaidEnemy : uint8_t { RAIDENEMY_STALCHILD, RAIDENEMY_KEESE, RAIDENEMY_WOLFOS, RAIDENEMY_REDEAD, RAIDENEMY_GIBDO };
+
+bool RaidsEnabled();
+void QueueRaidNavi(uint8_t line); // SevenDays.cpp: once per save
+void RaidsRegisterMessages(const char* table);
+void RaidsOnFrame();
+void RaidsRegisterHooks(bool enabled);
+void RaidsResetSession();
+bool RaidOwnsPacket(const std::string& type);
+void RaidHandlePacket(const std::string& type, const nlohmann::json& payload, uint32_t from);
+void RaidHandleHordeEvent(const nlohmann::json& payload); // HORDE_EVENT with "raid": true
+int32_t Gamestage();
+bool RaidTonight(); // tonight (or this day's night) is a raid night
 
 } // namespace SevenDays
 

@@ -29,11 +29,18 @@
  *   HordeNightForce     0/1  treat now as a horde night (testing)
  *   HordeMaxAlive       int  base enemy cap (default 10; +2 per horde, max 24)
  *   HordeSpawnFrames    int  frames between spawns (default 30 = 1.5 s)
+ *
+ * 7 Days to Zelda M6 (gSevenDays.Raids) turns hordes into raids on a base
+ * (soh/SevenDays/Raids.cpp). While it is on, this spawner stands down and the
+ * raid director drives the night with the helpers below: the same cap, the same
+ * living-player set, and ShambleToward, the generalized ShambleTowardPlayers
+ * (a leashed enemy's home walks toward any goal: the workbench, or a player).
  */
 
 #ifdef __cplusplus
 #include <cstdint>
 #include <memory> // must precede extern "C": z64.h pulls in <memory> under C++
+#include <vector>
 extern "C" {
 #include "z64.h"
 }
@@ -50,6 +57,14 @@ void Reset();
 
 // Which horde this is (1-based), or 0 when the current night isn't a horde night.
 int32_t CurrentHordeNumber();
+
+// Shared with the raid director.
+constexpr f32 HORDE_SHAMBLE_SPEED = 1.2f; // units per frame
+std::vector<Actor*> LivingPlayers();      // local Link (if alive) + same-scene living puppets
+Actor* NearestLivingPlayer(const Vec3f& from, f32* outDistXZ);
+void ShambleToward(Actor* a, const Vec3f& goal, f32 speed);
+int32_t MaxAlive(int32_t horde);
+int32_t SpawnFrames();
 
 } // namespace HordeNight
 #endif // __cplusplus

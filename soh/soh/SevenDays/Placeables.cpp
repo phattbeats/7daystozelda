@@ -43,6 +43,7 @@ struct PlaceableActor {
     uint8_t talking;
     int16_t atCooldown;
     int16_t hitFlash;
+    int16_t shake; // M6: frames left of the "took a hit" shake
 };
 
 static int16_t sPlaceableId = -1;
@@ -266,6 +267,7 @@ static void Placeable_Init(Actor* thisx, PlayState* play) {
     self->talking = 0;
     self->atCooldown = 0;
     self->hitFlash = 0;
+    self->shake = 0;
     thisx->room = -1; // scene-wide: survives walking between rooms
     Actor_SetScale(thisx, 1.0f);
     thisx->shape.rot = thisx->world.rot = { 0, p->rot, 0 };
@@ -326,6 +328,10 @@ static void Placeable_Update(Actor* thisx, PlayState* play) {
         }
     }
 
+    if (self->shake > 0) {
+        self->shake--;
+    }
+
     if (self->type == PLACEABLE_SPIKES) {
         // Only the scene's enemy authority hurts enemies; mirrors see the result.
         bool authority = Anchor::Instance == nullptr || !Anchor::Instance->isConnected || EnemySync::IsLocalAuthority();
@@ -364,7 +370,15 @@ static void Placeable_Draw(Actor* thisx, PlayState* play) {
     }
     CLOSE_DISPS(play->state.gfxCtx);
 
-    DrawModel(play, self->type, hpFrac);
+    if (self->shake > 0) {
+        // Took a hit: a short sideways judder, on every client (BASE_DELTA hp).
+        Matrix_Push();
+        Matrix_Translate(Math_SinS(self->shake * 0x3000) * self->shake * 0.6f, 0.0f, 0.0f, MTXMODE_APPLY);
+        DrawModel(play, self->type, hpFrac);
+        Matrix_Pop();
+    } else {
+        DrawModel(play, self->type, hpFrac);
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
     if (tint) {
@@ -456,6 +470,17 @@ Actor* SevenDays::SpawnPlaceableActor(const Placeable& p) {
         actor->room = -1;
     }
     return actor;
+}
+
+void SevenDays::OnPlaceableHit(uint16_t id, Actor* actor) {
+    if (actor == nullptr || actor->id != sPlaceableId || actor->update == nullptr) {
+        return;
+    }
+    PlaceableActor* self = (PlaceableActor*)actor;
+    if (self->shake == 0) {
+        Audio_PlayActorSound2(actor, NA_SE_EV_WOOD_HIT);
+    }
+    self->shake = 12;
 }
 
 void SevenDays::OnPlaceableInteract(uint8_t type) {

@@ -19,4 +19,9 @@ double Now();
 PoolState& MutablePool();
 void BroadcastPool();
 
+// The base (Base.cpp). Owner only: mutate, then CommitBase() (rev++, BASE_STATE
+// to the room, scene actors brought in line).
+BaseState& MutableBase();
+void CommitBase();
+
 } // namespace SevenDays::Net

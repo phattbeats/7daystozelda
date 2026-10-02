@@ -127,8 +127,21 @@ static const char* BaseSceneName(int16_t scene) {
     return nullptr;
 }
 
+bool IsOutdoorScene(int16_t scene) {
+    return BaseSceneName(scene) != nullptr;
+}
+
+const char* OutdoorSceneName(int16_t scene) {
+    const char* name = BaseSceneName(scene);
+    return name != nullptr ? name : "?";
+}
+
 static int CurrentEra() {
     return gSaveContext.linkAge == ERA_ADULT ? ERA_ADULT : ERA_CHILD;
+}
+
+int CurrentEraNow() {
+    return CurrentEra();
 }
 
 static Placeable* FindPlaceableMut(uint16_t id) {
@@ -213,7 +226,11 @@ nlohmann::json BaseToJson() {
     for (auto& p : sBase.placeables) {
         j["placeables"].push_back(PlaceableToJson(p));
     }
-    j["counters"] = { { "daysSurvived", sBase.daysSurvived }, { "hordeNightsSurvived", sBase.hordeNightsSurvived } };
+    j["counters"] = { { "daysSurvived", sBase.daysSurvived },
+                      { "hordeNightsSurvived", sBase.hordeNightsSurvived },
+                      { "nextRaidDay", sBase.nextRaidDay },
+                      { "story", sBase.story },
+                      { "nightsFailed", sBase.nightsFailed } };
     j["lootOpened"] = sBase.lootOpened;
     return j;
 }
@@ -236,6 +253,9 @@ void BaseFromJson(const nlohmann::json& j) {
     auto counters = j.value("counters", nlohmann::json::object());
     b.daysSurvived = counters.value("daysSurvived", 0u);
     b.hordeNightsSurvived = counters.value("hordeNightsSurvived", 0u);
+    b.nextRaidDay = counters.value("nextRaidDay", 0u);
+    b.story = counters.value("story", 0u);
+    b.nightsFailed = counters.value("nightsFailed", 0u);
     b.lootOpened = j.value("lootOpened", std::vector<uint32_t>{});
     sBase = b;
 }
@@ -341,6 +361,10 @@ static void SyncSceneActors() {
             SpawnPlaceableActor(p);
         }
     }
+}
+
+std::vector<std::pair<uint16_t, Actor*>> SpawnedPlaceables() {
+    return { sSpawned.begin(), sSpawned.end() };
 }
 
 static void DespawnAll() {
@@ -579,6 +603,10 @@ static void ApplyHp(uint16_t id, int hp) {
         delta["broken"] = true;
         Despawn(id);
     } else {
+        if (hp < p->hp) {
+            auto it = sSpawned.find(id);
+            OnPlaceableHit(id, it != sSpawned.end() ? it->second : nullptr);
+        }
         p->hp = (uint16_t)hp;
         delta["op"] = "hp";
         delta["id"] = id;
@@ -596,11 +624,19 @@ void DamagePlaceable(uint16_t id, int amount) {
     if (IsOwner()) {
         ApplyHp(id, hp);
     } else {
+        // Report the new HP to the owner, which sequences it into a BASE_DELTA. Keep
+        // our copy in step meanwhile so back-to-back hits compound instead of each
+        // reporting the same value (the owner's delta overwrites it either way).
         nlohmann::json payload;
         payload["type"] = BASE_HP;
         payload["id"] = id;
         payload["hp"] = std::max(hp, 0);
         SendTo(ActingOwner(), payload);
+        if (hp > 0) {
+            auto it = sSpawned.find(id);
+            OnPlaceableHit(id, it != sSpawned.end() ? it->second : nullptr);
+            FindPlaceableMut(id)->hp = (uint16_t)hp;
+        }
     }
 }
 
@@ -656,7 +692,12 @@ static void ApplyDelta(const nlohmann::json& d) {
     } else if (op == "hp") {
         Placeable* p = FindPlaceableMut(d.value("id", (uint16_t)0));
         if (p != nullptr) {
-            p->hp = d.value("hp", p->hp);
+            uint16_t hp = d.value("hp", p->hp);
+            if (hp < p->hp) {
+                auto it = sSpawned.find(p->id);
+                OnPlaceableHit(p->id, it != sSpawned.end() ? it->second : nullptr);
+            }
+            p->hp = hp;
         }
     }
 }
@@ -673,6 +714,16 @@ bool BaseAdoptIfNewer(const nlohmann::json& j, bool force) {
     BaseFromJson(j);
     SyncSceneActors();
     return true;
+}
+
+BaseState& Net::MutableBase() {
+    return sBase;
+}
+
+void Net::CommitBase() {
+    sBase.rev++;
+    BroadcastState();
+    SyncSceneActors();
 }
 
 bool BaseOwnsPacket(const std::string& type) {

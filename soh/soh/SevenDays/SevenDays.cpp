@@ -101,6 +101,10 @@ bool BaseEnabled() {
     return Enabled() && CVarGetInteger(CVAR_SEVEN_DAYS("Base"), 1) != 0;
 }
 
+bool RaidsEnabled() {
+    return BaseEnabled() && CVarGetInteger(CVAR_SEVEN_DAYS("Raids"), 1) != 0;
+}
+
 bool TunicColorsEnabled() {
     return Enabled() && CVarGetInteger(CVAR_SEVEN_DAYS("TunicColors"), 1) != 0;
 }
@@ -233,6 +237,20 @@ static void QueueNavi(uint8_t first) {
     sPendingNavi.push_back(SEVEN_DAYS_TEXT_BASE + first);
 }
 
+// Raid lines share the firsts bitfield (bits 8+) and the text table (0x08+).
+constexpr uint8_t RAID_FIRST_BIT = 8;
+constexpr uint16_t RAID_TEXT_OFFSET = 0x08;
+static_assert(RAID_FIRST_BIT + RAIDLINE_COUNT <= 32, "firsts bitfield");
+static_assert(RAID_TEXT_OFFSET + RAIDLINE_COUNT <= 0x20, "raid lines must stay below the village text ids");
+
+void QueueRaidNavi(uint8_t line) {
+    if (line >= RAIDLINE_COUNT || (sFirsts & (1u << (RAID_FIRST_BIT + line)))) {
+        return;
+    }
+    sFirsts |= 1u << (RAID_FIRST_BIT + line);
+    sPendingNavi.push_back(SEVEN_DAYS_TEXT_BASE + RAID_TEXT_OFFSET + line);
+}
+
 static void ShowPendingNavi() {
     if (sPendingNavi.empty() || gPlayState == nullptr) {
         return;
@@ -258,6 +276,7 @@ static void RegisterMessages() {
     registered = true;
     CustomMessageManager::Instance->AddCustomMessageTable(CUSTOM_MESSAGE_TABLE);
     RegisterVillageMessages(CUSTOM_MESSAGE_TABLE);
+    RaidsRegisterMessages(CUSTOM_MESSAGE_TABLE);
     for (uint8_t m = 0; m < MAT_COUNT; m++) {
         CustomMessageManager::Instance->CreateMessage(
             CUSTOM_MESSAGE_TABLE, SEVEN_DAYS_TEXT_BASE + FIRST_GATHER_BASE + m,
@@ -526,7 +545,7 @@ bool RequestCraft(const std::string& recipeId) {
 
 bool IsPacket(const std::string& type) {
     return type == GATHER || type == CRAFT_REQUEST || type == CRAFT_RESULT || type == MATERIALS_STATE ||
-           type == MATERIALS_REQUEST || BaseOwnsPacket(type);
+           type == MATERIALS_REQUEST || BaseOwnsPacket(type) || RaidOwnsPacket(type);
 }
 
 static void SendMaterialsRequest() {
@@ -548,6 +567,8 @@ void HandlePacket(const nlohmann::json& payload) {
 
     if (BaseOwnsPacket(type)) {
         BaseHandlePacket(type, payload, from);
+    } else if (RaidOwnsPacket(type)) {
+        RaidHandlePacket(type, payload, from);
     } else if (type == GATHER) {
         if (IsOwner()) {
             ApplyGather(payload, from);
@@ -616,12 +637,15 @@ static void OnFrame() {
     if (BaseEnabled()) {
         BaseOnFrame();
     }
+    if (RaidsEnabled()) {
+        RaidsOnFrame();
+    }
+
+    ShowPendingNavi();
 
     if (!CraftingEnabled()) {
         return;
     }
-
-    ShowPendingNavi();
 
     if (CraftInFlight() && Now() - sInFlight.sentAt > 5.0) {
         sInFlight = {};
@@ -644,6 +668,7 @@ static void InitSave(bool isDebug) {
     sPool.materials[MAT_WOOD] = 8;
     // A new save starts in the boarded-up village; loading a v2 section replaces it.
     BaseResetSession();
+    RaidsResetSession();
     SeedVillage();
 }
 
@@ -693,6 +718,7 @@ static void LoadSectionV2() {
     if (base.is_object()) {
         BaseFromJson(base);
     }
+    RaidsResetSession();
 }
 
 // MARK: - Test hooks
@@ -781,6 +807,7 @@ static void RegisterSevenDaysM4() {
     });
     COND_HOOK(OnGameFrameUpdate, Enabled(), OnFrame);
     BaseRegisterHooks(BaseEnabled());
+    RaidsRegisterHooks(RaidsEnabled());
 
     if (!Enabled()) {
         gSevenDaysTunicColorActive = 0;
@@ -797,6 +824,7 @@ static void RegisterSevenDaysOnce() {
 
 static RegisterShipInitFunc initOnce(RegisterSevenDaysOnce);
 static RegisterShipInitFunc initFunc(RegisterSevenDaysM4, { CVAR_SEVEN_DAYS("Enabled"), CVAR_SEVEN_DAYS("Crafting"),
-                                                            CVAR_SEVEN_DAYS("TunicColors"), CVAR_SEVEN_DAYS("Base") });
+                                                            CVAR_SEVEN_DAYS("TunicColors"), CVAR_SEVEN_DAYS("Base"),
+                                                            CVAR_SEVEN_DAYS("Raids") });
 
 } // namespace SevenDays

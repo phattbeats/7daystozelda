@@ -2,6 +2,7 @@
 #include "soh/Network/Anchor/EnemySync.h"
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Notification/Notification.h"
+#include "soh/SevenDays/SevenDays.h"
 #include <libultraship/libultraship.h>
 
 #include <algorithm>
@@ -71,16 +72,10 @@ bool Forced() {
     return CVarGetInteger(CVAR_REMOTE_ANCHOR("HordeNightForce"), 0) != 0;
 }
 
-int32_t MaxAlive(int32_t horde) {
-    int32_t base = std::max(1, CVarGetInteger(CVAR_REMOTE_ANCHOR("HordeMaxAlive"), 10));
-    return std::min(24, base + 2 * std::max(0, horde - 1));
-}
-
 // ReDeads/Gibdos are leashed: they only chase within ~150 units of home.pos and
 // otherwise walk back to it (z_en_rd.c). During a horde, drag each one's home
 // toward the nearest living player at shambling pace so they close in like
 // zombies instead of standing where they spawned.
-constexpr f32 HORDE_SHAMBLE_SPEED = 1.2f; // units per frame
 
 bool AnyHordeOnlyEnemies() {
     for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
@@ -108,22 +103,56 @@ void ShambleTowardPlayers(const std::vector<Actor*>& players) {
                 nearest = players[i];
             }
         }
-        if (best > 1.0f) {
-            f32 step = std::min(HORDE_SHAMBLE_SPEED, best);
-            a->home.pos.x += (nearest->world.pos.x - a->home.pos.x) / best * step;
-            a->home.pos.z += (nearest->world.pos.z - a->home.pos.z) / best * step;
-            a->home.pos.y = a->world.pos.y; // stay on its own ground; only steer in XZ
-        }
+        ShambleToward(a, nearest->world.pos, HORDE_SHAMBLE_SPEED);
     }
+}
+
+} // namespace
+
+int32_t MaxAlive(int32_t horde) {
+    int32_t base = std::max(1, CVarGetInteger(CVAR_REMOTE_ANCHOR("HordeMaxAlive"), 10));
+    return std::min(24, base + 2 * std::max(0, horde - 1));
+}
+
+// The generalized shamble: walk a leashed enemy's home point straight toward any
+// goal at shambling pace (XZ only; it stays on its own ground).
+void ShambleToward(Actor* a, const Vec3f& goal, f32 speed) {
+    f32 dx = goal.x - a->home.pos.x, dz = goal.z - a->home.pos.z;
+    f32 dist = sqrtf(dx * dx + dz * dz);
+    if (dist > 1.0f) {
+        f32 step = std::min(speed, dist);
+        a->home.pos.x += dx / dist * step;
+        a->home.pos.z += dz / dist * step;
+    }
+    a->home.pos.y = a->world.pos.y;
 }
 
 int32_t SpawnFrames() {
     return std::max(5, CVarGetInteger(CVAR_REMOTE_ANCHOR("HordeSpawnFrames"), 30));
 }
 
+Actor* NearestLivingPlayer(const Vec3f& from, f32* outDistXZ) {
+    Actor* best = nullptr;
+    f32 bestD = 0.0f;
+    for (Actor* p : LivingPlayers()) {
+        f32 d = Math_Vec3f_DistXZ(const_cast<Vec3f*>(&from), &p->world.pos);
+        if (best == nullptr || d < bestD) {
+            best = p;
+            bestD = d;
+        }
+    }
+    if (outDistXZ != nullptr) {
+        *outDistXZ = best != nullptr ? bestD : 1.0e9f;
+    }
+    return best;
+}
+
 // Living players to ring spawns around: the local Link (if alive) and every
 // same-scene living puppet.
 std::vector<Actor*> LivingPlayers() {
+    if (gPlayState == NULL) {
+        return {};
+    }
     std::vector<Actor*> out;
     Player* local = GET_PLAYER(gPlayState);
     u8 ls = Anchor::Instance != nullptr ? Anchor::Instance->myLifeState : (u8)LIFE_STATE_ALIVE;
@@ -141,6 +170,8 @@ std::vector<Actor*> LivingPlayers() {
     }
     return out;
 }
+
+namespace {
 
 const SpawnEntry& Pick(int32_t horde) {
     const auto& table = CompositionFor(horde);
@@ -259,6 +290,11 @@ int32_t CurrentHordeNumber() {
 
 void PerFrameTick() {
     if (gPlayState == NULL) {
+        return;
+    }
+    if (SevenDays::RaidsEnabled()) {
+        // 7 Days to Zelda raids own the night (soh/SevenDays/Raids.cpp).
+        EndHorde(false);
         return;
     }
     bool eligible = Enabled() && EnemySync::SyncEnabled() && EnemySync::MirroringEnabled() &&

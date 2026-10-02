@@ -273,6 +273,13 @@ void SevenDaysMenu(WidgetInfo& info) {
                                 .Tooltip("Build barricades, spike strips, workbenches and storage chests from kits "
                                          "(Base tab of the workbench). A new save starts in a boarded-up Kokiri "
                                          "village."));
+    UIWidgets::CVarCheckbox("Raids on the base", CVAR_SEVEN_DAYS("Raids"),
+                            UIWidgets::CheckboxOptions({ { .disabled = off || !SevenDays::BaseEnabled() } })
+                                .DefaultValue(true)
+                                .Color(THEME_COLOR)
+                                .Tooltip("The dead come for the workbench every third night once Gohma falls. "
+                                         "Outdoor scenes get a clock; dungeons and interiors stay frozen. Takes over "
+                                         "from Horde Night while on."));
     if (SevenDays::BaseEnabled()) {
         ImGui::TextWrapped("%s", SevenDays::BaseCountsLine().c_str());
     }
