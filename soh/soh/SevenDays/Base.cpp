@@ -1121,11 +1121,20 @@ void BaseResetSession() {
     sLastBaseRequest = -100.0;
 }
 
+// OnSceneSpawnActors also fires when a door or doorway loads another room of the
+// same scene (Kokiri Forest has three). Placeables are room -1 actors and outlive
+// the swap, so only a new scene (OnSceneInit) forgets them.
+static bool sSceneFresh = false;
+
 void BaseRegisterHooks(bool enabled) {
+    COND_HOOK(OnSceneInit, enabled, [](int16_t sceneNum) { sSceneFresh = true; });
     COND_HOOK(OnSceneSpawnActors, enabled, []() {
-        // A new scene: last scene's actors are gone (their destroy callbacks ran).
-        sSpawned.clear();
-        sPlace = {};
+        if (sSceneFresh) {
+            // A new scene: last scene's actors are gone (their destroy callbacks ran).
+            sSceneFresh = false;
+            sSpawned.clear();
+            sPlace = {};
+        }
         RegisterPlaceableActors();
         SyncSceneActors();
     });
@@ -1243,6 +1252,13 @@ const char* sevendays_test_base() {
         j["cam"] = Camera_GetCamDirYaw(GET_ACTIVE_CAM(gPlayState));
         j["msg"] = gPlayState->msgCtx.msgMode;
         j["textId"] = gPlayState->msgCtx.textId;
+        j["room"] = gPlayState->roomCtx.curRoom.num;
+        // Placeable actors alive in the scene (each placeable should have exactly one).
+        int n = 0;
+        for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_BG].head; a != nullptr; a = a->next) {
+            n += a->id == PlaceableActorId();
+        }
+        j["placeableActors"] = n;
     }
     out = j.dump();
     return out.c_str();
