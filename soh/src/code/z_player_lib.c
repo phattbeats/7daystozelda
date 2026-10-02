@@ -1024,6 +1024,10 @@ void* sMouthTextures[] = {
 };
 #endif
 
+// 7 Days to Zelda: per-player tunic color (soh/SevenDays/TunicColors.cpp).
+Color_RGB8 gSevenDaysTunicColor = { 0, 0, 0 };
+u8 gSevenDaysTunicColorActive = 0;
+
 Color_RGB8 sTunicColors[] = {
     { 30, 105, 27 },
     { 100, 20, 0 },
@@ -1084,6 +1088,9 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
     } else if (tunic == PLAYER_TUNIC_ZORA && CVarGetInteger(CVAR_COSMETIC("Link.ZoraTunic.Changed"), 0)) {
         sTemp = CVarGetColor24(CVAR_COSMETIC("Link.ZoraTunic.Value"), sTunicColors[PLAYER_TUNIC_ZORA]);
         color = &sTemp;
+    }
+    if (gSevenDaysTunicColorActive) {
+        color = &gSevenDaysTunicColor;
     }
 
     gDPSetEnvColor(POLY_OPA_DISP++, color->r, color->g, color->b, 0);

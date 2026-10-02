@@ -296,6 +296,10 @@
           <input type="checkbox" id="f-horde">
           <span>Horde night<br><span class="muted small">Every third night in Hyrule Field and Lon Lon Ranch, the dead come for you. Whoever hosts the room decides.</span></span>
         </label>
+        <label class="check">
+          <input type="checkbox" id="f-sevendays">
+          <span>7 Days to Zelda<br><span class="muted small">Gather materials into a shared pool and craft at the workbench (Tab or the Craft button). Your tunic wears your color.</span></span>
+        </label>
         <div class="actions">
           <button class="btn primary" id="btn-join" type="submit" disabled>Join room</button>
           <button class="btn" id="btn-solo" type="button" disabled>Play solo</button>
@@ -460,6 +464,7 @@
       }
       if (!matched) radios[0].checked = true;
       $('f-horde').checked = hashParams.horde === '1' || (!('horde' in hashParams) && recall('horde') === '1');
+      $('f-sevendays').checked = hashParams.sevendays === '1' || (!('sevendays' in hashParams) && recall('sevendays') === '1');
       ['f-name', 'f-room'].forEach(function(id) { $(id).addEventListener('input', refreshButtons); });
       if (isTouch) document.body.classList.add('touch');
       if (isTouch) {
@@ -477,7 +482,8 @@
         name: $('f-name').value.trim().slice(0, 24),
         room: $('f-room').value.trim().slice(0, 32),
         color: t ? t.value : '3CB043',
-        horde: $('f-horde').checked
+        horde: $('f-horde').checked,
+        sevendays: $('f-sevendays').checked
       };
     }
 
@@ -486,6 +492,7 @@
       if (withName) parts.push('name=' + encodeURIComponent(v.name));
       if (withName) parts.push('color=' + v.color);
       if (v.horde) parts.push('horde=1');
+      if (v.sevendays) parts.push('sevendays=1');
       ['team', 'ws', 'hordeforce'].forEach(function(k) {
         if (hashParams[k]) parts.push(k + '=' + encodeURIComponent(hashParams[k]));
       });
@@ -626,6 +633,7 @@
           if (v.room) remember('room', v.room);
           remember('color', v.color);
           remember('horde', v.horde ? '1' : '0');
+          remember('sevendays', v.sevendays ? '1' : '0');
           setStatus('Unpacked. Reloading to start fresh...');
           setProgress(100);
           setTimeout(function() { location.reload(); }, 400);
@@ -822,11 +830,13 @@
       if (v) {
         remember('name', v.name); remember('room', v.room); remember('color', v.color);
         remember('horde', v.horde ? '1' : '0');
+        remember('sevendays', v.sevendays ? '1' : '0');
         // The link now reflects this session, so a reload rejoins directly.
         try { history.replaceState(null, '', location.pathname + location.search + buildHash(v, true)); } catch (e) {}
         window._anchorConfig = {
           room: v.room, name: v.name, color: v.color, team: hashParams.team || 'default',
-          ws: hashParams.ws || '', horde: v.horde ? '1' : '0', hordeforce: hashParams.hordeforce || ''
+          ws: hashParams.ws || '', horde: v.horde ? '1' : '0', hordeforce: hashParams.hordeforce || '',
+          sevendays: v.sevendays ? '1' : '0'
         };
         NetPill.start(v.room);
       } else {

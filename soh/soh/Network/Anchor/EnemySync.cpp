@@ -222,6 +222,11 @@ bool IsTrackedEnemy(Actor* actor) {
     return tracked.contains(actor);
 }
 
+uint64_t KeyForActor(Actor* actor) {
+    auto it = tracked.find(actor);
+    return it != tracked.end() ? it->second.key : 0;
+}
+
 static bool IsTrackedCategory(Actor* actor) {
     return actor->category == ACTORCAT_ENEMY || actor->category == ACTORCAT_BOSS;
 }

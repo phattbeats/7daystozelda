@@ -2,6 +2,7 @@
 #include "soh/Network/Anchor/EnemySync.h"
 #include "soh/Enhancements/nametag.h"
 #include "soh/frame_interpolation.h"
+#include "soh/SevenDays/SevenDays.h"
 
 extern "C" {
 #include "macros.h"
@@ -218,7 +219,10 @@ void DummyPlayer_Draw(Actor* actor, PlayState* play) {
     u8 originalButtonItem0 = gSaveContext.equips.buttonItems[0];
     gSaveContext.equips.buttonItems[0] = client.buttonItem0;
 
+    // Remote Links wear their owner's lobby color, not our local cosmetics.
+    SevenDays::ApplyTunicOverrideForClient(client.clientId);
     Player_Draw((Actor*)player, play);
+    SevenDays::RestoreLocalTunicOverride();
     gSaveContext.linkAge = originalAge;
     gSaveContext.equips.buttonItems[0] = originalButtonItem0;
 }

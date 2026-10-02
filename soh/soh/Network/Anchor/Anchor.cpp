@@ -3,6 +3,7 @@
 #include <libultraship/libultraship.h>
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/nametag.h"
+#include "soh/SevenDays/SevenDays.h"
 
 extern "C" {
 #include "variables.h"
@@ -182,6 +183,8 @@ void Anchor::ProcessIncomingPacketQueue() {
             HandlePacket_UpdateRoomState(payload);
         else if (packetType == UPDATE_DUNGEON_ITEMS)
             HandlePacket_UpdateDungeonItems(payload);
+        else if (SevenDays::IsPacket(packetType))
+            SevenDays::HandlePacket(payload);
 
         isProcessingIncomingPacket = false;
     }

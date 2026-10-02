@@ -87,6 +87,9 @@ bool IsDying(Actor* actor);
 // True when the actor is a tracked enemy/boss (used by DummyPlayer's PvP path).
 bool IsTrackedEnemy(Actor* actor);
 
+// The actor's sync key (shared by every client in the scene), or 0 if untracked.
+uint64_t KeyForActor(Actor* actor);
+
 // Death handoff: stop mirroring this actor for good and let the local
 // simulation play the death (called on ENEMY_DIED receipt, before ApplyRemoteDeath).
 void ReleaseForDeath(Actor* actor);

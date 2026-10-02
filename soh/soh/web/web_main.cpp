@@ -1,6 +1,7 @@
 #ifdef __EMSCRIPTEN__
 
 #include <stdio.h>
+#include "soh/ShipInit.hpp"
 #include <string.h>
 #include <fstream>
 #include <atomic>
@@ -124,6 +125,7 @@ void web_apply_anchor_config() {
     char* ws    = (char*)web_anchor_config_get("ws");
     char* horde = (char*)web_anchor_config_get("horde");
     char* hordeForce = (char*)web_anchor_config_get("hordeforce");
+    char* sevenDays = (char*)web_anchor_config_get("sevendays");
 
     if (ws && ws[0]) {
         wsUrl = ws;
@@ -153,6 +155,12 @@ void web_apply_anchor_config() {
         CVarSetInteger(CVAR_REMOTE_ANCHOR("HordeNightForce"), hordeForce[0] == '1' ? 1 : 0);
     }
 
+    // 7 Days to Zelda (materials, crafting, tunic colors), opt-in like horde night.
+    if (sevenDays && sevenDays[0]) {
+        CVarSetInteger("gSevenDays.Enabled", sevenDays[0] == '1' ? 1 : 0);
+        ShipInit::Init("gSevenDays.Enabled");
+    }
+
     // A room + name in the link means "join this co-op session": connect on boot.
     if (room && room[0] && name && name[0]) {
         CVarSetInteger(CVAR_REMOTE_ANCHOR("Enabled"), 1);
@@ -160,7 +168,7 @@ void web_apply_anchor_config() {
     }
 
     printf("[Web] Anchor configured. room=%s name=%s url=%s\n", room ? room : "", name ? name : "", wsUrl.c_str());
-    free(room); free(name); free(color); free(team); free(ws); free(horde); free(hordeForce);
+    free(room); free(name); free(color); free(team); free(ws); free(horde); free(hordeForce); free(sevenDays);
 }
 
 static int s_otr_loaded = 0;

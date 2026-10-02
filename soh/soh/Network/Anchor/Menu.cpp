@@ -3,6 +3,7 @@
 #include "soh/SohGui/SohGui.hpp"
 #include "soh/SohGui/SohMenu.h"
 #include "soh/util.h"
+#include "soh/SevenDays/SevenDays.h"
 
 namespace SohGui {
 extern std::shared_ptr<SohMenu> mSohMenu;
@@ -247,6 +248,31 @@ void AnchorInstructionsMenu(WidgetInfo& info) {
         "the same randomizer seed, while players on different teams can use different seeds.");
 }
 
+// 7 Days to Zelda (soh/SevenDays). Works solo too; in a room the owner decides the pool.
+void SevenDaysMenu(WidgetInfo& info) {
+    ImGui::SeparatorText("7 Days to Zelda");
+    UIWidgets::CVarCheckbox("Enable 7 Days to Zelda", CVAR_SEVEN_DAYS("Enabled"),
+                            UIWidgets::CheckboxOptions().Color(THEME_COLOR).Tooltip(
+                                "Master switch. Off: plain co-op, nothing below runs."));
+    bool off = !SevenDays::Enabled();
+    UIWidgets::CVarCheckbox("Materials and crafting", CVAR_SEVEN_DAYS("Crafting"),
+                            UIWidgets::CheckboxOptions({ { .disabled = off } })
+                                .DefaultValue(true)
+                                .Color(THEME_COLOR)
+                                .Tooltip("Gather Fiber, Stone, Wood, Bone and Rot into the room's shared pool and "
+                                         "craft at the workbench (Tab or the Craft button)."));
+    UIWidgets::CVarCheckbox("Tunic in my lobby color", CVAR_SEVEN_DAYS("TunicColors"),
+                            UIWidgets::CheckboxOptions({ { .disabled = off } })
+                                .DefaultValue(true)
+                                .Color(THEME_COLOR)
+                                .Tooltip("Every player's Link wears their own lobby color (tunic and cap)."));
+    if (SevenDays::CraftingEnabled()) {
+        if (ImGui::Button("Open Workbench")) {
+            SevenDays::ToggleCraftingWindow();
+        }
+    }
+}
+
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
 void RegisterAnchorMenu() {
     WidgetPath path = { "Network", "Anchor", SECTION_COLUMN_1 };
@@ -254,6 +280,9 @@ void RegisterAnchorMenu() {
         .CustomFunction(AnchorMainMenu)
         .HideInSearch(true);
     path.column = SECTION_COLUMN_2;
+    SohGui::mSohMenu->AddWidget(path, "SevenDaysMenu", WIDGET_CUSTOM)
+        .CustomFunction(SevenDaysMenu)
+        .HideInSearch(true);
     SohGui::mSohMenu->AddWidget(path, "AnchorAdminMenu", WIDGET_CUSTOM)
         .CustomFunction(AnchorAdminMenu)
         .HideInSearch(true);

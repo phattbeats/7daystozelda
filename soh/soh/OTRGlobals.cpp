@@ -1,4 +1,5 @@
 #include "OTRGlobals.h"
+#include "soh/SevenDays/SevenDays.h"
 #include "OTRAudio.h"
 #include <iostream>
 #include <algorithm>
@@ -2817,6 +2818,9 @@ extern "C" int CustomMessage_RetrieveIfExists(PlayState* play) {
                play->sceneNum == SCENE_MARKET_ENTRANCE_NIGHT) {
         messageEntry = CustomMessageManager::Instance->RetrieveMessage(customMessageTableID, TEXT_MARKET_GUARD_NIGHT,
                                                                        MF_FORMATTED);
+    }
+    if (SevenDays::IsSevenDaysText(textId)) {
+        messageEntry = CustomMessageManager::Instance->RetrieveMessage("SevenDays", textId, MF_AUTO_FORMAT);
     }
     if (textId == TEXT_FISHERMAN_LEAVE && CVarGetInteger(CVAR_ENHANCEMENT("QuitFishingAtDoor"), 0)) {
         messageEntry =
