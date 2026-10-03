@@ -217,6 +217,13 @@ struct BaseState {
     uint32_t raidInterval = 0; // days between raids, picked on a new save (0: not picked yet)
     std::vector<uint32_t> lootOpened;    // M7: opened caches, paid Skulltula tens, paid bosses (LootKey)
     std::vector<std::string> blueprints; // M7: recipe ids the room has the blueprint for
+    // PHA-3935: tonight's raid record, kept here (saved and synced, in "counters") so an
+    // owner who drops mid-night hands it to the next one: the day it belongs to, a raid
+    // fought at the base, the night lost, the night's gamestage.
+    uint32_t nightDay = 0;
+    bool nightFought = false;
+    bool nightFailed = false;
+    int32_t nightGamestage = 0;
 };
 const BaseState& GetBase();
 nlohmann::json BaseToJson();

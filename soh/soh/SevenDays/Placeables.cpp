@@ -1296,14 +1296,13 @@ struct WorldLine {
 };
 // clang-format off
 static const WorldLine sWorldLines[] = {
-    // Kakariko: the carpenters (EnDaikuKakariko) and the field-gate guard's night line and Impa's house guard (EnHeishi4)
+    // Kakariko: the carpenters (EnDaikuKakariko) and Impa's house guard (EnHeishi4: 0x507A, the text 0x5079 chains to)
     { SCENE_KAKARIKO_VILLAGE, 0x5075, "Boss says we're building houses, but half my lumber went to boarding windows.^Folks say something comes out of the field at night.", "[[raids]] now, the field's come knocking. We nail the shutters at dusk and pray they hold." },
     { SCENE_KAKARIKO_VILLAGE, 0x5076, "Hear that? Scratching, out past the gate, every night. Lady Impa says keep the lamps lit.", "Impa's got the watchtower manned every night now. If you see red in the sky, kid, get indoors." },
     { SCENE_KAKARIKO_VILLAGE, 0x5074, "Lady Impa had us shore up the watchtower first. She says she can see the whole field from up there.", "The lookout on the watchtower counted torches out in the field last night. Not ours." },
     { SCENE_KAKARIKO_VILLAGE, 0x506B, "Anju's been bringing her Cuccos in every evening. Says they won't stop squawking at the dark.", "Anju counts her Cuccos every dawn now. Lost two to the last bad night." },
     { SCENE_KAKARIKO_VILLAGE, 0x506A, "We're out of nails. Every house in the village wants its doors barred.", "Barred every door twice. Still hear them on the roofs some nights." },
-    { SCENE_KAKARIKO_VILLAGE, 0x5066, "Hey, son, what are you doing out this late? Things have been crawling out of the field at night.^Go inside before they find you.", "Out after dark? After [[raids]] on the field? Son, get indoors.^The watchtower spots them coming. The next red night comes [[when]]." },
-    { SCENE_KAKARIKO_VILLAGE, 0x5079, "Lady Impa climbs the watchtower every night now. She says she's counting something out in the field.", "Lady Impa has the watchtower lit every night since the raids began. She says the forest is holding." },
+    { SCENE_KAKARIKO_VILLAGE, 0x507A, "Lady Impa climbs the watchtower every night now. She says she's counting something out in the field.", "Lady Impa has the watchtower lit every night since the raids began. She says the forest is holding." },
     // Hyrule Castle Town: townsfolk (EnHy) and the gate guards (EnHeishi4); night scenes share these
     { SCENE_MARKET_DAY, 0x701E, "The guards say the castle is safe. The guards say a lot of things.", "The guards came back from the field with their spears snapped in half." },
     { SCENE_MARKET_DAY, 0x7020, "Heard something howl from the field last night. That was no dog.", "Wolfos at the drawbridge, they say. Next red night they'll be at the market." },
@@ -1314,6 +1313,14 @@ static const WorldLine sWorldLines[] = {
     { SCENE_MARKET_ENTRANCE_DAY, 0x7002, "Welcome to Hyrule Castle Town. The drawbridge closes at dusk, and these days we mean it. The field isn't safe at night.", "Welcome to Hyrule Castle Town. The patrols report [[raids]] on the forest. We raise the bridge early now." },
     { SCENE_MARKET_ENTRANCE_DAY, 0x7003, "Kids shouldn't be out at night! Something's been testing the drawbridge. Stay indoors until morning!", "Red sky, red moon... Kids shouldn't be out on nights like these. Stay indoors until morning!" },
     { SCENE_HYRULE_CASTLE, 0x7002, "Welcome to Hyrule Castle. Rumor in the barracks says the night creatures are out in force.", "Welcome to Hyrule Castle. Rumor in the barracks: a forest base has held off [[raids]]." },
+    // PHA-3935: the castle gate's guard (EnHeishi2) and Impa in the courtyard (DemoIm's repeat line)
+    { SCENE_HYRULE_CASTLE, 0x7006, "There's a lot going on in the castle right now. I can't allow even a dog in. Not with things crawling out of the field at night!", "There's a lot going on in the castle right now. Not even a dog gets in, and certainly not the dead. We've counted [[raids]] on the forest." },
+    { -1, 0x708E, "If the castle soldiers find you, there will be trouble. Let me lead you out of the castle.^The field is no place for a child after dark these days. Go home quickly.", "If the castle soldiers find you, there will be trouble. Let me lead you out of the castle.^A forest village has held off [[raids]], I hear. The Sheikah are watching it." },
+    // PHA-3935: Talon (EnTa: awake at the ranch; asleep in Kakariko as an adult) and Anju (EnNiwLady)
+    { -1, 0x2055, "I'm gonna turn over a new leaf and work real hard from now on.^Somebody's gotta mend the fences before the night things find 'em!", "I'm gonna turn over a new leaf and work real hard from now on.^Mended the fences twice since the raids started. Only napped through one of 'em!" },
+    { -1, 0x5015, "Z Z Z... Malon...doing all right... Mumble...mumble... Bar the stable, Ingo...", "Z Z Z... Malon... Mumble... [[raids]]... the walls held... Sorry to make you worry..." },
+    { -1, 0x503D, "Please don't tease my Cuccos! They're jumpy enough with all that scratching at night.", "Please don't tease my Cuccos! They haven't laid a single egg since the sky went red." },
+    { -1, 0x5047, "My brother must have been very lonely... out there all alone, with the nights the way they are.", "My brother must have been very lonely... I hope he had walls around him on the red nights." },
     // Lon Lon Ranch and the castle: Malon (EnMa1, the Epona lines that carry no song or event)
     { -1, 0x2048, "Epona's jumpy lately, fairy boy. Dad says we're going to barricade the ranch. Something's been scaring the horses at night!", "We put boards over the stable doors. Epona still stamps all night when the sky goes red." },
     { -1, 0x204A, "Oh, Epona! She likes you, fairy boy. Mr. Ingo is nailing up the corral gates. He says the night things don't like fences.", "Oh, Epona! The fence held last raid night, and Mr. Ingo even smiled. A little." },
@@ -1332,8 +1339,11 @@ static const WorldLine sWorldLines[] = {
     { SCENE_LAKE_HYLIA, 0x4021, "I am a Zora. Have you seen anything strange in the lake? Things wash up here after dark now.", "I am a Zora. On the red nights the lake glows strange. I stay under the water until dawn." },
     // Gerudo Valley and Fortress (EnGe1: the gate guard to a kid, the valley floor, the fortress greeting)
     { SCENE_GERUDO_VALLEY, 0x6069, "The Gerudo's Fortress is beyond this gate. A kid like you has no business there, night creatures or not.", "The Gerudo's Fortress is beyond this gate. We cut the bridge on red nights and fix it at dawn. A kid like you has no business there." },
-    { SCENE_GERUDO_VALLEY, 0x6019, "Why did you come all the way down here? The night things don't climb these cliffs, at least.", "Why did you come all the way down here? Hiding from the red nights too? Smart." },
+    { SCENE_GERUDO_VALLEY, 0x601A, "Well, now that you're down here, you may as well make the best of things! At least the night things don't climb these cliffs.", "Well, now that you're down here, you may as well make the best of things! Hiding from the red nights too? Smart." },
     { SCENE_GERUDOS_FORTRESS, 0x6001, "Hey, newcomer! Hylian creatures at night? Ha! Let them try our walls.", "Hey, newcomer! Even we post double guards on red nights now. Don't tell anyone." },
+    // PHA-3935: the Training Ground's gate guard (EnGe1), unqualified / qualified
+    { SCENE_GERUDOS_FORTRESS, 0x6070, "This is the Gerudo's Training Ground. Unqualified persons are not allowed. Not even if the dead come knocking.", "This is the Gerudo's Training Ground. Unqualified persons are not allowed. The red nights changed nothing!" },
+    { SCENE_GERUDOS_FORTRESS, 0x6072, "This is the Gerudo's Training Ground. Even though you're qualified, don't hog all the treasure here for yourself! Some of it buys walls.", "This is the Gerudo's Training Ground. Even though you're qualified, don't hog all the treasure! We'll need it if the dead ever cross the desert." },
     // Gossip stones (EnGs, the plain talk without the Mask of Truth)
     { -1, 0x2053, "This statue's one-eyed gaze pierces into your mind...^They say the night things come back every few days... and they always come for the base.", "This statue's one-eyed gaze pierces into your mind...^They say the next raid comes [[when]]. They say [[base]]." },
 };

@@ -1,6 +1,6 @@
 # PHA-3935: 7DtZ spec gaps: dead-end kits, era-jump ruins, Hammer/Silver/Hookshot tiers, repair, torch, town hiding
 
-Status at export (2026-10-03): items 1, 2, 6, 7, 8 and 12 shipped and checked in the game. Items 3, 4, 5, 9, 10 and 11 are in follow-up issues.
+Status (2026-10-03): items 1, 2, 6, 7, 8, 9, 10, 11 and 12 shipped and checked in the game. Items 3, 4 and 5 are in progress.
 
 Gaps found in the 2026-10-03 review against the PHA-3870 spec and M9.
 
@@ -17,6 +17,11 @@ Gaps found in the 2026-10-03 review against the PHA-3870 spec and M9.
 8. **Navi's C-Up tips.** `ElfMessage_GetCUpText` reports her current hint. The first time she gives it, the story hint plays. After it has been heard, the same text id shows the next of 12 crafting and raid tips instead. The id stays vanilla because Player stores it in an s16.
 12. **Warning before every raid.** From 16:30 on a raid day, after the first raid, Navi gives one of three warnings. The first raid keeps its staged line.
 
+9. **Towns on raid nights.** On a raid night, Kakariko, Castle Town at night, the back alley and Lon Lon Ranch send their townsfolk indoors (EnHy, EnDaikuKakariko and EnNiwGirl; never a quest NPC or a guard), with a "has barred its doors until dawn" notice. Once the first raid is over, Kakariko's field gate is boarded on both sides with the path left open. These are town decoration pieces (ids from 0xF000) that are not in BaseState, so they are never packed up, damaged, counted or saved.
+10. **More lines.** Gerudo's Fortress gets the Training Ground guard (0x6070 and 0x6072). The castle gets its gate guard (0x7006). Impa (0x708E, DemoIm), Talon (0x2055 and 0x5015) and Anju (0x503D and 0x5047) get their own lines. Every replaced text was checked against the ROM's message table for control codes.
+    - Three M9 lines replaced texts that chain to another message (0x07). 0x5066 chained to the clock soldier's graveyard-song hint, so it is dropped. 0x5079 and 0x6019 move to the plain texts they chain to (0x507A and 0x601A), so the vanilla first part plays again.
+11. **The owner going offline.** Tonight's record (fought at the base, lost, gamestage) is stored in BaseState counters as `night {day, fought, failed, gamestage}`, keyed by the day. It is saved and synced, so whoever is owner at dawn settles the night the same way. Checked: the record survived a save and reload in the middle of a raid night.
+
 New text placeholder `[[when]]` ("tonight", "tomorrow night", "in 3 days"). The three M9 lines that said "in [[next]]" (which read "in tonight") use it now.
 
 Test hooks: `sevendays_test_raid("tier:bomb|hookshot|hammer|silver")`, `("bp:<recipe>")`, `("age")`, `sevendays_test_repair`, `_repair_cost`, `_open_window`, `_trap_blasts`, `_cup_state`, and `spawnLog` / `eveWarnedDay` in raid state.
@@ -31,10 +36,10 @@ Test hooks: `sevendays_test_raid("tier:bomb|hookshot|hammer|silver")`, `("bp:<re
 - Ruins: 16 pieces turned into ruins, and the pool gained +27 Wood, +11 Stone, +5 Fiber and +2 Rot, which is half the kits by hand count.
 - Tips: after the 0x140 hint, C-Up text shows the tips in rotation ("The next raid comes tonight.").
 - Warning: text 0x9716 at 16:37 on day 3 ("We've held off 2 raids so far").
+- Towns: Kakariko on raid night 5. Three carpenters went indoors at dusk, the notice showed, and the boards stand at the field gate.
+- Lines: 0x507A, 0x2055, 0x5015, 0x503D, 0x5047 and 0x708E shown, plus 0x7006 at the castle, 0x601A in Gerudo Valley and 0x6070/0x6072 at the fortress. All showed the after-raids variants.
 
-## Follow-ups
+## In progress
 
 - Items 3 and 4: Ore and iron, in-place wall upgrades (wood to stone to iron), the iron wall, and the Navi lines in Loot.cpp that promise them.
 - Item 5: Hookshot-tier materials on ledges.
-- Items 9 and 10: townsfolk outside Kokiri hiding on raid nights, other towns boarded up, and more Gerudo, Castle, Talon, Impa and Anju lines.
-- Item 11: a night's foughtHere, failed and gamestage flags survive the owner going offline.

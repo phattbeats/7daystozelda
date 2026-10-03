@@ -322,9 +322,18 @@ static uint16_t sTransitionTo = 0;
 static int sPrevNight = -1; // owner's dawn/dusk edges (-1: not sampled yet)
 
 // Owner, per night (not saved: a reload mid-night just forgets them).
-static bool sNightFought = false; // a raid was fought in the base's scene
-static bool sNightFailed = false;
-static int32_t sNightGamestage = 0;
+// Tonight's record (fought at the base, lost, gamestage) lives in BaseState, keyed by
+// the day, so it is saved and reaches whoever is owner at dawn (PHA-3935).
+static BaseState& Night() {
+    BaseState& b = Net::MutableBase();
+    if (b.nightDay != CurrentDay()) {
+        b.nightDay = CurrentDay();
+        b.nightFought = false;
+        b.nightFailed = false;
+        b.nightGamestage = 0;
+    }
+    return b;
+}
 
 // Story triggers (any client).
 static double sFreeSince = -1;
@@ -1236,8 +1245,10 @@ static std::string SettleEmptyBase(int32_t gamestage, std::vector<uint8_t>& navi
 }
 
 static void OwnerDawn() {
-    BaseState& b = Net::MutableBase();
+    BaseState& b = Night();
     uint32_t night = CurrentDay(); // the night that just ended belongs to this day
+    const bool nightFought = b.nightFought, nightFailed = b.nightFailed;
+    const int32_t nightGamestage = b.nightGamestage;
     bool wasRaid = RaidTonight();
     bool wasDusk = (b.story & STORY_DUSK_ACTIVE) != 0;
     b.daysSurvived++;
@@ -1245,11 +1256,11 @@ static void OwnerDawn() {
     std::vector<uint8_t> navi;
     std::string report;
     if (wasRaid) {
-        int32_t gs = sNightGamestage > 0 ? sNightGamestage : Gamestage();
-        if (!sNightFought) {
+        int32_t gs = nightGamestage > 0 ? nightGamestage : Gamestage();
+        if (!nightFought) {
             report = SettleEmptyBase(gs, navi);
         }
-        if (!sNightFailed) {
+        if (!nightFailed) {
             b.hordeNightsSurvived++;
             // Survivors earn materials by gamestage.
             PoolState& pool = Net::MutablePool();
@@ -1269,9 +1280,9 @@ static void OwnerDawn() {
     if (CVarGetInteger(CVAR_SEVEN_DAYS("RaidForce"), 0) != 0 && wasRaid) {
         CVarSetInteger(CVAR_SEVEN_DAYS("RaidForce"), 0); // a forced night is one night
     }
-    sNightFought = false;
-    sNightFailed = false;
-    sNightGamestage = 0;
+    b.nightDay = 0; // a new night starts clean
+    b.nightFought = b.nightFailed = false;
+    b.nightGamestage = 0;
     Net::CommitBase();
     Net::BroadcastPool();
     uint32_t until = b.nextRaidDay > CurrentDay() ? b.nextRaidDay - CurrentDay() : 0;
@@ -1299,16 +1310,17 @@ static void OwnerDawn() {
 
 static void OwnerDusk() {
     if (RaidTonight()) {
-        sNightGamestage = Gamestage();
+        Night().nightGamestage = Gamestage();
+        Net::CommitBase();
     }
 }
 
 static void OwnerRaidLost() {
-    if (sNightFailed) {
+    BaseState& b = Night();
+    if (b.nightFailed) {
         return;
     }
-    sNightFailed = true;
-    BaseState& b = Net::MutableBase();
+    b.nightFailed = true;
     for (auto& p : b.placeables) {
         if (GetPlaceableInfo(p.type).maxHp > 0 && !IsRuin(p)) {
             p.hp -= p.hp / 2; // half its remaining HP
@@ -1368,21 +1380,28 @@ void RaidHandlePacket(const std::string& type, const nlohmann::json& payload, ui
             b.story |= STORY_FIRST_RAID;
             b.story &= ~STORY_DUSK_ACTIVE;
             b.nextRaidDay = CurrentDay(); // that night
+            Night().nightGamestage = Gamestage();
             Net::CommitBase();
-            sNightGamestage = Gamestage();
             Script(DUSK_TIME, "raid");
         } else if (event == "duskCleared" && (b.story & STORY_DUSK_ACTIVE)) {
             Script(DAWN_TIME, "dawn");
         } else if (event == "firstRaidCleared" && RaidTonight() && !(b.story & STORY_FIRST_RAID_DONE) &&
-                   !sNightFailed) {
+                   !Night().nightFailed) {
             Script(DAWN_TIME, "dawn");
         }
     } else if (type == RAID_REPORT) {
-        if (payload.value("base", false)) {
-            sNightFought = true;
+        BaseState& n = Night();
+        bool changed = false;
+        if (payload.value("base", false) && !n.nightFought) {
+            n.nightFought = true;
+            changed = true;
         }
-        if (sNightGamestage == 0) {
-            sNightGamestage = payload.value("gamestage", 0);
+        if (n.nightGamestage == 0 && payload.value("gamestage", 0) != 0) {
+            n.nightGamestage = payload.value("gamestage", 0);
+            changed = true;
+        }
+        if (changed) {
+            Net::CommitBase();
         }
     } else if (type == RAID_LOST) {
         if (RaidTonight()) { // a raid night (the Kokiri Sword's dusk is a scare, not a horde)
@@ -1437,6 +1456,49 @@ static void EveWarning() {
     QueueNaviText(TEXT_RAID_EVE_EACH + (uint16_t)(RaidNumber() % 3));
 }
 
+// PHA-3935 (M9): on a raid night the other towns' folk bar themselves indoors too:
+// the townsfolk, carpenters and the Cucco girl, never a quest NPC or a guard.
+static bool IsTownScene(int16_t scene) {
+    switch (scene) {
+        case SCENE_KAKARIKO_VILLAGE:
+        case SCENE_MARKET_NIGHT:
+        case SCENE_MARKET_ENTRANCE_NIGHT:
+        case SCENE_BACK_ALLEY_NIGHT:
+        case SCENE_LON_LON_RANCH:
+            return true;
+    }
+    return false;
+}
+
+static int16_t sHidNoticeScene = -1;
+static int sTownsfolkHidden = 0; // tests
+
+static void TownsHide() {
+    int16_t scene = gPlayState->sceneNum;
+    if (!IS_NIGHT || !RaidTonight() || !IsTownScene(scene) || IS_RANDO) {
+        if (!IS_NIGHT) {
+            sHidNoticeScene = -1;
+        }
+        return;
+    }
+    int hid = 0;
+    for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_NPC].head; a != nullptr; a = a->next) {
+        if (a->update != nullptr &&
+            (a->id == ACTOR_EN_HY || a->id == ACTOR_EN_DAIKU_KAKARIKO || a->id == ACTOR_EN_NIW_GIRL)) {
+            Actor_Kill(a);
+            hid++;
+        }
+    }
+    sTownsfolkHidden += hid;
+    if (sHidNoticeScene != scene && PlayerFree()) {
+        sHidNoticeScene = scene;
+        Emit("Raid night", fmt::format("{} has barred its doors until dawn.", scene == SCENE_LON_LON_RANCH ? "The ranch"
+                                                                                : scene == SCENE_KAKARIKO_VILLAGE ? "Kakariko"
+                                                                                : "Castle Town"),
+             5.0f);
+    }
+}
+
 void RaidsOnFrame() {
     if (gPlayState == nullptr || !GameInteractor::IsSaveLoaded(true)) {
         sPrevNight = -1; // the title screen's attract demo has a clock too: never count it
@@ -1464,6 +1526,7 @@ void RaidsOnFrame() {
             }
         }
     }
+    TownsHide();
 
     WaveTick();
     ClockTick();
@@ -1489,9 +1552,6 @@ void RaidsResetSession() {
     sPendingDrain.clear();
     sTransition = false;
     sPrevNight = -1;
-    sNightFought = false;
-    sNightFailed = false;
-    sNightGamestage = 0;
     sFreeSince = -1;
     sLastStorySent = -100;
     sLastGameOver = 0;
@@ -1609,6 +1669,13 @@ const char* sevendays_test_raid_state() {
         j["spawnLog"].push_back({ (int)p.x, (int)p.y, (int)p.z });
     }
     j["eveWarnedDay"] = sEveWarnedDay;
+    j["townsfolkHidden"] = sTownsfolkHidden;
+    j["npcs"] = nlohmann::json::array();
+    if (gPlayState != nullptr) {
+        for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_NPC].head; a != nullptr; a = a->next) {
+            j["npcs"].push_back(a->id);
+        }
+    }
     j["raiders"] = nlohmann::json::array();
     if (gPlayState != nullptr) {
         Vec3f c = sDir.center;

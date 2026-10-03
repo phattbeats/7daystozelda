@@ -161,8 +161,53 @@ static Placeable* FindPlaceableMut(uint16_t id) {
     return nullptr;
 }
 
+// PHA-3935 (M9): towns that board themselves up once the raids have started, like
+// the Kokiri village. Decoration only: not in BaseState, so never packed up, damaged,
+// counted or saved. Ids from DECOR_ID_BASE; child era, after the first raid. Each pair
+// flanks the way in and leaves the path open. y is re-snapped to the floor on spawn.
+constexpr uint16_t DECOR_ID_BASE = 0xF000;
+struct DecorSeed {
+    int16_t scene;
+    uint8_t type;
+    float x, y, z;
+    int16_t rot;
+    uint16_t hpPercent;
+};
+// clang-format off
+static const DecorSeed sTownDecor[] = {
+    { SCENE_KAKARIKO_VILLAGE, PLACEABLE_BARRICADE, -2100.0f, 138.0f, 1182.0f, 0x0000, 80 }, // inside the field gate, north
+    { SCENE_KAKARIKO_VILLAGE, PLACEABLE_BARRICADE, -2100.0f, 138.0f,  942.0f, 0x0000, 45 }, // ...south, already knocked askew
+};
+// clang-format on
+static std::vector<Placeable> sDecor;
+
+static bool IsDecor(uint16_t id) {
+    return id >= DECOR_ID_BASE;
+}
+
+static const Placeable* FindDecor(uint16_t id) {
+    if (sDecor.empty()) {
+        for (size_t i = 0; i < std::size(sTownDecor); i++) {
+            const DecorSeed& s = sTownDecor[i];
+            Placeable p;
+            p.id = (uint16_t)(DECOR_ID_BASE + i);
+            p.type = s.type;
+            p.era = ERA_CHILD;
+            p.scene = s.scene;
+            p.pos[0] = s.x;
+            p.pos[1] = s.y;
+            p.pos[2] = s.z;
+            p.rot = s.rot;
+            p.hp = (uint16_t)(GetPlaceableInfo(s.type).maxHp * s.hpPercent / 100);
+            sDecor.push_back(p);
+        }
+    }
+    size_t i = id - DECOR_ID_BASE;
+    return i < sDecor.size() ? &sDecor[i] : nullptr;
+}
+
 const Placeable* FindPlaceable(uint16_t id) {
-    return FindPlaceableMut(id);
+    return IsDecor(id) ? FindDecor(id) : FindPlaceableMut(id);
 }
 
 static int CountEra(int era) {
@@ -239,7 +284,12 @@ nlohmann::json BaseToJson() {
                       { "nextRaidDay", sBase.nextRaidDay },
                       { "story", sBase.story },
                       { "nightsFailed", sBase.nightsFailed },
-                      { "raidInterval", sBase.raidInterval } };
+                      { "raidInterval", sBase.raidInterval },
+                      { "night",
+                        { { "day", sBase.nightDay },
+                          { "fought", sBase.nightFought },
+                          { "failed", sBase.nightFailed },
+                          { "gamestage", sBase.nightGamestage } } } };
     j["lootOpened"] = sBase.lootOpened;
     j["blueprints"] = sBase.blueprints;
     return j;
@@ -267,6 +317,11 @@ void BaseFromJson(const nlohmann::json& j) {
     b.story = counters.value("story", 0u);
     b.nightsFailed = counters.value("nightsFailed", 0u);
     b.raidInterval = counters.value("raidInterval", 0u);
+    auto night = counters.value("night", nlohmann::json::object());
+    b.nightDay = night.value("day", 0u);
+    b.nightFought = night.value("fought", false);
+    b.nightFailed = night.value("failed", false);
+    b.nightGamestage = night.value("gamestage", 0);
     b.lootOpened = j.value("lootOpened", std::vector<uint32_t>{});
     b.blueprints = j.value("blueprints", std::vector<std::string>{});
     sBase = b;
@@ -360,6 +415,11 @@ static void Despawn(uint16_t id) {
     }
 }
 
+static bool DecorHere(const Placeable& p) {
+    return gPlayState != nullptr && p.scene == gPlayState->sceneNum && CurrentEra() == ERA_CHILD &&
+           (sBase.story & STORY_FIRST_RAID_DONE) != 0 && !IS_RANDO;
+}
+
 // Bring the current scene's actors in line with sBase (after a state change or scene load).
 static void SyncSceneActors() {
     if (gPlayState == nullptr || !BaseEnabled()) {
@@ -367,7 +427,7 @@ static void SyncSceneActors() {
     }
     for (auto it = sSpawned.begin(); it != sSpawned.end();) {
         const Placeable* p = FindPlaceable(it->first);
-        if (p == nullptr || !SpawnsHere(*p)) {
+        if (p == nullptr || !(IsDecor(p->id) ? DecorHere(*p) : SpawnsHere(*p))) {
             Actor_Kill(it->second);
             it = sSpawned.erase(it);
         } else {
@@ -377,6 +437,12 @@ static void SyncSceneActors() {
     for (auto& p : sBase.placeables) {
         if (SpawnsHere(p) && !sSpawned.contains(p.id)) {
             SpawnPlaceableActor(p);
+        }
+    }
+    for (size_t i = 0; i < std::size(sTownDecor); i++) {
+        const Placeable* p = FindDecor((uint16_t)(DECOR_ID_BASE + i));
+        if (p != nullptr && DecorHere(*p) && !sSpawned.contains(p->id)) {
+            SpawnPlaceableActor(*p);
         }
     }
 }
@@ -750,6 +816,9 @@ static void ApplyHp(uint16_t id, int hp) {
 }
 
 void DamagePlaceable(uint16_t id, int amount) {
+    if (IsDecor(id)) {
+        return; // a town's boards are scenery
+    }
     const Placeable* p = FindPlaceable(id);
     if (p == nullptr || GetPlaceableInfo(p->type).maxHp == 0) {
         return;
