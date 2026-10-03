@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 470" font-family="monospace" font-size="13">
+<rect width="800" height="470" fill="#ffffff"/>
+<text x="20" y="28" font-size="15" font-weight="bold" fill="#1b2440">FIG 2-1  ONE ENEMY UPDATE ON THE AUTHORITY (Actor_UpdateAll)</text>
+<line x1="20" y1="38" x2="780" y2="38" stroke="#1b2440" stroke-width="1.5"/>
+<g stroke="#1b2440" stroke-width="1.5" fill="#ffffff">
+<rect x="40" y="60" width="300" height="56"/>
+<rect x="40" y="150" width="300" height="70"/>
+<rect x="40" y="254" width="300" height="56" stroke="#c9a227" stroke-width="3"/>
+<rect x="40" y="344" width="300" height="70"/>
+<rect x="450" y="150" width="310" height="70"/>
+<rect x="450" y="254" width="310" height="96"/>
+</g>
+<g fill="#1b2440">
+<text x="52" y="82">1  SelectAndArm(enemy)</text>
+<text x="52" y="102" font-size="11">nearest living player, 40f hold, 20% rule</text>
+<text x="52" y="172">2  Anchor_EnemyTargetBegin</text>
+<text x="52" y="192" font-size="11">save PLAYER head, grabPlayer,</text>
+<text x="52" y="208" font-size="11">damagePlayer; point them at puppet</text>
+<text x="52" y="276">3  actor-&gt;update(actor, play)</text>
+<text x="52" y="296" font-size="11">vanilla AI; GET_PLAYER == remote puppet</text>
+<text x="52" y="366">4  Anchor_EnemyTargetEnd</text>
+<text x="52" y="386" font-size="11">restore all three fields; forward</text>
+<text x="52" y="402" font-size="11">freeze / knockback / RELEASE</text>
+<text x="462" y="172">PlayState while swapped</text>
+<text x="462" y="192" font-size="11">actorLists[PLAYER].head -&gt; puppet</text>
+<text x="462" y="208" font-size="10">grabPlayer -&gt; RouteGrab, damage -&gt; RouteDamage</text>
+<text x="462" y="276">ENEMY_PLAYER_EFFECT -&gt; victim</text>
+<text x="462" y="296" font-size="11">0 HEALTH   1 GRAB   2 FREEZE</text>
+<text x="462" y="314" font-size="11">3 KNOCKBACK   4 GRAB_REFUSED (reply)</text>
+<text x="462" y="332" font-size="11">5 RELEASE (patch 0018)</text>
+</g>
+<g stroke="#1b2440" stroke-width="1.5" fill="none">
+<path d="M190 116 V150"/><path d="M190 220 V254"/><path d="M190 310 V344"/>
+<path d="M340 185 H450"/><path d="M340 282 H450" stroke="#c9a227" stroke-width="2"/>
+</g>
+<g fill="#1b2440"><path d="M185 144 L190 150 L195 144Z"/><path d="M185 248 L190 254 L195 248Z"/><path d="M185 338 L190 344 L195 338Z"/><path d="M444 180 L450 185 L444 190Z"/></g>
+<path d="M444 277 L450 282 L444 287Z" fill="#c9a227"/>
+<text x="20" y="450" font-size="11" fill="#1b2440">Blocklisted enemies (Wallmaster, Like-Like, Poes, bosses...) skip steps 2 and 4 and attack the authority's own Link.</text>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 360" font-family="monospace" font-size="12" fill="#1b2440">
+<rect width="800" height="360" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="bold">FIG 3-3  BROWSER TO ANCHOR: ONE TCP CONNECTION PER PLAYER</text>
+<g stroke="#1b2440" stroke-width="1.5" fill="none">
+<rect x="20" y="70" width="130" height="60"/><rect x="20" y="200" width="130" height="60"/>
+<rect x="200" y="120" width="110" height="90"/><rect x="345" y="120" width="110" height="90"/>
+<rect x="490" y="100" width="140" height="130" stroke="#c9a227" stroke-width="2.5"/>
+<rect x="670" y="120" width="110" height="90"/>
+<path d="M150 100 L200 150 M150 230 L200 180 M310 165 L345 165 M455 165 L490 165"/>
+<path d="M630 145 L670 145 M630 185 L670 185"/>
+</g>
+<text x="30" y="95">BROWSER A</text><text x="30" y="115">soh.wasm</text>
+<text x="30" y="225">BROWSER B</text><text x="30" y="245">soh.wasm</text>
+<text x="210" y="145">CLOUDFLARE</text><text x="210" y="165">proxied</text><text x="210" y="185">idle 100 s</text>
+<text x="355" y="145">SWAG nginx</text><text x="355" y="165">proxy.conf</text><text x="355" y="185">idle 240 s</text>
+<text x="500" y="125" font-weight="bold">server.js</text><text x="500" y="145">/anchor wss</text>
+<text x="500" y="165">ping 25 s</text><text x="500" y="185">+NUL on send</text><text x="500" y="205">split on NUL</text>
+<text x="680" y="145">ANCHOR</text><text x="680" y="165">stock server</text><text x="680" y="185">TCP, not</text><text x="680" y="200">published</text>
+<text x="155" y="80">wss text msg</text>
+<text x="20" y="300">WS side:  one JSON packet per text message     {"type":"..."}</text>
+<text x="20" y="320">TCP side: JSON packets separated by NUL        {"type":"..."}\0{"type":"..."}\0</text>
+<text x="20" y="340">Desktop SoH players connect to Anchor directly and share the same rooms.</text>
+</svg>

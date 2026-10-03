@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" font-family="monospace" font-size="13" fill="#1b2440">
+  <rect width="800" height="420" fill="#ffffff"/>
+  <text x="20" y="28" font-size="15" font-weight="bold">FIG 1-3  "WALLS, HARDEST FIRST" (feasibility doc, 2026-09-30)</text>
+  <line x1="20" y1="38" x2="780" y2="38" stroke="#1b2440"/>
+  <g stroke="#1b2440" stroke-width="2" fill="none">
+    <rect x="40" y="60" width="720" height="70" stroke="#c9a227" stroke-width="3"/>
+    <rect x="100" y="145" width="660" height="70"/>
+    <rect x="160" y="230" width="600" height="70"/>
+    <rect x="220" y="315" width="540" height="70"/>
+  </g>
+  <text x="55" y="85" font-weight="bold">01 HORDE-SCALE ENEMY SYNC</text>
+  <text x="55" y="107">Every player must see and fight the same zombies.</text>
+  <text x="115" y="170" font-weight="bold">02 BUILDING</text>
+  <text x="115" y="192">Static per-scene collision; placeables must be dynamic actors;</text>
+  <text x="115" y="208">actors die on scene unload, so the base needs a sidecar save.</text>
+  <text x="175" y="255" font-weight="bold">03 WAVE AI</text>
+  <text x="175" y="277">OoT enemies don't pathfind or target structures.</text>
+  <text x="235" y="340" font-weight="bold">04 CRAFTING</text>
+  <text x="235" y="362">Easy: a menu plus a separate materials store.</text>
+  <text x="18" y="240" font-size="11" text-anchor="middle" transform="rotate(-90 18 240)">HARDER</text>
+  <line x1="30" y1="390" x2="30" y2="70" stroke="#1b2440" stroke-width="1.5"/>
+  <polygon points="24,76 30,62 36,76" fill="#1b2440"/>
+</svg>

@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 560" font-family="monospace" font-size="13">
+  <rect width="800" height="560" fill="#ffffff"/>
+  <rect x="8" y="8" width="784" height="544" fill="none" stroke="#1b2440" stroke-width="1.5"/>
+  <text x="24" y="34" font-size="15" font-weight="bold" fill="#1b2440">FIG 6-3  RAID GEOMETRY (TOP VIEW, GAME UNITS)</text>
+  <g transform="translate(330,300)" fill="none" stroke="#1b2440">
+    <circle r="225" stroke-width="1.5"/>
+    <circle r="150" stroke-width="1.5"/>
+    <circle r="75" stroke-dasharray="5 4"/>
+    <circle r="200" stroke-dasharray="2 4" stroke-opacity="0.6"/>
+    <rect x="-8" y="-6" width="16" height="12" fill="#c9a227" stroke="#1b2440"/>
+    <rect x="-70" y="-110" width="40" height="10" fill="#ffffff"/>
+    <rect x="50" y="70" width="40" height="10" fill="#ffffff" transform="rotate(30 70 75)"/>
+    <g fill="#1b2440" stroke="none">
+      <circle cx="-150" cy="-110" r="5"/><circle cx="170" cy="-120" r="5"/><circle cx="190" cy="80" r="5"/>
+      <circle cx="-60" cy="205" r="5"/><circle cx="-190" cy="60" r="5"/>
+    </g>
+    <path d="M-150 -110 L-52 -102" stroke-width="1.2" marker-end="url(#a)"/>
+    <path d="M190 80 L75 74" stroke-width="1.2" marker-end="url(#a)"/>
+    <path d="M-190 60 L-14 4" stroke-width="1.2" marker-end="url(#a)"/>
+    <path d="M170 -120 L130 -40" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a)"/>
+    <circle cx="120" cy="-20" r="6" fill="#ffffff" stroke-width="2"/>
+    <path d="M-60 205 C 20 260, 120 230, 180 160" stroke-dasharray="3 3" marker-end="url(#a)"/>
+  </g>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#1b2440"/></marker></defs>
+  <g fill="#1b2440">
+    <text x="345" y="296">WORKBENCH (base center)</text>
+    <text x="255" y="182">barricade</text>
+    <text x="458" y="275">player P</text>
+    <text x="392" y="88">RING_MAX 900</text>
+    <text x="392" y="160">RING_MIN 600</text>
+    <text x="300" y="232">300u retarget</text>
+    <text x="80" y="345">spawn sample</text>
+    <text x="565" y="500">stuck: &lt;20u gained in 5 s</text>
+    <text x="565" y="515">-&gt; moved to an unseen sample</text>
+  </g>
+  <g fill="#1b2440" font-size="12">
+    <rect x="590" y="60" width="190" height="250" fill="none" stroke="#1b2440"/>
+    <text x="600" y="80" font-weight="bold">LEGEND</text>
+    <rect x="600" y="92" width="14" height="10" fill="#c9a227" stroke="#1b2440"/><text x="622" y="102">workbench</text>
+    <circle cx="607" cy="122" r="5"/><text x="622" y="126">raider spawn</text>
+    <path d="M600 146 L615 146" stroke="#1b2440" marker-end="url(#a)"/><text x="622" y="150">walk to bench</text>
+    <path d="M600 170 L615 170" stroke="#1b2440" stroke-dasharray="4 3" marker-end="url(#a)"/><text x="622" y="174">engage player</text>
+    <circle cx="607" cy="194" r="6" fill="#fff" stroke="#1b2440" stroke-width="2"/><text x="622" y="198">player</text>
+    <text x="600" y="226">Spawn sample rules:</text>
+    <text x="600" y="242">- floor raycast</text>
+    <text x="600" y="258">- not water/steep/void</text>
+    <text x="600" y="274">- out of every</text>
+    <text x="600" y="290">  player's view</text>
+  </g>
+  <text x="24" y="553" font-size="11" fill="#1b2440">Not to scale. Values from Raids.cpp (patch 0011).</text>
+</svg>

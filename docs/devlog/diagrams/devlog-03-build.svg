@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" font-family="monospace" font-size="12" fill="#1b2440">
+<rect width="800" height="300" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="bold">FIG 3-2  WEB BUILD PIPELINE (emsdk 3.1.64)</text>
+<g stroke="#1b2440" stroke-width="1.5" fill="none">
+<rect x="20" y="60" width="170" height="70"/><rect x="230" y="60" width="170" height="70"/>
+<rect x="440" y="60" width="150" height="70" stroke="#c9a227" stroke-width="2.5"/><rect x="630" y="60" width="150" height="70"/>
+<path d="M190 95 L230 95 M400 95 L440 95 M590 95 L630 95"/>
+</g>
+<text x="30" y="85">True Co-op b738c76</text><text x="30" y="105">+ patches 0001-0019</text><text x="30" y="120">+ submodule patches</text>
+<text x="240" y="85">emcmake cmake</text><text x="240" y="105">-G Ninja Release</text><text x="240" y="120">BUILD_FOR_WEB</text>
+<text x="450" y="85">randomizer TUs</text><text x="450" y="105">ninja -j1</text><text x="450" y="120">5+ GB each</text>
+<text x="640" y="85">ninja -j4 soh</text><text x="640" y="105">soh.html/js/</text><text x="640" y="120">wasm/data</text>
+<text x="20" y="175">-O1  : builds, ~12 GB RAM+swap for a first build</text>
+<text x="20" y="195">-O0  : "too many locals" (wasm 50,000-local limit), browsers refuse to load</text>
+<text x="20" y="215">shell.html edit only: rm build-web/soh/soh.html, relink ~30 s</text>
+<text x="20" y="235">single-threaded: no receive thread, WebSocket inbox drained on the game thread</text>
+<text x="20" y="255">not on web: Opus custom music, Crowd Control, Sail (raw sockets)</text>
+</svg>

@@ -1,0 +1,50 @@
+# Ocarina Co-op (Ship of Harkinian True Co-op) in a browser, behind SWAG.
+#   soh-web:    game page + /anchor WebSocket bridge. SWAG reaches it by name on
+#               the shared proxy network (see swag/zelda.subdomain.conf).
+#   soh-anchor: stock Anchor relay, private to this stack unless you open 43383
+#               for desktop SoH players.
+#
+# Settings live in .env (copy .env.example). SWAG_NETWORK must be the Docker
+# network SWAG is attached to (Unraid: Docker tab -> SWAG -> Network Type).
+services:
+  web:
+    build: .
+    image: soh-web:latest
+    container_name: soh-web
+    restart: unless-stopped
+    environment:
+      ANCHOR_HOST: anchor
+      ANCHOR_PORT: "43383"
+      ACCESS_KEY: ${ACCESS_KEY:-}
+    networks:
+      - default
+      - swag
+    # LAN-only testing without SWAG: uncomment, then open http://<phatt-raid>:8085
+    # ports:
+    #   - "8085:8080"
+    depends_on:
+      - anchor
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  anchor:
+    image: ghcr.io/garrettjoecox/anchor:latest
+    container_name: soh-anchor
+    restart: unless-stopped
+    networks:
+      - default
+    # Desktop SoH players connect straight to Anchor. Uncomment (and forward the
+    # port on the router) only if someone plays the desktop build remotely.
+    # ports:
+    #   - "43383:43383"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  default:
+    name: soh-coop
+  swag:
+    external: true
+    name: ${SWAG_NETWORK:-proxynet}

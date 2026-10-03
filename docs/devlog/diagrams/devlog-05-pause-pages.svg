@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 360" font-family="monospace" font-size="13">
+<rect width="800" height="360" fill="#ffffff"/>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 z" fill="#1b2440"/></marker></defs>
+<text x="400" y="30" text-anchor="middle" font-size="15" fill="#1b2440" font-weight="bold">FIG 5-4  PAUSE MENU WITH THE WORKBENCH PAGE (R = right)</text>
+<g fill="none" stroke="#1b2440" stroke-width="2">
+<rect x="20" y="80" width="130" height="60"/><rect x="175" y="80" width="130" height="60"/>
+<rect x="330" y="80" width="140" height="60" stroke="#c9a227" stroke-width="3"/>
+<rect x="495" y="80" width="130" height="60"/><rect x="650" y="80" width="130" height="60"/>
+<line x1="150" y1="110" x2="171" y2="110" marker-end="url(#a)"/><line x1="305" y1="110" x2="326" y2="110" marker-end="url(#a)"/>
+<line x1="470" y1="110" x2="491" y2="110" marker-end="url(#a)"/><line x1="625" y1="110" x2="646" y2="110" marker-end="url(#a)"/>
+<path d="M715,140 L715,180 L85,180 L85,144" marker-end="url(#a)"/>
+<rect x="230" y="220" width="340" height="110"/>
+<line x1="400" y1="140" x2="400" y2="216" stroke-dasharray="4 4"/>
+</g>
+<g fill="#1b2440" text-anchor="middle">
+<text x="85" y="115">Quest Status</text><text x="240" y="115">Equipment</text><text x="400" y="108" font-weight="bold">WORKBENCH</text><text x="400" y="126">(new, 7DtZ on)</text>
+<text x="560" y="115">Select Item</text><text x="715" y="115">Map</text>
+<text x="400" y="200">wraps around</text>
+<text x="400" y="242" font-weight="bold">tabs: Craft | Trade | Base</text>
+<text x="400" y="264">stick/D-pad moves game cursor</text>
+<text x="400" y="284">A = craft / sell / place</text>
+<text x="400" y="304">greyed row shows its reason</text>
+<text x="400" y="322">Tab, Craft btn or bench A opens it</text>
+</g>
+</svg>

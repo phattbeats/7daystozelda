@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" font-family="monospace" font-size="13">
+<rect width="800" height="400" fill="#ffffff"/>
+<text x="20" y="28" font-size="15" font-weight="bold" fill="#1b2440">FIG 2-2  REDEAD GRABS A NON-HOST PLAYER: THE GRAB LATCH</text>
+<line x1="20" y1="38" x2="780" y2="38" stroke="#1b2440" stroke-width="1.5"/>
+<g fill="#1b2440" font-weight="bold"><text x="60" y="70">AUTHORITY (host ReDead + B's puppet)</text><text x="480" y="70">PLAYER B (real Link)</text></g>
+<g stroke="#1b2440" stroke-width="1.5"><line x1="180" y1="80" x2="180" y2="370"/><line x1="580" y1="80" x2="580" y2="370"/></g>
+<rect x="172" y="110" width="16" height="150" fill="#c9a227" opacity="0.5" stroke="#c9a227"/>
+<g fill="#1b2440" font-size="11">
+<text x="20" y="108">RouteGrab()</text>
+<text x="20" y="124">latch = 45 frames</text>
+<text x="20" y="180">puppet stays</text>
+<text x="20" y="196">GRABBED each frame</text>
+<text x="20" y="212">(stream lags)</text>
+<text x="20" y="276">stream shows grab:</text>
+<text x="20" y="292">latch erased</text>
+<text x="20" y="346">enemy lets go:</text>
+<text x="20" y="362">RELEASE sent</text>
+<text x="600" y="136">grabPlayer() via own</text>
+<text x="600" y="152">engine; or refuse</text>
+<text x="600" y="214">GRAB_REFUSED if</text>
+<text x="600" y="230">hookshot / cutscene</text>
+<text x="600" y="268">state stream: GRABBED</text>
+<text x="600" y="356">flag cleared, free</text>
+</g>
+<g stroke="#1b2440" stroke-width="1.5" fill="none">
+<path d="M188 116 L572 136"/><path d="M572 222 L188 240" stroke-dasharray="5 4"/><path d="M572 268 L188 284"/><path d="M188 340 L572 352"/>
+</g>
+<g fill="#1b2440"><path d="M566 131 L573 136 L566 141Z"/><path d="M195 235 L188 240 L195 245Z"/><path d="M195 279 L188 284 L195 289Z"/><path d="M566 347 L573 352 L566 357Z"/></g>
+<g fill="#1b2440" font-size="11"><text x="300" y="118">ENEMY_PLAYER_EFFECT GRAB</text><text x="300" y="224">GRAB_REFUSED (clears latch)</text><text x="300" y="268">player state stream</text><text x="300" y="336">RELEASE (0018)</text></g>
+<text x="20" y="390" font-size="11" fill="#1b2440">Gold bar: latch window. 45 frames at OoT's 20 Hz logic = about 2.25 s.</text>
+</svg>

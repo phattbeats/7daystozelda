@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" font-family="monospace" font-size="13">
+<rect width="800" height="420" fill="#ffffff"/>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 z" fill="#1b2440"/></marker></defs>
+<text x="400" y="30" text-anchor="middle" font-size="15" fill="#1b2440" font-weight="bold">FIG 5-1  THE 7DtZ LOOP (STORY + RAIDS)</text>
+<g fill="none" stroke="#1b2440" stroke-width="2">
+<rect x="40" y="70" width="200" height="80"/>
+<rect x="300" y="70" width="200" height="80"/>
+<rect x="560" y="70" width="200" height="80"/>
+<rect x="560" y="260" width="200" height="80"/>
+<rect x="300" y="260" width="200" height="80" stroke="#c9a227" stroke-width="3"/>
+<rect x="40" y="260" width="200" height="80"/>
+<line x1="240" y1="110" x2="296" y2="110" marker-end="url(#a)"/>
+<line x1="500" y1="110" x2="556" y2="110" marker-end="url(#a)"/>
+<line x1="660" y1="150" x2="660" y2="256" marker-end="url(#a)"/>
+<line x1="560" y1="300" x2="504" y2="300" marker-end="url(#a)"/>
+<line x1="300" y1="300" x2="244" y2="300" marker-end="url(#a)"/>
+<line x1="140" y1="260" x2="140" y2="154" marker-end="url(#a)"/>
+</g>
+<g fill="#1b2440" text-anchor="middle">
+<text x="140" y="100" font-weight="bold">1 PLAY THE STORY</text><text x="140" y="120">grass, rocks, trees,</text><text x="140" y="138">pots, caches, bosses</text>
+<text x="400" y="100" font-weight="bold">2 SHARED POOL</text><text x="400" y="120">Fiber Stone Wood</text><text x="400" y="138">Bone Rot (room owner)</text>
+<text x="660" y="100" font-weight="bold">3 WORKBENCH</text><text x="660" y="120">Craft / Trade / Base</text><text x="660" y="138">5th pause page</text>
+<text x="660" y="290" font-weight="bold">4 PLACE</text><text x="660" y="310">ghost: green / red</text><text x="660" y="328">800u, 24 pieces</text>
+<text x="400" y="290" font-weight="bold">5 RAID NIGHT</text><text x="400" y="310">red sky, red moon,</text><text x="400" y="328">Mini-Boss theme</text>
+<text x="140" y="290" font-weight="bold">6 DAWN CARD</text><text x="140" y="310">counters, rewards</text><text x="140" y="328">or the lost-night tax</text>
+</g>
+<text x="400" y="390" text-anchor="middle" fill="#1b2440">raids every N days (1/2/3/5/7), picked on a new save</text>
+</svg>

@@ -1,36 +1,54 @@
-# OOT True Coop
+# 7 Days to Zelda
 
-Turning *The Legend of Zelda: Ocarina of Time* into a **true local co-op game**: two windows, two controllers, one shared world — where the enemies and bosses are actually shared, not just the overworld.
+*Ocarina of Time* as a co-op survival game: gather materials, craft, build a base in
+Kokiri Forest, and hold it against raids that come with the night. It runs natively and
+in the browser (WebAssembly) at https://zelda.phatt.vip.
 
-This is a fork of [Ship of Harkinian](https://github.com/HarbourMasters/Shipwright) (the OoT PC port) built on top of [garrettjoecox's Anchor](https://github.com/garrettjoecox/OOT) multiplayer mod. Stock Anchor already syncs players, inventory, save flags, and room clears between game instances — but every player fights their *own* copies of the enemies. This project adds the missing piece: **synced enemies and bosses**, so two players fight the same monsters together.
+The game is a fork of [OOT-True-Co-op](https://github.com/bghill95/OOT-True-Co-op), which
+builds on [Ship of Harkinian](https://github.com/HarbourMasters/Shipwright) and
+[Anchor](https://github.com/garrettjoecox/OOT). The co-op layer's original README is
+[docs/OOT-TRUE-COOP-README.md](docs/OOT-TRUE-COOP-README.md).
 
-## What works so far
+**No ROM or game assets are in this repository.** Players supply their own legally
+dumped *Ocarina of Time* ROM. The web build extracts it in the browser.
 
-- **M1 — Shared HP:** enemies and bosses share one HP pool across both games; a kill on one screen is a kill on both.
-- **M2 — Host-authority enemy mirroring:** one instance (the "authority") runs the enemy AI; the other renders the exact same enemies — position, movement, and animation. Hits from the mirrored player are validated by the authority through the enemy's real damage code, so vulnerability windows and i-frames are respected. Deaths and item drops happen naturally on both screens.
-- **M3 — Dynamic spawn sync + first co-op boss:** runtime spawns (Stalchildren at night, Gohma larvae, Octorok rocks) appear on both screens, and **Gohma is a fully co-op boss fight** — stun her with one player, slash the eye with the other.
-- **Controller isolation:** each game instance is pinned to its own gamepad and keeps receiving input while unfocused, so two players can play on one PC. This lives in the companion [libultraship fork](https://github.com/bghill95/libultraship) (branch `enemy-sync-input`), which this repo pulls in as a submodule.
+## Layout
 
-## How it's built
+| Path | What |
+| --- | --- |
+| `soh/soh/SevenDays/` | The 7 Days to Zelda mode: materials, crafting, the Workbench, placeables, raids, loot, nights, merchants, NPC lines |
+| `soh/soh/Network/Anchor/` | Co-op sync (enemies, bosses, cutscenes, effects) |
+| `libultraship/`, `ZAPDTR/`, `OTRExporter/` | Vendored at the `web-port` commits the build uses (they were submodules) |
+| `web/` | The zelda.phatt.vip server (`server.js`: static site plus the Anchor relay over WebSocket), lobby page, Dockerfile, SWAG config |
+| `web/deploy-history/` | Lobby page and Dockerfile for each live deploy |
+| `web/tools/webtest/` | Browser tests for the lobby, joining, rendering and mobile |
+| `web-build/` | How to build the web bundle (emsdk 3.1.64, the prebuilt build tree) |
+| `tools/harness/` | Headed-Chrome live-play harness (playd, pc.py snippets) used for milestone tests |
+| `docs/design/` | Feasibility study and the deployment runbook |
+| `docs/milestones/` | The spec for each milestone (M4-M10) and follow-up issue |
+| `docs/devlog/` | Devlog posts, images and diagrams |
+| `art/` | Logo, crest, key art, homepage art sources |
 
-The enemy-sync layer lives in [`soh/soh/Network/Anchor/`](soh/soh/Network/Anchor/): an `EnemySync` core, ~25 packet types for the Anchor relay, hook handlers into the game's collision/skeleton-animation code, and a **boss adapter pattern** (`ActorSyncAdapter`) — Gohma's adapter is the first, and more bosses are added by writing new adapters rather than new sync plumbing. A CVar kill switch (`EnemySyncMirroring`) falls back to plain shared-HP mode if mirroring ever misbehaves.
+Built web bundles and test evidence (screenshots, videos, reports) are attached to
+[GitHub Releases](../../releases), not committed.
 
-## Running it
+## Build
 
-1. Build this repo (see the upstream [Ship of Harkinian build docs](https://github.com/HarbourMasters/Shipwright/blob/develop/docs/BUILDING.md)) — the `libultraship` submodule already points at the co-op fork.
-2. You need your **own, legally dumped** copy of the game. No ROMs or game assets are included in (or accepted into) this repository.
-3. Run two game instances plus an [Anchor relay server](https://github.com/garrettjoecox/anchor), point both at the same room, and enable enemy sync under `CVars.gRemote.Anchor` in each instance's `shipofharkinian.json`.
-4. Full details, a play-test script, and troubleshooting (desync log canaries, the kill switch) are in [COOP-TEST-GUIDE.md](COOP-TEST-GUIDE.md).
+- Native: see the Ship of Harkinian build docs (`docs/BUILDING.md`).
+- Web: [web-build/BUILD-WEB.md](web-build/BUILD-WEB.md). An incremental build needs the
+  prebuilt build tree (a release asset); a cold build needs about 12 GB of RAM for the
+  randomizer tables.
 
-## Known limitations / roadmap
+## Deploy
 
-- Enemies aim at the authority player's Link; nearest-player targeting is the next planned step.
-- Enemy AI sound effects/particles play only on the authority's screen (hit sounds are local everywhere).
-- Floormasters don't mirror yet (their split/merge logic isn't mirror-safe) — they share HP the M1 way.
-- Gohma's blue warp can appear in a slightly different spot on each screen (cosmetic).
-- If one game crashes, the other's enemies pause ~1.5 s and then resume under local AI.
-- Roadmap: more boss adapters through the same `ActorSyncAdapter` interface, nearest-player aggro, mirrored SFX.
+[docs/design/deployment.md](docs/design/deployment.md). The site's invite key is set with
+`ACCESS_KEY` at deploy time and is not stored here.
 
-## Credits
+## Not in this repository
 
-All the heavy lifting of getting OoT running natively on PC is the [HarbourMasters / Ship of Harkinian](https://github.com/HarbourMasters/Shipwright) team's work, and the multiplayer foundation is [garrettjoecox's Anchor](https://github.com/garrettjoecox/OOT) ([relay server](https://github.com/garrettjoecox/anchor)). This fork just teaches the enemies to show up on both screens. We do not condone piracy — bring your own cartridge dump.
+These stay private on Nextcloud (`PHATT-TECH/Projects/7daystozelda/`) because they are
+Nintendo-owned or third-party:
+
+- `rom/`: the OoT ROM and the `oot.o2r` extracted from it
+- `homepage-art/title-theme.mp3`: the lobby music
+- `outside-asset-downloads/OOTStyleModels.zip`: third-party models

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 470" font-family="monospace" font-size="12">
+<rect width="800" height="470" fill="#ffffff"/>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 z" fill="#1b2440"/></marker></defs>
+<text x="400" y="28" text-anchor="middle" font-size="15" fill="#1b2440" font-weight="bold">FIG 5-6  PLACEMENT CHECK ORDER (Placeables, patch 0010)</text>
+<g fill="none" stroke="#1b2440" stroke-width="2">
+<rect x="40" y="50" width="300" height="34"/><rect x="40" y="96" width="300" height="34"/><rect x="40" y="142" width="300" height="34"/>
+<rect x="40" y="188" width="300" height="34"/><rect x="40" y="234" width="300" height="34"/><rect x="40" y="280" width="300" height="34"/>
+<rect x="40" y="326" width="300" height="34"/><rect x="40" y="372" width="300" height="34"/>
+<rect x="40" y="418" width="300" height="34" stroke="#c9a227" stroke-width="3"/>
+</g>
+<g fill="#1b2440">
+<text x="52" y="72">1 floor under the ghost?</text><text x="52" y="118">2 scene floor, drop &lt;= 100u?</text>
+<text x="52" y="164">3 slope &lt;= 30 degrees?</text><text x="52" y="210">4 not on water?</text>
+<text x="52" y="256">5 clear of doors / exits?</text><text x="52" y="302">6 outdoor base scene?</text>
+<text x="52" y="348">7 no overlapping piece?</text><text x="52" y="394">8 same scene, within 800u of bench?</text>
+<text x="52" y="440" font-weight="bold">GREEN  (owner re-checks; 24-piece cap)</text>
+</g>
+<g stroke="#1b2440" stroke-width="1.5" marker-end="url(#a)">
+<line x1="340" y1="67" x2="420" y2="67"/><line x1="340" y1="113" x2="420" y2="113"/><line x1="340" y1="159" x2="420" y2="159"/>
+<line x1="340" y1="205" x2="420" y2="205"/><line x1="340" y1="251" x2="420" y2="251"/><line x1="340" y1="297" x2="420" y2="297"/>
+<line x1="340" y1="343" x2="420" y2="343"/><line x1="340" y1="389" x2="420" y2="389"/>
+</g>
+<g fill="#1b2440">
+<text x="428" y="71">RED "No ground here"</text><text x="428" y="117">RED "Build on solid ground" / "Too big a drop"</text>
+<text x="428" y="163">RED "Too steep (over 30 degrees)"</text><text x="428" y="209">RED "Not on water"</text>
+<text x="428" y="255">RED "Too close to a door or exit"</text><text x="428" y="301">RED "Bases go outdoors, where the nights come"</text>
+<text x="428" y="347">RED "Something is already there"</text><text x="428" y="393">RED "Your base is in another place" / "Too far..."</text>
+</g>
+</svg>

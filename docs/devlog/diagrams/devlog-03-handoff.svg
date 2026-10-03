@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 330" font-family="monospace" font-size="12" fill="#1b2440">
+<rect width="800" height="330" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="bold">FIG 3-5  PHONE HIDES THE PAGE: AUTHORITY HANDOFF, BEFORE AND AFTER</text>
+<g stroke="#1b2440" stroke-width="1.5" fill="none">
+<line x1="40" y1="110" x2="760" y2="110"/><line x1="40" y1="240" x2="760" y2="240"/>
+<rect x="120" y="90" width="560" height="40" stroke-dasharray="5 4"/>
+<rect x="120" y="220" width="30" height="40" stroke="#c9a227" stroke-width="2.5"/>
+</g>
+<text x="20" y="70" font-weight="bold">BEFORE (patch 0005): phone frozen, still "online"</text>
+<text x="40" y="150">t=0 hide</text><text x="130" y="102">every enemy frozen for the room (no timers, no packets)</text>
+<text x="600" y="150">~50 s: relay drops</text><text x="600" y="165">after missed pongs</text>
+<text x="20" y="200" font-weight="bold">AFTER (patch 0006): web_anchor_suspend(1) on hide</text>
+<text x="40" y="280">t=0 hide</text><text x="160" y="232">Anchor::Disable() -&gt; next-lowest clientId in scene</text>
+<text x="160" y="258">takes authority within a tick; show -&gt; Enable() rejoins</text>
+<text x="20" y="315">Authority = lowest same-scene clientId. Desktop tabs instead switch rAF -&gt; setTimeout(16 ms).</text>
+</svg>
