@@ -133,6 +133,10 @@ static void DrawRaidIntervalPicker() {
     if (!RaidsEnabled() || !InGameplay() || GetBase().raidInterval != 0 || !Net::IsOwner()) {
         return;
     }
+    // Not over the pause menu: its Workbench page has the same choice for a controller.
+    if (gPlayState->pauseCtx.state != 0) {
+        return;
+    }
     // Not over the opening's narration: wait until Link is free to move.
     if (gPlayState->csCtx.state != CS_STATE_IDLE || gPlayState->msgCtx.msgMode != MSGMODE_NONE ||
         gPlayState->transitionTrigger != TRANS_TRIGGER_OFF) {
@@ -494,7 +498,30 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
         return rows;
     }
 
-    // Base: place a kit (the pause menu closes for the ghost), or pack pieces up.
+    // Base: how often raids come (the host picks), place a kit (the pause menu closes for
+    // the ghost), or pack pieces up.
+    if (RaidsEnabled()) {
+        uint32_t days = RaidInterval();
+        bool picked = GetBase().raidInterval != 0;
+        PageRow raids;
+        raids.name = days == 1 ? std::string("Raids every night") : fmt::format("Raids every {} days", days);
+        raids.icon = gItemIconDekuStickTex;
+        raids.enabled = Net::IsOwner();
+        raids.right = picked ? "" : "pick one";
+        raids.hint = raids.enabled ? "Change how often" : "The host decides";
+        raids.action = [days]() {
+            size_t next = 0;
+            for (size_t i = 0; i < ARRAY_COUNT(kIntervals); i++) {
+                if (kIntervals[i].days == days) {
+                    next = (i + 1) % ARRAY_COUNT(kIntervals);
+                }
+            }
+            Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+            RequestRaidInterval(kIntervals[next].days);
+        };
+        rows.push_back(std::move(raids));
+    }
+
     const PoolState& pool = GetPool();
     for (int t = 0; t < PLACEABLE_COUNT; t++) {
         const PlaceableInfo& info = GetPlaceableInfo((uint8_t)t);
