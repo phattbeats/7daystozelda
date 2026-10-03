@@ -459,3 +459,11 @@ soh/properties.h
 /clang-format
 /clang-format.exe
 *.o2r
+
+# 7 Days to Zelda project folders: the SoH rules above ignore *.png
+!art/**
+!docs/**
+!web/**
+!tools/**
+!web-build/**
+web/node_modules/
