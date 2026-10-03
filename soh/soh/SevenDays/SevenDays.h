@@ -265,6 +265,7 @@ bool IsOutdoorScene(int16_t scene); // a scene a base can stand in (the raid clo
 const char* OutdoorSceneName(int16_t scene);
 int CurrentEraNow();
 std::vector<std::pair<uint16_t, Actor*>> SpawnedPlaceables(); // id -> actor in this scene
+Actor* SpawnedPlaceableActor(uint16_t id);                   // or nullptr when not spawned here
 void OnPlaceableHit(uint16_t id, Actor* actor); // the piece shakes (Placeables.cpp)
 
 // MARK: - M6: raids (Raids.cpp)

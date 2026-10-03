@@ -1446,28 +1446,39 @@ static Vtx* sSevenDaysPageVtx = NULL;
 static u8 sSevenDaysTitleTex[80 * 32];
 static void* sSevenDaysPageTexs[15];
 static s32 sSevenDaysPageTexLang = -1;
+static u8* sSevenDaysPageTexTitle = NULL;
+static u8* sSevenDaysPageTexCorner = NULL;
+static u8 sSevenDaysTitleTexDirty = false; // rebuilt in place: the renderer's cached copy is stale
 
 static void** KaleidoScope_SevenDaysPageTexs(void) {
-    if (sSevenDaysPageTexLang != gSaveContext.language) {
-        void** save = (void**)sSaveTexs[gSaveContext.language];
+    void** save = (void**)sSaveTexs[gSaveContext.language];
+    // HD texture packs swap in raw images of other sizes: keep their title tile then. A
+    // pack can be switched on or off mid-session, so the copy is keyed on the source
+    // tiles as well as the language.
+    u8* title = NULL;
+    u8* corner = NULL;
+    if (!ResourceMgr_TexIsRaw(save[5]) && !ResourceMgr_TexIsRaw(save[0])) {
+        title = ResourceGetDataByName(save[5]);
+        corner = ResourceGetDataByName(save[0]);
+    }
+    if (sSevenDaysPageTexLang != gSaveContext.language || sSevenDaysPageTexTitle != title ||
+        sSevenDaysPageTexCorner != corner) {
         for (s32 i = 0; i < 15; i++) {
             sSevenDaysPageTexs[i] = save[i];
         }
-        // HD texture packs swap in raw images of other sizes: keep their title tile then.
-        if (!ResourceMgr_TexIsRaw(save[5]) && !ResourceMgr_TexIsRaw(save[0])) {
-            u8* title = ResourceGetDataByName(save[5]);
-            u8* corner = ResourceGetDataByName(save[0]);
-            if ((title != NULL) && (corner != NULL)) {
-                memcpy(sSevenDaysTitleTex, title, sizeof(sSevenDaysTitleTex));
-                for (s32 y = 0; y < 19; y++) {
-                    for (s32 x = 8; x < 72; x++) {
-                        sSevenDaysTitleTex[y * 80 + x] = corner[y * 80 + x];
-                    }
+        if ((title != NULL) && (corner != NULL)) {
+            memcpy(sSevenDaysTitleTex, title, sizeof(sSevenDaysTitleTex));
+            for (s32 y = 0; y < 19; y++) {
+                for (s32 x = 8; x < 72; x++) {
+                    sSevenDaysTitleTex[y * 80 + x] = corner[y * 80 + x];
                 }
-                sSevenDaysPageTexs[5] = sSevenDaysTitleTex;
             }
+            sSevenDaysPageTexs[5] = sSevenDaysTitleTex;
+            sSevenDaysTitleTexDirty = true;
         }
         sSevenDaysPageTexLang = gSaveContext.language;
+        sSevenDaysPageTexTitle = title;
+        sSevenDaysPageTexCorner = corner;
     }
     return sSevenDaysPageTexs;
 }
@@ -1584,8 +1595,12 @@ static void KaleidoScope_DrawPageOnFace(PlayState* play, GraphicsContext* gfxCtx
         case PAUSE_SEVENDAYS:
             if (sSevenDaysPageVtx != NULL) {
                 // The save page's frame, minus its title (the randomizer's extra page uses it too).
-                POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, sSevenDaysPageVtx,
-                                                              KaleidoScope_SevenDaysPageTexs());
+                void** pageTexs = KaleidoScope_SevenDaysPageTexs();
+                if (sSevenDaysTitleTexDirty) {
+                    gSPInvalidateTexCache(POLY_OPA_DISP++, sSevenDaysTitleTex);
+                    sSevenDaysTitleTexDirty = false;
+                }
+                POLY_OPA_DISP = KaleidoScope_DrawPageSections(POLY_OPA_DISP, sSevenDaysPageVtx, pageTexs);
                 SevenDaysKaleido_DrawPage(play, current);
 
                 if (current && (pauseCtx->cursorSpecialPos == 0)) {

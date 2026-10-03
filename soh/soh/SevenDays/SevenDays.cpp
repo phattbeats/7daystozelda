@@ -32,8 +32,8 @@ extern u8 gSevenDaysTunicColorActive;
  *
  * Packets (JSON, sent through Anchor like HORDE_EVENT):
  *   GATHER           gatherer -> owner      material, amount, sourceKey, dedupe
- *   CRAFT_REQUEST    crafter  -> owner      recipe, reqId
- *   CRAFT_RESULT     owner    -> crafter    reqId, recipe, ok, reason + pool
+ *   CRAFT_REQUEST    crafter  -> owner      recipe, reqId (+ ownWallet: the crafter settles the rupees)
+ *   CRAFT_RESULT     owner    -> crafter    reqId, recipe, ok, reason, ownWallet + pool
  *   MATERIALS_STATE  owner    -> room       the pool (+ who was just credited)
  *   MATERIALS_REQUEST joiner  -> owner      the joiner's cached pool; higher rev wins
  */
@@ -85,6 +85,13 @@ struct InFlightCraft {
 };
 static InFlightCraft sInFlight;
 static uint32_t sNextReqId = 1;
+// Buys this client paid for itself (wallets not shared): reqId -> recipe, until answered.
+static std::unordered_map<uint32_t, std::string> sPaidBuys;
+// Owner: remote buys and trades that settle in the shared wallet, run next frame. A
+// Rupees_ChangeBy made while Anchor drains its packet queue isn't broadcast, so the
+// wallet can't change in the packet handler.
+static std::deque<std::pair<nlohmann::json, uint32_t>> sWalletRequests;
+static double sHoldBuysUntil = 0; // tests: the owner sits on remote buys, as on a slow link
 static uint32_t sLastActingOwner = UINT32_MAX;
 
 double Net::Now() {
@@ -514,8 +521,19 @@ std::string CraftBlocker(const Recipe& recipe) {
     return "";
 }
 
-// A purchase pays when it is sent (so two quick buys can't spend the same
-// rupees) and is refunded if the owner refuses it or never answers.
+// Who settles the rupees of a buy or a trade. With the co-op wallet shared (the default),
+// the owner checks it and pays or credits it as it settles the pool, so two players
+// can't spend the same rupees, and a buy that times out on the buyer's side is still
+// paid exactly once. With separate wallets the crafter's own wallet settles: a buyer
+// pays when it sends and gets the rupees back only on a refusal.
+static bool WalletShared() {
+    return !Connected() || Anchor::Instance->roomState.syncItemsAndFlags;
+}
+
+static bool TouchesWallet(const Recipe& recipe) {
+    return recipe.kind == RECIPE_BUY || recipe.kind == RECIPE_TRADE;
+}
+
 static void RefundPurchase(const std::string& recipeId) {
     const Recipe* recipe = FindRecipe(recipeId);
     if (recipe != nullptr && recipe->kind == RECIPE_BUY) {
@@ -527,7 +545,15 @@ static void OnCraftResult(const nlohmann::json& payload) {
     if (payload.contains("pool")) {
         PoolFromJson(payload["pool"]);
     }
-    if (payload.value("reqId", 0u) != sInFlight.reqId) {
+    uint32_t reqId = payload.value("reqId", 0u);
+    // Settle a self-paid buy even if it timed out here: only a refusal gives rupees back.
+    if (auto paid = sPaidBuys.find(reqId); paid != sPaidBuys.end()) {
+        if (!payload.value("ok", false)) {
+            RefundPurchase(paid->second);
+        }
+        sPaidBuys.erase(paid);
+    }
+    if (reqId != sInFlight.reqId) {
         return; // stale or timed out
     }
     sInFlight = {};
@@ -537,7 +563,6 @@ static void OnCraftResult(const nlohmann::json& payload) {
         return;
     }
     if (!payload.value("ok", false)) {
-        RefundPurchase(recipe->id);
         Notification::Emit({ .prefix = recipe->name,
                              .message = payload.value("reason", "Couldn't craft that"),
                              .remainingTime = 3.0f });
@@ -560,7 +585,9 @@ static void OnCraftResult(const nlohmann::json& payload) {
             QueueNavi(FIRST_CRAFT);
             break;
         case RECIPE_TRADE:
-            Rupees_ChangeBy(recipe->outputCount);
+            if (payload.value("ownWallet", false)) {
+                Rupees_ChangeBy(recipe->outputCount); // otherwise the owner already paid it out
+            }
             Sfx_PlaySfxCentered(NA_SE_SY_GET_RUPY);
             QueueNavi(FIRST_TRADE);
             break;
@@ -583,22 +610,37 @@ static void ProcessCraftRequest(const nlohmann::json& payload, uint32_t requeste
     result["type"] = CRAFT_RESULT;
     result["reqId"] = payload.value("reqId", 0u);
     result["recipe"] = payload.value("recipe", "");
+    result["ownWallet"] = payload.value("ownWallet", false);
 
     const Recipe* recipe = FindRecipe(payload.value("recipe", ""));
+    bool ownerWallet = recipe != nullptr && TouchesWallet(*recipe) && !payload.value("ownWallet", false);
     if (recipe == nullptr) {
         result["ok"] = false;
         result["reason"] = "Unknown recipe";
     } else if (!HasInputs(*recipe)) {
         result["ok"] = false;
         result["reason"] = "Not enough materials";
+    } else if (ownerWallet && recipe->kind == RECIPE_BUY &&
+               gSaveContext.rupees + gSaveContext.rupeeAccumulator < recipe->outputCount) {
+        result["ok"] = false;
+        result["reason"] = "Not enough rupees";
+    } else if (ownerWallet && recipe->kind == RECIPE_TRADE &&
+               gSaveContext.rupees + gSaveContext.rupeeAccumulator + recipe->outputCount > CUR_CAPACITY(UPG_WALLET)) {
+        result["ok"] = false;
+        result["reason"] = "Your wallet is full";
     } else {
+        if (ownerWallet) {
+            // The shared wallet settles here, once; the delta reaches every player.
+            Rupees_ChangeBy(recipe->kind == RECIPE_BUY ? -(int16_t)recipe->outputCount
+                                                       : (int16_t)recipe->outputCount);
+        }
         for (uint8_t i = 0; i < recipe->inputCount; i++) {
             sPool.materials[recipe->inputs[i].material] -= recipe->inputs[i].amount;
         }
         if (recipe->kind == RECIPE_KIT) {
             sPool.kits[recipe->id] += recipe->outputCount;
         } else if (recipe->kind == RECIPE_BUY) {
-            // The buyer already paid its rupees: the goods go into the pool.
+            // Paid for (just above, or by the buyer): the goods go into the pool.
             sPool.materials[recipe->inputs[0].material] += recipe->inputs[0].amount;
         }
         sPool.rev++;
@@ -622,14 +664,18 @@ bool RequestCraft(const std::string& recipeId) {
     sInFlight.reqId = sNextReqId++;
     sInFlight.recipe = recipeId;
     sInFlight.sentAt = Now();
-    if (recipe->kind == RECIPE_BUY) {
-        Rupees_ChangeBy(-(int16_t)recipe->outputCount);
-    }
 
     nlohmann::json payload;
     payload["type"] = CRAFT_REQUEST;
     payload["recipe"] = recipeId;
     payload["reqId"] = sInFlight.reqId;
+    if (TouchesWallet(*recipe) && !IsOwner() && !WalletShared()) {
+        payload["ownWallet"] = true;
+        if (recipe->kind == RECIPE_BUY) {
+            Rupees_ChangeBy(-(int16_t)recipe->outputCount);
+            sPaidBuys[sInFlight.reqId] = recipeId;
+        }
+    }
     if (IsOwner()) {
         ProcessCraftRequest(payload, OwnId());
     } else {
@@ -673,7 +719,10 @@ void HandlePacket(const nlohmann::json& payload) {
             ApplyGather(payload, from);
         }
     } else if (type == CRAFT_REQUEST) {
-        if (IsOwner()) {
+        const Recipe* recipe = FindRecipe(payload.value("recipe", ""));
+        if (IsOwner() && recipe != nullptr && TouchesWallet(*recipe) && !payload.value("ownWallet", false)) {
+            sWalletRequests.emplace_back(payload, from);
+        } else if (IsOwner()) {
             ProcessCraftRequest(payload, from);
         } else {
             // We lost ownership mid-flight: refuse rather than spend a stale copy.
@@ -753,8 +802,25 @@ static void OnFrame() {
         return;
     }
 
+    // Owner: settle the shared-wallet buys and trades, in the order they came in.
+    while (!sWalletRequests.empty() && Now() >= sHoldBuysUntil) {
+        auto [payload, requester] = std::move(sWalletRequests.front());
+        sWalletRequests.pop_front();
+        if (IsOwner()) {
+            ProcessCraftRequest(payload, requester);
+        } else {
+            nlohmann::json result;
+            result["type"] = CRAFT_RESULT;
+            result["reqId"] = payload.value("reqId", 0u);
+            result["recipe"] = payload.value("recipe", "");
+            result["ok"] = false;
+            result["reason"] = "The host changed, try again";
+            SendTo(requester, result);
+        }
+    }
+
+    // No refund here: a late answer can still land (and is paid for once, either way).
     if (CraftInFlight() && Now() - sInFlight.sentAt > 5.0) {
-        RefundPurchase(sInFlight.recipe);
         sInFlight = {};
         Notification::Emit({ .prefix = "Crafting", .message = "The host didn't answer", .remainingTime = 3.0f });
     }
@@ -768,6 +834,8 @@ static void InitSave(bool isDebug) {
     sPendingNavi.clear();
     sSeenSources.clear();
     sInFlight = {};
+    sPaidBuys.clear();
+    sWalletRequests.clear();
     sLastActingOwner = UINT32_MAX;
     // Spare boards by the village workbench: Kokiri Forest has no trees to roll
     // into before the Lost Woods, and the first craft should be a barricade.
@@ -880,6 +948,13 @@ int sevendays_test_craft(const char* recipeId) {
     return CraftingEnabled() && RequestCraft(recipeId) ? 1 : 0;
 }
 
+// Owner: answer remote buys and trades only after this many seconds (a late reply after the
+// buyer's 5 s timeout).
+EMSCRIPTEN_KEEPALIVE
+void sevendays_test_hold_buys(double seconds) {
+    sHoldBuysUntil = Now() + seconds;
+}
+
 EMSCRIPTEN_KEEPALIVE
 const char* sevendays_test_state() {
     static std::string out;
@@ -888,6 +963,9 @@ const char* sevendays_test_state() {
     j["actingOwner"] = ActingOwner();
     j["firsts"] = sFirsts;
     j["rupees"] = gSaveContext.rupees;
+    j["rupeeAcc"] = gSaveContext.rupeeAccumulator;
+    j["inFlight"] = sInFlight.recipe;
+    j["owedBuys"] = sWalletRequests.size();
     j["sticks"] = AMMO(ITEM_STICK);
     out = j.dump();
     return out.c_str();

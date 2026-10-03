@@ -489,21 +489,70 @@ static bool PickSpawnPoint(Vec3f* out, const Vec3f* avoid) {
 
 // M10: the nearest scarecrow within 400 of a raider draws it away from the workbench
 // and the players. Broken scarecrows leave the piece list, so routing reverts then.
+// It has to be reachable: on about the raider's level (like EngagedPlayer) and not
+// behind the scene's walls or up a ledge. The base's own pieces can be in the way:
+// those get broken through. Otherwise the players and the workbench stay the target.
 static constexpr f32 DECOY_RANGE = 400.0f;
-static Actor* NearestDecoy(Actor* a) {
-    Actor* best = nullptr;
-    f32 bestD = DECOY_RANGE;
-    for (auto& [id, actor] : SpawnedPlaceables()) {
-        const Placeable* p = FindPlaceable(id);
-        if (p == nullptr || p->type != PLACEABLE_SCARECROW || actor == nullptr || actor->update == nullptr) {
+
+// Cached once per frame: the scarecrows in the scene, and each raider's answer (the
+// lookup runs for every raider in RouteRaiders and again in its perception hook).
+static uint32_t sDecoyFrame = UINT32_MAX;
+static std::vector<Actor*> sDecoys;
+static std::vector<std::pair<Actor*, Actor*>> sDecoyFor;
+
+static void RefreshDecoys() {
+    if (sDecoyFrame == gPlayState->gameplayFrames) {
+        return;
+    }
+    sDecoyFrame = gPlayState->gameplayFrames;
+    sDecoys.clear();
+    sDecoyFor.clear();
+    for (const Placeable& p : GetBase().placeables) {
+        if (p.type != PLACEABLE_SCARECROW) {
             continue;
         }
+        Actor* actor = SpawnedPlaceableActor(p.id);
+        if (actor != nullptr && actor->update != nullptr) {
+            sDecoys.push_back(actor);
+        }
+    }
+}
+
+static bool DecoyReachable(Actor* a, Actor* decoy) {
+    if (fabsf(decoy->world.pos.y - a->world.pos.y) >= 120.0f) {
+        return false;
+    }
+    Vec3f from = { a->world.pos.x, a->world.pos.y + 30.0f, a->world.pos.z };
+    Vec3f to = { decoy->world.pos.x, decoy->world.pos.y + 30.0f, decoy->world.pos.z };
+    Vec3f hit;
+    CollisionPoly* poly = nullptr;
+    s32 bgId = BGCHECK_SCENE;
+    if (!BgCheck_EntityLineTest1(&gPlayState->colCtx, &from, &to, &hit, &poly, true, false, false, true, &bgId)) {
+        return true;
+    }
+    return bgId != BGCHECK_SCENE; // a barricade (dyna): break through it
+}
+
+static Actor* NearestDecoy(Actor* a) {
+    RefreshDecoys();
+    if (sDecoys.empty()) {
+        return nullptr;
+    }
+    for (auto& [raider, decoy] : sDecoyFor) {
+        if (raider == a) {
+            return decoy;
+        }
+    }
+    Actor* best = nullptr;
+    f32 bestD = DECOY_RANGE;
+    for (Actor* actor : sDecoys) {
         f32 d = Math_Vec3f_DistXZ(&a->world.pos, &actor->world.pos);
-        if (d < bestD) {
+        if (d < bestD && DecoyReachable(a, actor)) {
             best = actor;
             bestD = d;
         }
     }
+    sDecoyFor.emplace_back(a, best);
     return best;
 }
 

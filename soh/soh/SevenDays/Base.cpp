@@ -373,6 +373,11 @@ std::vector<std::pair<uint16_t, Actor*>> SpawnedPlaceables() {
     return { sSpawned.begin(), sSpawned.end() };
 }
 
+Actor* SpawnedPlaceableActor(uint16_t id) {
+    auto it = sSpawned.find(id);
+    return it != sSpawned.end() ? it->second : nullptr;
+}
+
 static void DespawnAll() {
     for (auto& [id, actor] : sSpawned) {
         Actor_Kill(actor);

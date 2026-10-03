@@ -2,6 +2,7 @@
 #include "soh/ActorDB.h"
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
+#include "soh/Enhancements/custom-message/CustomMessageTypes.h"
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Anchor/EnemySync.h"
 
@@ -520,7 +521,7 @@ static void DrawGhostVolume(PlayState* play, const PlaceableInfo& info, bool val
 static ColliderCylinderInit sSpikeCylinderInit = {
     {
         COLTYPE_METAL,
-        AT_ON | AT_TYPE_PLAYER, // hurts enemies, never players
+        AT_ON | AT_TYPE_PLAYER, // hurts enemies, never players (see BystanderInReach)
         AC_NONE,
         OC1_NONE,
         OC2_NONE,
@@ -540,7 +541,7 @@ static ColliderCylinderInit sSpikeCylinderInit = {
 static ColliderCylinderInit sBiteCylinderInit = {
     {
         COLTYPE_NONE,
-        AT_ON | AT_TYPE_PLAYER, // bites raiders, never players
+        AT_ON | AT_TYPE_PLAYER, // bites raiders, never players (see BystanderInReach)
         AC_NONE,
         OC1_NONE,
         OC2_NONE,
@@ -667,6 +668,35 @@ static Actor* NearestEnemyTo(PlayState* play, const Vec3f& at, f32 range) {
     return best;
 }
 
+// The spikes' and the bite's AT is AT_TYPE_PLAYER, the only kind raiders take damage
+// from, but a sword-like hit also lands on anything else that takes a player's sword:
+// another player's Link in PvP, grass, bushes, signs, Cuccos. Hold the hit while any
+// of those is within reach of it, so it only ever lands on raiders.
+static bool BystanderInReach(PlayState* play, const ColliderCylinder& c) {
+    static const uint8_t kCategories[] = { ACTORCAT_PLAYER, ACTORCAT_PROP, ACTORCAT_NPC };
+    Player* self = GET_PLAYER(play);
+    Vec3f at = { (f32)c.dim.pos.x, (f32)c.dim.pos.y, (f32)c.dim.pos.z };
+    for (uint8_t cat : kCategories) {
+        for (Actor* a = play->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
+            if (a == &self->actor || a->update == nullptr) {
+                continue;
+            }
+            // Remote players only take hits with PvP on against their team: DummyPlayer
+            // clears this flag exactly then.
+            if (cat == ACTORCAT_PLAYER && (a->flags & ACTOR_FLAG_LOCK_ON_DISABLED)) {
+                continue;
+            }
+            f32 dy = a->world.pos.y - at.y;
+            // Reach: the hit's cylinder plus a Link-sized (or grass-tuft-sized) body.
+            if (Math_Vec3f_DistXZ(&at, &a->world.pos) < c.dim.radius + 20.0f && dy > -60.0f &&
+                dy < c.dim.height + 10.0f) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // Guard Baba: rooted; turns to the nearest raider, winds up, lunges and bites once
 // (half a heart), then recovers. Every client animates it from the enemies it sees;
 // only the scene's enemy authority puts the bite's collider out, like the spikes.
@@ -720,7 +750,9 @@ static void BabaUpdate(PlaceableActor* self, PlayState* play) {
                     self->biteCollider.dim.pos.x = (s16)(thisx->world.pos.x + Math_SinS(self->babaYaw) * hz);
                     self->biteCollider.dim.pos.y = (s16)(thisx->world.pos.y + hy);
                     self->biteCollider.dim.pos.z = (s16)(thisx->world.pos.z + Math_CosS(self->babaYaw) * hz);
-                    CollisionCheck_SetAT(play, &play->colChkCtx, &self->biteCollider.base);
+                    if (!BystanderInReach(play, self->biteCollider)) {
+                        CollisionCheck_SetAT(play, &play->colChkCtx, &self->biteCollider.base);
+                    }
                 }
             }
             if (++self->babaTimer > 9) {
@@ -779,7 +811,9 @@ static void Placeable_Update(Actor* thisx, PlayState* play) {
                 Audio_PlayActorSound2(thisx, NA_SE_IT_SWORD_STRIKE);
             } else {
                 Collider_UpdateCylinder(thisx, &self->spikeCollider);
-                CollisionCheck_SetAT(play, &play->colChkCtx, &self->spikeCollider.base);
+                if (!BystanderInReach(play, self->spikeCollider)) {
+                    CollisionCheck_SetAT(play, &play->colChkCtx, &self->spikeCollider.base);
+                }
             }
         }
         if (self->hitFlash > 0) {
@@ -1050,6 +1084,12 @@ static int16_t TownScene(int16_t scene) {
 static const WorldLine* FindWorldLine(uint16_t textId) {
     // Rando hints and the like go through their own text: leave them alone.
     if (!BaseEnabled() || gPlayState == nullptr || IS_RANDO) {
+        return nullptr;
+    }
+    // SoH's MarketSneak turns the night gate guard's line into a Yes/No choice
+    // (OTRGlobals): replacing it would leave the guard waiting on an answer forever.
+    if (textId == TEXT_MARKET_GUARD_NIGHT && CVarGetInteger(CVAR_ENHANCEMENT("MarketSneak"), 0) &&
+        gPlayState->sceneNum == SCENE_MARKET_ENTRANCE_NIGHT) {
         return nullptr;
     }
     int16_t scene = TownScene(gPlayState->sceneNum);
