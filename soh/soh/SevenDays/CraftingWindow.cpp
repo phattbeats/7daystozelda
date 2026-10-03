@@ -4,6 +4,11 @@
 #include "soh/ShipUtils.h"
 #include "soh/SohGui/SohGui.hpp"
 #include "soh/Enhancements/cosmetics/cosmeticsTypes.h"
+#include "soh/Network/Anchor/Anchor.h"
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include <algorithm>
 #include <functional>
@@ -117,7 +122,7 @@ static void DrawRecipes(RecipeKind a, RecipeKind b) {
     }
 }
 
-// Raid interval: picked once on a new save, changeable later from the Base tab.
+// Raid interval: the host picks it in the web lobby, changeable later from the Base tab.
 struct IntervalChoice {
     uint32_t days;
     const char* label;
@@ -131,40 +136,39 @@ static std::string IntervalName(uint32_t days) {
     return days == 1 ? std::string("every night") : fmt::format("every {} days", days);
 }
 
-// The owner (or a solo player) chooses on a new save, before the first night.
-static void DrawRaidIntervalPicker() {
-    if (!RaidsEnabled() || !InGameplay() || GetBase().raidInterval != 0 || !Net::IsOwner()) {
-        return;
-    }
-    // Not over the pause menu: its Workbench page has the same choice for a controller.
-    if (gPlayState->pauseCtx.state != 0) {
-        return;
-    }
-    // Not over the opening's narration: wait until Link is free to move.
-    if (gPlayState->csCtx.state != CS_STATE_IDLE || gPlayState->msgCtx.msgMode != MSGMODE_NONE ||
-        gPlayState->transitionTrigger != TRANS_TRIGGER_OFF) {
-        return;
-    }
-    auto vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowViewport(vp->ID);
-    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowFocus();
-    if (ImGui::Begin("How often do raids come?", nullptr,
-                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse |
-                         ImGuiWindowFlags_NoSavedSettings)) {
-        ImGui::TextUnformatted("The dead raid the village at night.");
-        ImGui::TextUnformatted("Pick how many days pass between raids.");
-        ImGui::TextColored(ImVec4(1, 1, 1, 0.6f), "The first raid comes after the Deku Tree, and it's an easy one.");
-        ImGui::Spacing();
-        for (auto& c : kIntervals) {
-            if (ImGui::Button(c.label, ImVec2(ImGui::GetFontSize() * 16.0f, kButtonHeight))) {
-                RequestRaidInterval(c.days);
-            }
+// The web lobby's "Days between raids" pick, or 0 when there is none.
+static uint32_t LobbyRaidInterval() {
+#ifdef __EMSCRIPTEN__
+    int days = EM_ASM_INT({ return parseInt(window._raidInterval || "0", 10) || 0; });
+    for (auto& c : kIntervals) {
+        if ((int)c.days == days) {
+            return c.days;
         }
-        ImGui::TextColored(ImVec4(1, 1, 1, 0.6f), "You can change it later on the Workbench's Base tab.");
     }
-    ImGui::End();
+#endif
+    return 0;
+}
+
+// PHA-3856: no in-game popup (a controller couldn't reach it). Once per session, after
+// the opening, a new save takes the lobby pick (or the RaidInterval setting), and the
+// room's host (or a solo player) also applies a changed lobby pick to an existing save.
+static void ApplyLobbyRaidInterval() {
+    static bool applied = false;
+    if (applied || !RaidsEnabled() || !InGameplay() || !Net::IsOwner()) {
+        return;
+    }
+    if (gPlayState->pauseCtx.state != 0 || gPlayState->csCtx.state != CS_STATE_IDLE ||
+        gPlayState->msgCtx.msgMode != MSGMODE_NONE || gPlayState->transitionTrigger != TRANS_TRIGGER_OFF) {
+        return;
+    }
+    applied = true;
+    uint32_t lobby = LobbyRaidInterval();
+    bool host = !Net::Connected() || Anchor::Instance->roomState.ownerClientId == Net::OwnId();
+    if (GetBase().raidInterval == 0) {
+        RequestRaidInterval(lobby != 0 ? lobby : RaidInterval());
+    } else if (lobby != 0 && host && lobby != GetBase().raidInterval) {
+        RequestRaidInterval(lobby);
+    }
 }
 
 static void DrawRaidIntervalRow() {
@@ -291,7 +295,7 @@ static void DrawBaseTab() {
 using namespace SevenDays;
 
 void SevenDaysCraftingWindow::Draw() {
-    DrawRaidIntervalPicker();
+    ApplyLobbyRaidInterval();
     if ((!CraftingEnabled() && !BaseEnabled()) || !InGameplay()) {
         return;
     }
