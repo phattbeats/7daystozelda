@@ -260,6 +260,12 @@ static void QueueNavi(uint8_t first) {
     sPendingNavi.push_back(SEVEN_DAYS_TEXT_BASE + first);
 }
 
+void QueueNaviText(uint16_t textId) {
+    if (std::find(sPendingNavi.begin(), sPendingNavi.end(), textId) == sPendingNavi.end()) {
+        sPendingNavi.push_back(textId);
+    }
+}
+
 // Raid lines share the firsts bitfield (bits 8+) and the text table (0x08+).
 constexpr uint8_t RAID_FIRST_BIT = 8;
 constexpr uint16_t RAID_TEXT_OFFSET = 0x08;
@@ -320,6 +326,7 @@ static void RegisterMessages() {
     registered = true;
     CustomMessageManager::Instance->AddCustomMessageTable(CUSTOM_MESSAGE_TABLE);
     RegisterVillageMessages(CUSTOM_MESSAGE_TABLE);
+    RegisterNaviTips(CUSTOM_MESSAGE_TABLE);
     RaidsRegisterMessages(CUSTOM_MESSAGE_TABLE);
     LootRegisterMessages(CUSTOM_MESSAGE_TABLE);
     for (uint8_t m = 0; m < MAT_COUNT; m++) {

@@ -31,6 +31,7 @@ extern PlayState* gPlayState;
  *   BASE_STATE     owner   -> room/joiner  the whole base
  *   BASE_REQUEST   joiner  -> owner    the joiner's cached copy; higher rev wins
  *   BASE_HP        enemy authority -> owner  id, hp (owner sequences it into a BASE_DELTA)
+ *   REPAIR_REQUEST player  -> owner    id, hammer (PHA-3935: full HP for materials)
  *
  * Every client spawns its own copy of each placeable on OnSceneSpawnActors
  * (room -1, keyed by the stable id); only add/remove/HP events travel.
@@ -53,6 +54,7 @@ static const std::string BASE_DELTA = "BASE_DELTA";
 static const std::string BASE_STATE = "BASE_STATE";
 static const std::string BASE_REQUEST = "BASE_REQUEST";
 static const std::string BASE_HP = "BASE_HP";
+static const std::string REPAIR_REQUEST = "REPAIR_REQUEST";
 
 static BaseState sBase;
 static std::unordered_map<uint16_t, Actor*> sSpawned; // placeable id -> actor in the current scene
@@ -81,6 +83,10 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     /* PLACEABLE_SIGN      */ { "",          "Sign",           20,   5,    60,    0   },
     /* PLACEABLE_SCARECROW */ { "scarecrow", "Scarecrow decoy", 18,   18,   75,    80  },
     /* PLACEABLE_GUARDBABA */ { "guardbaba", "Guard Baba",     18,   18,   50,    60  },
+    /* PLACEABLE_TORCH     */ { "torch",     "Torch",          10,   10,   60,    0   },
+    /* PLACEABLE_STONEWALL */ { "stonewall", "Stone wall",     60,   30,   60,    200 },
+    /* PLACEABLE_BOMBTRAP  */ { "bombtrap",  "Bomb-flower trap", 22, 22,   8,     0   },
+    /* PLACEABLE_GATE      */ { "gate",      "Player gate",    60,   8,    90,    150 },
 };
 // clang-format on
 
@@ -325,8 +331,14 @@ std::string BaseCountsLine() {
 
 // MARK: - Spawning (every client, its own copy)
 
+bool IsRuin(const Placeable& p) {
+    return p.era == ERA_RUINS;
+}
+
+// The ruins of the child base stand in the adult era.
 static bool SpawnsHere(const Placeable& p) {
-    return gPlayState != nullptr && p.scene == gPlayState->sceneNum && p.era == CurrentEra();
+    return gPlayState != nullptr && p.scene == gPlayState->sceneNum &&
+           (p.era == CurrentEra() || (IsRuin(p) && CurrentEra() == ERA_ADULT));
 }
 
 void OnPlaceableSpawned(uint16_t id, Actor* actor) {
@@ -518,12 +530,68 @@ static void ProcessPlaceRequest(const nlohmann::json& payload, uint32_t requeste
     Reply(requester, result);
 }
 
-static void RefundKit(const Placeable& p, PoolState& pool) {
-    const char* kit = GetPlaceableInfo(p.type).kit;
-    if (kit[0] != '\0') {
-        pool.kits[kit]++;
+// PHA-3935: a piece's kit materials scaled by num/den, rounded down or up.
+static std::vector<RecipeInput> ScaledKit(const Placeable& p, uint32_t num, uint32_t den, bool roundUp) {
+    std::vector<RecipeInput> out;
+    const Recipe* r = FindRecipe(GetPlaceableInfo(p.type).kit);
+    if (r == nullptr || den == 0) {
+        return out;
     }
+    for (int i = 0; i < r->inputCount; i++) {
+        uint32_t n = r->inputs[i].amount * num;
+        n = roundUp ? (n + den - 1) / den : n / den;
+        if (n > 0) {
+            out.push_back({ r->inputs[i].material, (uint16_t)n });
+        }
+    }
+    return out;
 }
+
+static std::string MaterialsText(const std::vector<RecipeInput>& list) {
+    std::string s;
+    for (auto& in : list) {
+        s += fmt::format("{}{} {}", s.empty() ? "" : ", ", in.amount, GetMaterialInfo(in.material).name);
+    }
+    return s.empty() ? "nothing" : s;
+}
+
+static bool Damaged(const Placeable& p) {
+    uint16_t maxHp = GetPlaceableInfo(p.type).maxHp;
+    return maxHp > 0 && p.hp < maxHp;
+}
+
+// What a repair costs: the kit's materials for the missing share of HP, rounded up.
+// The Megaton Hammer halves it (spec: "fast repair").
+static std::vector<RecipeInput> RepairInputs(const Placeable& p, bool hammer) {
+    uint16_t maxHp = GetPlaceableInfo(p.type).maxHp;
+    return ScaledKit(p, maxHp - p.hp, hammer ? maxHp * 2u : maxHp, true);
+}
+
+// Packing up: a whole piece goes back into its kit. A damaged one only returns the
+// share of the kit's materials its HP still holds, so packing up is never a free repair.
+static std::vector<RecipeInput> RefundKit(const Placeable& p, PoolState& pool, bool* asKit = nullptr) {
+    const char* kit = GetPlaceableInfo(p.type).kit;
+    if (asKit != nullptr) {
+        *asKit = false;
+    }
+    if (kit[0] == '\0' || IsRuin(p)) {
+        return {};
+    }
+    if (!Damaged(p)) {
+        pool.kits[kit]++;
+        if (asKit != nullptr) {
+            *asKit = true;
+        }
+        return {};
+    }
+    auto back = ScaledKit(p, p.hp, GetPlaceableInfo(p.type).maxHp, false);
+    for (auto& in : back) {
+        pool.materials[in.material] += in.amount;
+    }
+    return back;
+}
+
+static void ApplyHp(uint16_t id, int hp);
 
 static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester) {
     PoolState& pool = Net::MutablePool();
@@ -542,13 +610,14 @@ static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester
 
     if (payload.value("all", false)) {
         int era = payload.value("era", ERA_CHILD) == ERA_ADULT ? ERA_ADULT : ERA_CHILD;
-        int refunded = 0;
+        int refunded = 0, salvaged = 0;
         std::erase_if(sBase.placeables, [&](const Placeable& p) {
             if (p.era != era) {
                 return false;
             }
-            RefundKit(p, pool);
-            refunded++;
+            bool asKit = false;
+            RefundKit(p, pool, &asKit);
+            (asKit ? refunded : salvaged)++;
             return true;
         });
         sBase.center[era] = {};
@@ -557,7 +626,10 @@ static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester
         BroadcastState();
         Net::BroadcastPool();
         SyncSceneActors();
-        tell(fmt::format("Packed up the base: {} pieces back in the pool", refunded), false);
+        tell(salvaged == 0 ? fmt::format("Packed up the base: {} pieces back in the pool", refunded)
+                           : fmt::format("Packed up the base: {} kits back in the pool, {} damaged pieces salvaged",
+                                         refunded, salvaged),
+             false);
         return;
     }
 
@@ -566,14 +638,16 @@ static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester
     if (p == nullptr) {
         return tell("That piece is already gone", true);
     }
-    bool isCenter = p->type == PLACEABLE_WORKBENCH && sBase.center[p->era].valid &&
+    bool isCenter = p->type == PLACEABLE_WORKBENCH && !IsRuin(*p) && sBase.center[p->era].valid &&
                     fabsf(sBase.center[p->era].pos[0] - p->pos[0]) < 1.0f &&
                     fabsf(sBase.center[p->era].pos[2] - p->pos[2]) < 1.0f;
     if (isCenter && CountEra(p->era) > 1) {
         return tell("The workbench holds the base together. Pack up the whole base to move it", true);
     }
     int era = p->era;
-    RefundKit(*p, pool);
+    bool ruin = IsRuin(*p);
+    bool asKit = false;
+    auto salvage = RefundKit(*p, pool, &asKit);
     std::string name = GetPlaceableInfo(p->type).name;
     std::erase_if(sBase.placeables, [id](const Placeable& q) { return q.id == id; });
     if (isCenter) {
@@ -591,7 +665,56 @@ static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester
     BroadcastDelta(delta);
     Net::BroadcastPool();
     Despawn(id);
-    tell(fmt::format("{} packed back into a kit", name), false);
+    if (ruin) {
+        tell(fmt::format("Cleared the ruined {}", name), false);
+    } else if (asKit || GetPlaceableInfo(p->type).kit[0] == '\0') {
+        tell(fmt::format("{} packed back into a kit", name), false);
+    } else {
+        tell(fmt::format("{} was damaged: salvaged {}. Repair it first to get the kit back", name,
+                         MaterialsText(salvage)),
+             false);
+    }
+}
+
+static void ProcessRepairRequest(const nlohmann::json& payload, uint32_t requester) {
+    auto tell = [&](const std::string& msg, bool error) {
+        if (requester == OwnId()) {
+            Toast("Repair", msg, error);
+        } else {
+            nlohmann::json r;
+            r["type"] = PLACE_RESULT;
+            r["reqId"] = 0;
+            r["notice"] = msg;
+            r["error"] = error;
+            SendTo(requester, r);
+        }
+    };
+    uint16_t id = payload.value("id", (uint16_t)0);
+    Placeable* p = FindPlaceableMut(id);
+    if (p == nullptr) {
+        return tell("That piece is gone", true);
+    }
+    const PlaceableInfo& info = GetPlaceableInfo(p->type);
+    if (IsRuin(*p)) {
+        return tell("Ruins can't be repaired. Clear them and build again", true);
+    }
+    if (!Damaged(*p)) {
+        return tell(fmt::format("The {} doesn't need repairs", info.name), true);
+    }
+    auto cost = RepairInputs(*p, payload.value("hammer", false));
+    PoolState& pool = Net::MutablePool();
+    for (auto& in : cost) {
+        if (pool.materials[in.material] < in.amount) {
+            return tell(fmt::format("Repairing the {} takes {}", info.name, MaterialsText(cost)), true);
+        }
+    }
+    for (auto& in : cost) {
+        pool.materials[in.material] -= in.amount;
+    }
+    pool.rev++;
+    ApplyHp(id, info.maxHp);
+    Net::BroadcastPool();
+    tell(fmt::format("{} repaired for {}", info.name, MaterialsText(cost)), false);
 }
 
 // Owner: sequence an HP change (from itself or a scene's enemy authority).
@@ -739,7 +862,7 @@ void Net::CommitBase() {
 
 bool BaseOwnsPacket(const std::string& type) {
     return type == PLACE_REQUEST || type == PLACE_RESULT || type == PACK_REQUEST || type == BASE_DELTA ||
-           type == BASE_STATE || type == BASE_REQUEST || type == BASE_HP;
+           type == BASE_STATE || type == BASE_REQUEST || type == BASE_HP || type == REPAIR_REQUEST;
 }
 
 void BaseHandlePacket(const std::string& type, const nlohmann::json& payload, uint32_t from) {
@@ -767,6 +890,10 @@ void BaseHandlePacket(const std::string& type, const nlohmann::json& payload, ui
     } else if (type == PACK_REQUEST) {
         if (IsOwner()) {
             ProcessPackRequest(payload, from);
+        }
+    } else if (type == REPAIR_REQUEST) {
+        if (IsOwner()) {
+            ProcessRepairRequest(payload, from);
         }
     } else if (type == BASE_HP) {
         if (IsOwner()) {
@@ -1072,6 +1199,26 @@ void RequestPackUp(uint16_t id) {
     }
 }
 
+void RequestRepair(uint16_t id) {
+    nlohmann::json payload;
+    payload["type"] = REPAIR_REQUEST;
+    payload["id"] = id;
+    payload["hammer"] = IsUnlocked(UNLOCK_HAMMER);
+    if (IsOwner()) {
+        ProcessRepairRequest(payload, OwnId());
+    } else {
+        SendTo(ActingOwner(), payload);
+    }
+}
+
+std::string RepairCost(uint16_t id) {
+    const Placeable* p = FindPlaceable(id);
+    if (p == nullptr || IsRuin(*p) || !Damaged(*p)) {
+        return "";
+    }
+    return MaterialsText(RepairInputs(*p, IsUnlocked(UNLOCK_HAMMER)));
+}
+
 void RequestPackUpBase(int era) {
     nlohmann::json payload;
     payload["type"] = PACK_REQUEST;
@@ -1107,7 +1254,56 @@ uint16_t NearestPlaceable(float maxDist) {
 
 // MARK: - Per frame / session
 
+// PHA-3935: the seven-year jump. The first time the owner is an adult, the child base
+// becomes ruins (still standing in the adult era, broken and harmless) and half its
+// kits' materials go back into the pool (spec, "One base per era").
+static void RuinChildBase() {
+    if (!IsOwner() || (sBase.story & STORY_RUINS) || CurrentEra() != ERA_ADULT || gPlayState == nullptr ||
+        !GameInteractor::IsSaveLoaded(true) || gPlayState->transitionTrigger != TRANS_TRIGGER_OFF ||
+        gPlayState->transitionMode != TRANS_MODE_OFF || Player_InCsMode(gPlayState)) {
+        return; // after the scene has loaded, so the notice is seen
+    }
+    PoolState& pool = Net::MutablePool();
+    uint32_t got[MAT_COUNT] = {};
+    int ruined = 0;
+    for (auto& p : sBase.placeables) {
+        if (p.era != ERA_CHILD) {
+            continue;
+        }
+        p.era = ERA_RUINS;
+        ruined++;
+        for (auto& in : ScaledKit(p, 1, 2, false)) {
+            got[in.material] += in.amount;
+        }
+    }
+    sBase.story |= STORY_RUINS;
+    sBase.center[ERA_CHILD] = {};
+    std::vector<RecipeInput> list;
+    for (uint8_t m = 0; m < MAT_COUNT; m++) {
+        pool.materials[m] += got[m];
+        if (got[m] > 0) {
+            list.push_back({ m, (uint16_t)got[m] });
+        }
+    }
+    pool.rev++;
+    sBase.rev++;
+    BroadcastState();
+    Net::BroadcastPool();
+    SyncSceneActors();
+    if (ruined > 0) {
+        std::string msg = fmt::format("Seven years on, the old base is ruins. Salvaged {}", MaterialsText(list));
+        Notification::Emit({ .prefix = "Ruins", .message = msg, .remainingTime = 8.0f });
+        nlohmann::json r;
+        r["type"] = PLACE_RESULT;
+        r["reqId"] = 0;
+        r["notice"] = msg;
+        r["error"] = false;
+        Broadcast(r);
+    }
+}
+
 void BaseOnFrame() {
+    RuinChildBase();
     if (sPlaceInFlight.reqId != 0 && Now() - sPlaceInFlight.sentAt > 5.0) {
         sPlaceInFlight = {};
         Toast("Base", "The host didn't answer", true);
@@ -1227,6 +1423,27 @@ EMSCRIPTEN_KEEPALIVE
 void sevendays_test_pack(int id) {
     if (BaseEnabled()) {
         RequestPackUp((uint16_t)id);
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sevendays_test_repair(int id) {
+    if (BaseEnabled()) {
+        RequestRepair((uint16_t)id);
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* sevendays_test_repair_cost(int id) {
+    static std::string out;
+    out = RepairCost((uint16_t)id);
+    return out.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sevendays_test_open_window(int tab) {
+    if (BaseEnabled()) {
+        OpenCraftingWindow(tab);
     }
 }
 

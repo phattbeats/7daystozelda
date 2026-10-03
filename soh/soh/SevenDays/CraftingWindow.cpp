@@ -239,6 +239,19 @@ static void DrawBaseTab() {
         RequestPackUp(nearest);
     }
     ImGui::EndDisabled();
+    // PHA-3935: repairs, for materials (a damaged piece packs up into only part of its kit).
+    std::string cost = p != nullptr ? RepairCost(nearest) : "";
+    ImGui::BeginDisabled(cost.empty());
+    std::string repair = cost.empty() ? std::string("Repair (stand next to a damaged piece)")
+                                      : fmt::format("Repair the {} ({})", GetPlaceableInfo(p->type).name, cost);
+    if (ImGui::Button(repair.c_str(), ImVec2(ImGui::GetFontSize() * 14.0f, kButtonHeight))) {
+        RequestRepair(nearest);
+    }
+    ImGui::EndDisabled();
+    if (p != nullptr && GetPlaceableInfo(p->type).maxHp > 0 && !IsRuin(*p)) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1, 1, 1, 0.6f), "%u/%u HP", p->hp, GetPlaceableInfo(p->type).maxHp);
+    }
     ImGui::SameLine();
     static bool confirm = false;
     if (!confirm) {
@@ -595,6 +608,22 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
         RequestPackUp(nearest);
     };
     rows.push_back(std::move(pack));
+
+    std::string cost = p != nullptr ? RepairCost(nearest) : "";
+    PageRow repair;
+    repair.name = p != nullptr && !cost.empty() ? fmt::format("Repair {}", GetPlaceableInfo(p->type).name)
+                                                : std::string("Repair nearby piece");
+    repair.right = p != nullptr && !IsRuin(*p) && GetPlaceableInfo(p->type).maxHp > 0
+                       ? fmt::format("{}/{}", p->hp, GetPlaceableInfo(p->type).maxHp)
+                       : "";
+    repair.icon = gItemIconHammerTex;
+    repair.enabled = !cost.empty();
+    repair.hint = repair.enabled ? cost : "Stand next to a damaged piece";
+    repair.action = [nearest]() {
+        Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+        RequestRepair(nearest);
+    };
+    rows.push_back(std::move(repair));
 
     PageRow all;
     all.name = sPage.confirmPackAll ? "Really pack it all?" : "Pack up the whole base";

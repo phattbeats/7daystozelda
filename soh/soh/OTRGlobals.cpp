@@ -2822,6 +2822,9 @@ extern "C" int CustomMessage_RetrieveIfExists(PlayState* play) {
     if (SevenDays::IsSevenDaysText(textId) || SevenDays::OverridesVanillaText(textId)) {
         messageEntry = CustomMessageManager::Instance->RetrieveMessage("SevenDays", textId, MF_AUTO_FORMAT);
         messageEntry.Replace("[[day]]", std::to_string(SevenDays::CurrentDay()));
+        SevenDays::FillWorldText(messageEntry);
+    } else if (CustomMessage tip; SevenDays::NaviTipText(textId, tip)) {
+        messageEntry = tip;
     } else if (CustomMessage worldLine; SevenDays::WorldText(textId, worldLine)) {
         messageEntry = worldLine;
     }

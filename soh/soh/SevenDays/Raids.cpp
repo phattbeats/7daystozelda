@@ -7,6 +7,7 @@
 #include "soh/Network/Anchor/EnemySync.h"
 #include "soh/Network/Anchor/HordeNight.h"
 #include "soh/Notification/Notification.h"
+#include "soh/Enhancements/mods.h"
 
 #include <algorithm>
 #include <cmath>
@@ -293,6 +294,7 @@ struct Director {
     bool storyCleared = false; // the dusk's "cleared" sent to the owner
 };
 static Director sDir;
+static std::vector<Vec3f> sSpawnLog; // tests: where this wave's raiders came up
 
 struct Tracker {
     Vec3f lastPos = {};
@@ -438,8 +440,20 @@ static bool FloorAt(f32 x, f32 z, f32 refY, f32 maxRise, Vec3f* out) {
     return true;
 }
 
+// PHA-3935: a torch keeps raid spawns TORCH_RADIUS away (spec, "Torch").
+static bool NearTorch(const Vec3f& point) {
+    for (auto& [id, actor] : SpawnedPlaceables()) {
+        const Placeable* p = FindPlaceable(id);
+        if (p != nullptr && p->type == PLACEABLE_TORCH && !IsRuin(*p) &&
+            Math_Vec3f_DistXZ(const_cast<Vec3f*>(&point), &actor->world.pos) < TORCH_RADIUS) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Spawn points on a ring 600-900 from the workbench (or, with no base in this
-// scene, around a living player).
+// scene, around a living player), none within a torch's reach.
 static void SampleRing() {
     sDir.samples.clear();
     Vec3f c = sDir.center;
@@ -454,7 +468,7 @@ static void SampleRing() {
         s16 angle = (s16)(i * (0x10000 / 48) + (s16)(Rand_ZeroOne() * 0x400));
         f32 dist = RING_MIN + Rand_ZeroOne() * (RING_MAX - RING_MIN);
         Vec3f p;
-        if (FloorAt(c.x + Math_SinS(angle) * dist, c.z + Math_CosS(angle) * dist, c.y, 300.0f, &p)) {
+        if (FloorAt(c.x + Math_SinS(angle) * dist, c.z + Math_CosS(angle) * dist, c.y, 300.0f, &p) && !NearTorch(p)) {
             sDir.samples.push_back(p);
         }
     }
@@ -479,7 +493,7 @@ static bool PickSpawnPoint(Vec3f* out, const Vec3f* avoid) {
         if (!FloorAt(s.x + Rand_CenteredFloat(60.0f), s.z + Rand_CenteredFloat(60.0f), s.y, 120.0f, &p)) {
             p = s;
         }
-        if (!SeenByAnyPlayer(p)) {
+        if (!SeenByAnyPlayer(p) && !NearTorch(p)) {
             *out = p;
             return true;
         }
@@ -508,7 +522,7 @@ static void RefreshDecoys() {
     sDecoys.clear();
     sDecoyFor.clear();
     for (const Placeable& p : GetBase().placeables) {
-        if (p.type != PLACEABLE_SCARECROW) {
+        if (p.type != PLACEABLE_SCARECROW || IsRuin(p)) {
             continue;
         }
         Actor* actor = SpawnedPlaceableActor(p.id);
@@ -683,6 +697,7 @@ void RaidHandleHordeEvent(const nlohmann::json& payload) {
 
 static void StartWave(uint8_t kind) {
     sDir = {};
+    sSpawnLog.clear();
     sTrack.clear();
     sPendingDrain.clear();
     sDir.active = true;
@@ -788,6 +803,7 @@ static bool TrySpawnRaider() {
     }
     sDir.spent += sDir.kind == KIND_DUSK ? 1 : def->cost;
     sDir.spawned++;
+    sSpawnLog.push_back(pos);
     if (!(sDir.types & (1u << def->enemy))) {
         sDir.types |= 1u << def->enemy;
         if (sDir.kind == KIND_RAID) {
@@ -811,7 +827,7 @@ static void DrainBarricades() {
     std::vector<DrainPiece> pieces;
     for (auto& [id, actor] : SpawnedPlaceables()) {
         const Placeable* p = FindPlaceable(id);
-        if (p != nullptr && GetPlaceableInfo(p->type).maxHp != 0 && p->type != PLACEABLE_SPIKES) {
+        if (p != nullptr && GetPlaceableInfo(p->type).maxHp != 0 && p->type != PLACEABLE_SPIKES && !IsRuin(*p)) {
             pieces.push_back({ id, actor, &GetPlaceableInfo(p->type) }); // spikes are walked over (and bite back)
         }
     }
@@ -860,7 +876,7 @@ static bool TouchingBarricade(Actor* a) {
             continue;
         }
         const Placeable* p = FindPlaceable(id);
-        if (p == nullptr || GetPlaceableInfo(p->type).maxHp == 0) {
+        if (p == nullptr || GetPlaceableInfo(p->type).maxHp == 0 || IsRuin(*p)) {
             continue;
         }
         if (d < GetPlaceableInfo(p->type).halfX + 45.0f) {
@@ -1294,7 +1310,7 @@ static void OwnerRaidLost() {
     sNightFailed = true;
     BaseState& b = Net::MutableBase();
     for (auto& p : b.placeables) {
-        if (GetPlaceableInfo(p.type).maxHp > 0) {
+        if (GetPlaceableInfo(p.type).maxHp > 0 && !IsRuin(p)) {
             p.hp -= p.hp / 2; // half its remaining HP
         }
     }
@@ -1406,12 +1422,28 @@ static void StoryTriggers() {
     }
 }
 
+// PHA-3935: Navi warns the evening before every raid (spec, "Warning"). The first raid
+// has its own staged line (RAIDLINE_EVE); this covers every one after it.
+constexpr uint16_t EVE_TIME = 0xB000; // about 16:30
+static uint32_t sEveWarnedDay = 0;
+static void EveWarning() {
+    const BaseState& b = GetBase();
+    if (!NightsEnabled() || !(b.story & STORY_FIRST_RAID_DONE) || sEveWarnedDay == CurrentDay() ||
+        gSaveContext.dayTime < EVE_TIME || !RaidTonight() || sDir.active || sPeer.status != WAVE_NONE ||
+        !IsOutdoorScene(gPlayState->sceneNum)) {
+        return;
+    }
+    sEveWarnedDay = CurrentDay();
+    QueueNaviText(TEXT_RAID_EVE_EACH + (uint16_t)(RaidNumber() % 3));
+}
+
 void RaidsOnFrame() {
     if (gPlayState == nullptr || !GameInteractor::IsSaveLoaded(true)) {
         sPrevNight = -1; // the title screen's attract demo has a clock too: never count it
         return;
     }
     StoryTriggers();
+    EveWarning();
 
     // Owner: dawn and dusk on its own clock (scripted ones included).
     int night = IS_NIGHT ? 1 : 0;
@@ -1488,6 +1520,17 @@ void RaidsRegisterMessages(const char* table) {
         CustomMessageManager::Instance->CreateMessage(
             table, SEVEN_DAYS_TEXT_BASE + 0x08 + i, CustomMessage(lines[i], TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     }
+    // clang-format off
+    static const char* eve[3] = {
+        "Hey! Listen! The sun's going down, and tonight the dead come for the base.^Check the walls, Link!",
+        "Link, it's almost dark... It's a raid night. They'll head straight for the workbench!",
+        "Listen! Tonight's a raid night. We've held off [[raids]] so far. Let's make it one more!",
+    };
+    // clang-format on
+    for (uint16_t i = 0; i < 3; i++) {
+        CustomMessageManager::Instance->CreateMessage(table, TEXT_RAID_EVE_EACH + i,
+                                                      CustomMessage(eve[i], TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
+    }
 }
 
 // MARK: - Registration
@@ -1561,6 +1604,11 @@ const char* sevendays_test_raid_state() {
                   { "baseHere", sDir.baseHere }, { "samples", sDir.samples.size() }, { "prologue", sDir.prologue },
                   { "elapsed", sDir.active ? Now() - sDir.startedAt : 0.0 }, { "types", sDir.types } };
     j["peer"] = { { "status", StatusName(sPeer.status) }, { "scene", sPeer.scene }, { "age", Now() - sPeer.heardAt } };
+    j["spawnLog"] = nlohmann::json::array();
+    for (auto& p : sSpawnLog) {
+        j["spawnLog"].push_back({ (int)p.x, (int)p.y, (int)p.z });
+    }
+    j["eveWarnedDay"] = sEveWarnedDay;
     j["raiders"] = nlohmann::json::array();
     if (gPlayState != nullptr) {
         Vec3f c = sDir.center;
@@ -1627,6 +1675,28 @@ void sevendays_test_raid(const char* cmdC) {
         gSaveContext.nextCutsceneIndex = 0xFFEF; // no entrance cutscene
     } else if (cmd.rfind("raids:", 0) == 0) {
         const_cast<BaseState&>(GetBase()).hordeNightsSurvived = (uint32_t)std::stoul(cmd.substr(6));
+    } else if (cmd.rfind("tier:", 0) == 0) {
+        // PHA-3935 tests: the tool that opens a tier, without the dungeon.
+        std::string t = cmd.substr(5);
+        if (t == "bomb") {
+            Item_Give(gPlayState, ITEM_BOMB_BAG_20);
+        } else if (t == "hookshot") {
+            Item_Give(gPlayState, ITEM_HOOKSHOT);
+        } else if (t == "hammer") {
+            Item_Give(gPlayState, ITEM_HAMMER);
+        } else if (t == "silver") {
+            Item_Give(gPlayState, ITEM_BRACELET);
+            Item_Give(gPlayState, ITEM_GAUNTLETS_SILVER);
+        }
+    } else if (cmd == "age") {
+        SwitchAge(); // PHA-3935 tests: the seven-year jump without the Master Sword
+    } else if (cmd.rfind("bp:", 0) == 0) {
+        BaseState& b = Net::MutableBase();
+        std::string id = cmd.substr(3);
+        if (IsOwner() && std::find(b.blueprints.begin(), b.blueprints.end(), id) == b.blueprints.end()) {
+            b.blueprints.push_back(id);
+            Net::CommitBase();
+        }
     } else if (cmd == "heal") {
         gSaveContext.health = gSaveContext.healthCapacity; // a bottled fairy, for scripted fights
     } else if (cmd == "lost") {

@@ -5,6 +5,7 @@
 #include "soh/Enhancements/custom-message/CustomMessageTypes.h"
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Anchor/EnemySync.h"
+#include "soh/Network/Anchor/HordeNight.h"
 
 #include <cmath>
 
@@ -19,6 +20,10 @@ extern "C" {
 #include "objects/object_trap/object_trap.h"
 #include "objects/object_dekubaba/object_dekubaba.h"
 #include "objects/object_ka/object_ka.h"
+#include "objects/object_syokudai/object_syokudai.h"
+#include "objects/object_pu_box/object_pu_box.h"
+#include "objects/object_ingate/object_ingate.h"
+#include "objects/object_bombf/object_bombf.h"
 extern PlayState* gPlayState;
 }
 
@@ -28,7 +33,8 @@ extern PlayState* gPlayState;
  *
  *   SevenDays_Placeable  one actor for every placeable type (params = stable id).
  *                        Drawn with display lists the ROM already has (large/small
- *                        crates, the rectangular sign, the spike). It has no
+ *                        crates, the rectangular sign, the spike, the wooden torch
+ *                        stand, push blocks, a bomb flower, Ingo's gate). It has no
  *                        collision of its own: see SevenDays_BaseCollision.
  *   SevenDays_BaseCollision  PHA-3916: the pieces' boxes (8 vertices, 12 triangles
  *                        each), merged into one CollisionHeader per 640-unit
@@ -62,13 +68,28 @@ struct PlaceableActor {
     f32 babaLunge;     // 0 upright .. 1 fully extended
     f32 babaAim;       // direction of the lunge, world units from the stalk's base
     bool babaBit;      // this lunge already landed
+    // PHA-3935: the torch's light, the bomb-flower trap and the gate.
+    LightNode* lightNode;
+    LightInfo lightInfo;
+    ColliderCylinder blastCollider;
+    int16_t trapFuse;    // frames until the bomb goes off (0: not lit)
+    int16_t trapRegrow;  // frames until the bomb has grown back (0: armed)
+    int16_t blastFrames; // frames left of the blast's attack collider
+    f32 gateOpen;        // 0 shut .. 1 swung open
+    bool gatePassable;   // left out of the base collision while a player walks through
+    bool ruin;           // the child base after the seven-year jump: drawn broken, does nothing
 };
 
 enum { BABA_IDLE, BABA_WINDUP, BABA_LUNGE, BABA_RECOVER };
 constexpr f32 BABA_SIZE = 1.3f;
 constexpr f32 BABA_SENSE = 120.0f; // starts a bite on a raider this close to the stalk
+constexpr f32 TRAP_SENSE = 70.0f;   // a raider this close lights the bomb-flower trap
+constexpr int16_t TRAP_FUSE = 12;
+constexpr int16_t TRAP_REGROW = 200; // 10 s at 20 Hz, then it is armed again
+constexpr f32 GATE_REACH = 70.0f;    // a player this far in front of or behind the gate opens it
 
 static int16_t sPlaceableId = -1;
+static int sTrapBlasts = 0; // tests: bomb-flower traps set off
 static int16_t sGhostId = -1;
 static int16_t sCollisionId = -1;
 
@@ -237,7 +258,8 @@ static void RebuildBaseCollision(PlayState* play) {
     }
     std::vector<Actor*> byChunk[CHUNK_MAX];
     for (Actor* a = play->actorCtx.actorLists[ACTORCAT_BG].head; a != nullptr; a = a->next) {
-        if (a->id != sPlaceableId || a->update == nullptr || ((PlaceableActor*)a)->type >= PLACEABLE_COUNT) {
+        if (a->id != sPlaceableId || a->update == nullptr || ((PlaceableActor*)a)->type >= PLACEABLE_COUNT ||
+            ((PlaceableActor*)a)->gatePassable || ((PlaceableActor*)a)->ruin) {
             continue;
         }
         int cx = (int)floorf(a->world.pos.x / CHUNK_SIZE), cz = (int)floorf(a->world.pos.z / CHUNK_SIZE);
@@ -375,8 +397,33 @@ static void BabaHead(f32 lunge, f32* y, f32* z) {
     }
 }
 
+static void DrawTorchFlame(PlayState* play, PlaceableActor* self);
+static void DrawBombFlower(PlayState* play, PlaceableActor* self);
+static void DrawGate(PlayState* play, f32 open);
+
 static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActor* self = nullptr) {
     switch (type) {
+        case PLACEABLE_TORCH:
+            DrawDL(play, (Gfx*)gWoodenTorchDL, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+            if (self != nullptr && !self->ruin) {
+                DrawTorchFlame(play, self);
+            }
+            break;
+        case PLACEABLE_STONEWALL:
+            // Two push blocks (80 units at 0.01), 60 wide, deep and tall each.
+            DrawDL(play, (Gfx*)gBlockSmallDL, -30.0f, 0.0f, 0.0f, 0.0075f, 0.0075f, 0.0075f);
+            if (hpFrac >= 0.5f) {
+                DrawDL(play, (Gfx*)gBlockSmallDL, 30.0f, 0.0f, 0.0f, 0.0075f, 0.0075f, 0.0075f);
+            } else {
+                DrawDL(play, (Gfx*)gBlockSmallDL, 30.0f, 0.0f, 0.0f, 0.0075f, 0.005f, 0.0075f); // knocked down
+            }
+            break;
+        case PLACEABLE_BOMBTRAP:
+            DrawBombFlower(play, self);
+            break;
+        case PLACEABLE_GATE:
+            DrawGate(play, self != nullptr ? self->gateOpen : 0.0f);
+            break;
         case PLACEABLE_SCARECROW:
             if (self != nullptr && self->hasSkel) {
                 OPEN_DISPS(play->state.gfxCtx);
@@ -471,6 +518,88 @@ static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw) 
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// ObjSyokudai's flame: the scrolling fire billboard over the stand, facing the camera.
+static void DrawTorchFlame(PlayState* play, PlaceableActor* self) {
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gSPSegment(POLY_XLU_DISP++, 0x08,
+               (uintptr_t)Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0,
+                                (play->gameplayFrames * -20) & 0x1FF, 0x20, 0x80));
+    gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 255, 255, 0, 255);
+    gDPSetEnvColor(POLY_XLU_DISP++, 255, 0, 0, 0);
+    Matrix_Push();
+    Matrix_Translate(0.0f, 52.0f, 0.0f, MTXMODE_APPLY);
+    Matrix_RotateY((s16)(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) - self->actor.shape.rot.y + 0x8000) *
+                       (M_PI / 0x8000),
+                   MTXMODE_APPLY);
+    Matrix_Scale(0.0027f, 0.0027f, 0.0027f, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, (Gfx*)gEffFire1DL);
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// EnBombf's flower: leaves, then the bomb on top as a billboard. The bomb shrinks
+// away when it goes off and grows back while the trap rearms.
+static void DrawBombFlower(PlayState* play, PlaceableActor* self) {
+    f32 bomb = 1.0f;
+    u8 flash = 0;
+    if (self != nullptr) {
+        if (self->ruin) {
+            bomb = 0.0f; // a dud: the bomb never grew back
+        } else if (self->trapRegrow > 0) {
+            bomb = 1.0f - (f32)self->trapRegrow / TRAP_REGROW;
+        }
+        if (self->trapFuse > 0 && (self->trapFuse & 2)) {
+            flash = 150;
+        }
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    Matrix_Push();
+    Matrix_Scale(0.01f, 0.01f, 0.01f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gBombFlowerLeavesDL);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gBombFlowerBaseLeavesDL);
+    if (bomb > 0.05f) {
+        Matrix_Translate(0.0f, 1000.0f, 0.0f, MTXMODE_APPLY);
+        Matrix_Scale(bomb, bomb, bomb, MTXMODE_APPLY);
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 200, 255, 200, 255);
+        gDPPipeSync(POLY_OPA_DISP++);
+        gDPSetEnvColor(POLY_OPA_DISP++, flash, 20, 10, 0);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        // EnBombf_NewMtxDList: the bomb's own matrix, turned to face the camera.
+        Gfx* dl = (Gfx*)Graph_Alloc(play->state.gfxCtx, 2 * sizeof(Gfx));
+        Gfx* head = dl;
+        Matrix_ReplaceRotation(&play->billboardMtxF);
+        gSPMatrix(head++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPEndDisplayList(head++);
+        gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)dl);
+        gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gBombFlowerBombAndSparkDL);
+    }
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Two leaves of Ingo's ranch gate (one 800 x 1200 panel at 0.01, hinged at x = 0),
+// 60 wide and 90 tall each, hinged at the wall's ends; they swing out to 90 degrees.
+static void DrawGate(PlayState* play, f32 open) {
+    const f32 sc = 0.075f;
+    s16 swing = (s16)(open * 0x4000);
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    for (int side = 0; side < 2; side++) {
+        Matrix_Push();
+        Matrix_Translate(side == 0 ? -60.0f : 60.0f, 0.0f, 0.0f, MTXMODE_APPLY);
+        Matrix_RotateY((side == 0 ? -swing : (s16)(0x8000 + swing)) * (M_PI / 0x8000), MTXMODE_APPLY);
+        Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gIngoGateDL);
+        Matrix_Pop();
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 // A unit box (x/z in -1..1, y in 0..1) for the ghost's translucent volume.
 static Vtx sCubeVtx[8];
 static bool sCubeBuilt = false;
@@ -558,6 +687,26 @@ static ColliderCylinderInit sBiteCylinderInit = {
     { 32, 40, -20, { 0, 0, 0 } },
 };
 
+static ColliderCylinderInit sBlastCylinderInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_PLAYER, // blows up raiders, never players
+        AC_NONE,
+        OC1_NONE,
+        OC2_NONE,
+        COLSHAPE_CYLINDER,
+    },
+    {
+        ELEMTYPE_UNK0,
+        { 0x00000008, 0x00, 0x08 }, // a bomb's blast (DMG_EXPLOSIVE)
+        { 0x00000000, 0x00, 0x00 },
+        TOUCH_ON | TOUCH_SFX_NONE,
+        BUMP_NONE,
+        OCELEM_NONE,
+    },
+    { 110, 80, -10, { 0, 0, 0 } },
+};
+
 static uint16_t TextFor(uint8_t type) {
     switch (type) {
         case PLACEABLE_SIGN:
@@ -580,6 +729,7 @@ static void Placeable_Init(Actor* thisx, PlayState* play) {
         return;
     }
     self->type = p->type;
+    self->ruin = IsRuin(*p);
     self->talking = 0;
     self->atCooldown = 0;
     self->hitFlash = 0;
@@ -599,13 +749,13 @@ static void Placeable_Init(Actor* thisx, PlayState* play) {
 
     sCollisionDirty = true;
 
-    uint16_t textId = TextFor(self->type);
+    uint16_t textId = self->ruin ? 0 : TextFor(self->type);
     if (textId != 0) {
         thisx->textId = textId;
         thisx->flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY;
         thisx->targetMode = 0;
     }
-    if (self->type == PLACEABLE_SPIKES) {
+    if (self->type == PLACEABLE_SPIKES && !self->ruin) {
         Collider_InitCylinder(play, &self->spikeCollider);
         Collider_SetCylinder(play, &self->spikeCollider, thisx, &sSpikeCylinderInit);
     }
@@ -620,13 +770,27 @@ static void Placeable_Init(Actor* thisx, PlayState* play) {
                            (AnimationHeader*)object_ka_Anim_000214, nullptr, nullptr, 0);
         self->skel.playSpeed = 0.0f;
         self->hasSkel = true;
-    } else if (self->type == PLACEABLE_GUARDBABA) {
+    } else if (self->type == PLACEABLE_GUARDBABA && !self->ruin) {
         SkelAnime_Init(play, &self->skel, (SkeletonHeader*)gDekuBabaSkel, (AnimationHeader*)gDekuBabaPauseChompAnim,
                        nullptr, nullptr, 0);
         self->skel.playSpeed = 0.0f;
         self->hasSkel = true;
         Collider_InitCylinder(play, &self->biteCollider);
         Collider_SetCylinder(play, &self->biteCollider, thisx, &sBiteCylinderInit);
+    }
+    self->lightNode = nullptr;
+    self->trapFuse = self->trapRegrow = self->blastFrames = 0;
+    self->gateOpen = 0.0f;
+    self->gatePassable = false;
+    if (self->ruin) {
+        // a burnt-out torch, a dud bomb flower, a wilted Baba: nothing to set up
+    } else if (self->type == PLACEABLE_TORCH) {
+        Lights_PointGlowSetInfo(&self->lightInfo, thisx->world.pos.x, thisx->world.pos.y + 70.0f, thisx->world.pos.z,
+                                255, 255, 180, 250);
+        self->lightNode = LightContext_InsertLight(play, &play->lightCtx, &self->lightInfo);
+    } else if (self->type == PLACEABLE_BOMBTRAP) {
+        Collider_InitCylinder(play, &self->blastCollider);
+        Collider_SetCylinder(play, &self->blastCollider, thisx, &sBlastCylinderInit);
     }
     Actor_SetFocus(thisx, (f32)GetPlaceableInfo(self->type).height);
     OnPlaceableSpawned(self->id, thisx);
@@ -638,11 +802,18 @@ static void Placeable_Destroy(Actor* thisx, PlayState* play) {
         return;
     }
     sCollisionDirty = true;
-    if (self->type == PLACEABLE_SPIKES) {
+    if (self->type == PLACEABLE_SPIKES && !self->ruin) {
         Collider_DestroyCylinder(play, &self->spikeCollider);
     }
-    if (self->type == PLACEABLE_GUARDBABA) {
+    if (self->type == PLACEABLE_GUARDBABA && !self->ruin) {
         Collider_DestroyCylinder(play, &self->biteCollider);
+    }
+    if (self->type == PLACEABLE_BOMBTRAP && !self->ruin) {
+        Collider_DestroyCylinder(play, &self->blastCollider);
+    }
+    if (self->lightNode != nullptr) {
+        LightContext_RemoveLight(play, &play->lightCtx, self->lightNode);
+        self->lightNode = nullptr;
     }
     if (self->hasSkel) {
         SkelAnime_Free(&self->skel, play);
@@ -769,6 +940,80 @@ static void BabaUpdate(PlaceableActor* self, PlayState* play) {
     }
 }
 
+// Torch: flickers like ObjSyokudai's lit torches.
+static void TorchUpdate(PlaceableActor* self, PlayState* play) {
+    u8 brightness = (u8)(Rand_ZeroOne() * 127.0f) + 128;
+    Lights_PointSetColorAndRadius(&self->lightInfo, brightness, brightness, 0, 250);
+    func_8002F974(&self->actor, NA_SE_EV_TORCH - SFX_FLAG);
+}
+
+// Bomb-flower trap: a raider within TRAP_SENSE lights the fuse; the blast hurts every
+// enemy within 110 for a bomb's damage, then the bomb grows back. Every client plays
+// it from the enemies it sees; only the scene's enemy authority puts the blast out.
+static void TrapUpdate(PlaceableActor* self, PlayState* play) {
+    Actor* thisx = &self->actor;
+    bool authority = Anchor::Instance == nullptr || !Anchor::Instance->isConnected || EnemySync::IsLocalAuthority();
+    if (self->blastFrames > 0) {
+        self->blastFrames--;
+        if (authority) {
+            Collider_UpdateCylinder(thisx, &self->blastCollider);
+            CollisionCheck_SetAT(play, &play->colChkCtx, &self->blastCollider.base);
+        }
+    }
+    if (self->trapRegrow > 0) {
+        self->trapRegrow--;
+        return;
+    }
+    if (self->trapFuse > 0) {
+        if (--self->trapFuse == 0) {
+            static Vec3f zero = { 0.0f, 0.0f, 0.0f };
+            static Vec3f bomb2Accel = { 0.0f, 0.1f, 0.0f };
+            Vec3f effPos = thisx->world.pos;
+            effPos.y += 10.0f;
+            EffectSsBomb2_SpawnLayered(play, &effPos, &zero, &bomb2Accel, 100, 19);
+            effPos.y = thisx->world.pos.y;
+            EffectSsBlast_SpawnWhiteShockwave(play, &effPos, &zero, &zero);
+            Audio_PlayActorSound2(thisx, NA_SE_IT_BOMB_EXPLOSION);
+            Camera_AddQuake(&play->mainCamera, 2, 0xB, 8);
+            self->blastFrames = 3;
+            self->trapRegrow = TRAP_REGROW;
+            sTrapBlasts++;
+        }
+        return;
+    }
+    if (NearestEnemyTo(play, thisx->world.pos, TRAP_SENSE) != nullptr) {
+        self->trapFuse = TRAP_FUSE;
+        Audio_PlayActorSound2(thisx, NA_SE_IT_BOMB_IGNIT);
+    }
+}
+
+// Player gate: swings open while a player stands in front of or behind it, and its
+// box leaves the base collision so they walk through. Raiders have to break it.
+static void GateUpdate(PlaceableActor* self, PlayState* play) {
+    Actor* thisx = &self->actor;
+    const PlaceableInfo& info = GetPlaceableInfo(PLACEABLE_GATE);
+    f32 c = Math_CosS(thisx->shape.rot.y), s = Math_SinS(thisx->shape.rot.y);
+    bool near = false;
+    for (Actor* p : HordeNight::LivingPlayers()) {
+        f32 dx = p->world.pos.x - thisx->world.pos.x, dz = p->world.pos.z - thisx->world.pos.z;
+        f32 lx = dx * c - dz * s, lz = dx * s + dz * c;
+        if (fabsf(lx) < info.halfX + 10.0f && fabsf(lz) < GATE_REACH && fabsf(p->world.pos.y - thisx->world.pos.y) < 80.0f) {
+            near = true;
+            break;
+        }
+    }
+    bool wasOpen = self->gateOpen > 0.0f;
+    Math_StepToF(&self->gateOpen, near ? 1.0f : 0.0f, near ? 0.12f : 0.06f);
+    if (!wasOpen && self->gateOpen > 0.0f) {
+        Audio_PlayActorSound2(thisx, NA_SE_EV_WOODDOOR_OPEN);
+    }
+    bool passable = self->gateOpen > 0.3f;
+    if (passable != self->gatePassable) {
+        self->gatePassable = passable;
+        sCollisionDirty = true;
+    }
+}
+
 static void Placeable_Update(Actor* thisx, PlayState* play) {
     PlaceableActor* self = (PlaceableActor*)thisx;
     const PlaceableInfo& info = GetPlaceableInfo(self->type);
@@ -791,11 +1036,20 @@ static void Placeable_Update(Actor* thisx, PlayState* play) {
     if (self->shake > 0) {
         self->shake--;
     }
+    if (self->ruin) {
+        return;
+    }
 
     if (self->type == PLACEABLE_SCARECROW && self->hasSkel) {
         SkelAnime_Update(&self->skel); // playSpeed 0: holds the first frame
     } else if (self->type == PLACEABLE_GUARDBABA) {
         BabaUpdate(self, play);
+    } else if (self->type == PLACEABLE_TORCH) {
+        TorchUpdate(self, play);
+    } else if (self->type == PLACEABLE_BOMBTRAP) {
+        TrapUpdate(self, play);
+    } else if (self->type == PLACEABLE_GATE) {
+        GateUpdate(self, play);
     }
 
     if (self->type == PLACEABLE_SPIKES) {
@@ -827,18 +1081,33 @@ static void Placeable_Draw(Actor* thisx, PlayState* play) {
     const Placeable* p = FindPlaceable(self->id);
     const PlaceableInfo& info = GetPlaceableInfo(self->type);
     float hpFrac = (p != nullptr && info.maxHp > 0) ? (float)p->hp / (float)info.maxHp : 1.0f;
+    if (self->ruin) {
+        hpFrac = 0.1f; // the broken look: a crate knocked askew, a block knocked down
+    }
 
-    bool tint = info.maxHp > 0 && hpFrac < 0.5f;
+    bool tint = (info.maxHp > 0 && hpFrac < 0.5f) || self->ruin;
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    if (tint) {
+    if (self->ruin) {
+        // Seven years of moss and rot.
+        gDPSetGrayscaleColor(POLY_OPA_DISP++, 70, 85, 55, 190);
+        gSPGrayscale(POLY_OPA_DISP++, true);
+    } else if (tint) {
         // Damaged wood darkens.
         gDPSetGrayscaleColor(POLY_OPA_DISP++, 120, 80, 50, 140);
         gSPGrayscale(POLY_OPA_DISP++, true);
     }
     CLOSE_DISPS(play->state.gfxCtx);
 
-    if (self->shake > 0) {
+    if (self->ruin) {
+        // Half sunk and leaning.
+        Matrix_Push();
+        Matrix_Translate(0.0f, -6.0f, 0.0f, MTXMODE_APPLY);
+        Matrix_RotateZ(0.12f, MTXMODE_APPLY);
+        Matrix_RotateX(-0.08f, MTXMODE_APPLY);
+        DrawModel(play, self->type, hpFrac, self);
+        Matrix_Pop();
+    } else if (self->shake > 0) {
         // Took a hit: a short sideways judder, on every client (BASE_DELTA hp).
         Matrix_Push();
         Matrix_Translate(Math_SinS(self->shake * 0x3000) * self->shake * 0.6f, 0.0f, 0.0f, MTXMODE_APPLY);
@@ -902,7 +1171,8 @@ void SevenDays::RegisterPlaceableActors() {
     }
     ActorDBInit placeable;
     placeable.name = "SevenDays_Placeable";
-    placeable.desc = "7 Days to Zelda placeable (barricade, spike strip, workbench, storage chest, sign, scarecrow, Guard Baba)";
+    placeable.desc = "7 Days to Zelda placeable (barricade, spike strip, workbench, storage chest, sign, scarecrow, Guard Baba, "
+                       "torch, stone wall, bomb-flower trap, player gate)";
     placeable.category = ACTORCAT_BG;
     placeable.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED;
     placeable.objectId = OBJECT_GAMEPLAY_KEEP;
@@ -1032,7 +1302,7 @@ static const WorldLine sWorldLines[] = {
     { SCENE_KAKARIKO_VILLAGE, 0x5074, "Lady Impa had us shore up the watchtower first. She says she can see the whole field from up there.", "The lookout on the watchtower counted torches out in the field last night. Not ours." },
     { SCENE_KAKARIKO_VILLAGE, 0x506B, "Anju's been bringing her Cuccos in every evening. Says they won't stop squawking at the dark.", "Anju counts her Cuccos every dawn now. Lost two to the last bad night." },
     { SCENE_KAKARIKO_VILLAGE, 0x506A, "We're out of nails. Every house in the village wants its doors barred.", "Barred every door twice. Still hear them on the roofs some nights." },
-    { SCENE_KAKARIKO_VILLAGE, 0x5066, "Hey, son, what are you doing out this late? Things have been crawling out of the field at night.^Go inside before they find you.", "Out after dark? After [[raids]] on the field? Son, get indoors.^The watchtower spots them coming. Next red night's in [[next]]." },
+    { SCENE_KAKARIKO_VILLAGE, 0x5066, "Hey, son, what are you doing out this late? Things have been crawling out of the field at night.^Go inside before they find you.", "Out after dark? After [[raids]] on the field? Son, get indoors.^The watchtower spots them coming. The next red night comes [[when]]." },
     { SCENE_KAKARIKO_VILLAGE, 0x5079, "Lady Impa climbs the watchtower every night now. She says she's counting something out in the field.", "Lady Impa has the watchtower lit every night since the raids began. She says the forest is holding." },
     // Hyrule Castle Town: townsfolk (EnHy) and the gate guards (EnHeishi4); night scenes share these
     { SCENE_MARKET_DAY, 0x701E, "The guards say the castle is safe. The guards say a lot of things.", "The guards came back from the field with their spears snapped in half." },
@@ -1058,14 +1328,14 @@ static const WorldLine sWorldLines[] = {
     { SCENE_DEATH_MOUNTAIN_TRAIL, 0x3026, "The trail's dangerous at night, brother. Things come up from Kakariko.", "We stacked rocks at the trail's bend. Even Stalchildren can't climb those!" },
     { SCENE_DEATH_MOUNTAIN_TRAIL, 0x3027, "The volcano smokes, and the field howls. What a time, goro!", "The night things never come this high. You should move your base up here, brother!" },
     // Lake Hylia: the lab scientist (EnMk) and the Zora at the lake (EnZo)
-    { SCENE_LAKESIDE_LABORATORY, 0x4018, "Fascinating! The night creatures rise at the same hour every few days. A pattern! I must record it.", "My notes: [[raids]], [[days]]. The next red night should come in [[next]]. Science!" },
+    { SCENE_LAKESIDE_LABORATORY, 0x4018, "Fascinating! The night creatures rise at the same hour every few days. A pattern! I must record it.", "My notes: [[raids]], [[days]]. The next red night should come [[when]]. Science!" },
     { SCENE_LAKE_HYLIA, 0x4021, "I am a Zora. Have you seen anything strange in the lake? Things wash up here after dark now.", "I am a Zora. On the red nights the lake glows strange. I stay under the water until dawn." },
     // Gerudo Valley and Fortress (EnGe1: the gate guard to a kid, the valley floor, the fortress greeting)
     { SCENE_GERUDO_VALLEY, 0x6069, "The Gerudo's Fortress is beyond this gate. A kid like you has no business there, night creatures or not.", "The Gerudo's Fortress is beyond this gate. We cut the bridge on red nights and fix it at dawn. A kid like you has no business there." },
     { SCENE_GERUDO_VALLEY, 0x6019, "Why did you come all the way down here? The night things don't climb these cliffs, at least.", "Why did you come all the way down here? Hiding from the red nights too? Smart." },
     { SCENE_GERUDOS_FORTRESS, 0x6001, "Hey, newcomer! Hylian creatures at night? Ha! Let them try our walls.", "Hey, newcomer! Even we post double guards on red nights now. Don't tell anyone." },
     // Gossip stones (EnGs, the plain talk without the Mask of Truth)
-    { -1, 0x2053, "This statue's one-eyed gaze pierces into your mind...^They say the night things come back every few days... and they always come for the base.", "This statue's one-eyed gaze pierces into your mind...^They say the next raid comes in [[next]]. They say [[base]]." },
+    { -1, 0x2053, "This statue's one-eyed gaze pierces into your mind...^They say the night things come back every few days... and they always come for the base.", "This statue's one-eyed gaze pierces into your mind...^They say the next raid comes [[when]]. They say [[base]]." },
 };
 // clang-format on
 
@@ -1124,22 +1394,84 @@ bool SevenDays::WorldText(uint16_t textId, CustomMessage& out) {
     } else {
         return false;
     }
-    std::string s = text;
-    const BaseCenter& c = b.center[CurrentEraNow()];
-    const char* home = c.valid ? OutdoorSceneName(c.scene) : nullptr;
-    auto replace = [&s](const std::string& key, const std::string& value) {
-        for (size_t at; (at = s.find(key)) != std::string::npos;) {
-            s.replace(at, key.size(), value);
-        }
-    };
-    auto count = [](uint32_t n, const char* one, const char* many) { return fmt::format("{} {}", n, n == 1 ? one : many); };
-    replace("[[raids]]", count(b.hordeNightsSurvived, "raid", "raids"));
-    replace("[[days]]", count(b.daysSurvived, "day", "days"));
-    replace("[[next]]", NextRaidText());
-    replace("[[base]]", home != nullptr ? fmt::format("someone built walls in {}", home) : "nobody has built walls yet");
-    out = CustomMessage(s, box, TEXTBOX_POS_BOTTOM);
+    out = CustomMessage(text, box, TEXTBOX_POS_BOTTOM);
+    FillWorldText(out);
     out.AutoFormat();
     return true;
+}
+
+void SevenDays::FillWorldText(CustomMessage& msg) {
+    const BaseState& b = GetBase();
+    const BaseCenter& c = b.center[CurrentEraNow()];
+    const char* home = c.valid ? OutdoorSceneName(c.scene) : nullptr;
+    auto count = [](uint32_t n, const char* one, const char* many) { return fmt::format("{} {}", n, n == 1 ? one : many); };
+    msg.Replace("[[raids]]", count(b.hordeNightsSurvived, "raid", "raids"));
+    msg.Replace("[[days]]", count(b.daysSurvived, "day", "days"));
+    msg.Replace("[[next]]", NextRaidText());
+    uint32_t n = NightsUntilRaid();
+    msg.Replace("[[when]]", n == UINT32_MAX ? std::string("in a few days")
+                            : n == 0        ? std::string("tonight")
+                            : n == 1        ? std::string("tomorrow night")
+                                            : fmt::format("in {} days", n));
+    msg.Replace("[[base]]", home != nullptr ? fmt::format("someone built walls in {}", home) : "nobody has built walls yet");
+}
+
+// MARK: - PHA-3935: Navi's C-Up tips
+
+// Crafting and raid tips, used when Navi has nothing new to say: once her story hint
+// for this point in the game has been heard, C-Up gives the next tip instead.
+// clang-format off
+static const char* sNaviTips[NAVI_TIP_COUNT] = {
+    "Hey! The next raid comes [[when]].^Check the walls before it gets dark!",
+    "Torches keep the dead from crawling up anywhere near them.^Light up the edges of the base!",
+    "A damaged piece only packs up into part of its materials.^Repair it at the workbench first!",
+    "Spike strips bite anything that walks over them.^Lay them in front of the barricades!",
+    "A scarecrow draws raiders away from the workbench.^Give them something else to hit!",
+    "A bomb flower in the base blows up the first raider that gets close.^Then it grows a new bomb!",
+    "Stone walls take twice the beating wooden barricades do.^Bombs crack rocks for the stone!",
+    "A player gate swings open for us and stays shut for them.^They'll have to break it down!",
+    "Pots, crates and supply caches pay out materials.^Some caches even hold blueprints!",
+    "If everyone falls during a raid, the walls crumble and the stores are raided.^Stay on your feet!",
+    "Surviving a raid pays in materials at dawn.^The workbench's Base tab says how often they come.",
+    "We've held off [[raids]] so far.^The longer we last, the more the dead send!",
+};
+// clang-format on
+
+static std::vector<uint16_t> sHeardHints; // vanilla C-Up hints already heard this session
+static uint16_t sLastCUpHint = 0;
+static uint16_t sNextTip = 0;
+
+// z_elf_message.c: ElfMessage_GetCUpText's result goes through here. The id stays
+// vanilla (Player keeps it in an s16 and treats negative ids specially); only the
+// text shown for it changes, in NaviTipText.
+extern "C" u16 SevenDays_CUpText(u16 vanilla) {
+    if (BaseEnabled() && !IS_RANDO) {
+        sLastCUpHint = vanilla;
+    }
+    return vanilla;
+}
+
+// OTRGlobals glue: Navi's C-Up hint is opening. The first time she gives her story
+// hint; once it has been heard, the next tip from the pool instead.
+bool SevenDays::NaviTipText(uint16_t textId, CustomMessage& out) {
+    if (!BaseEnabled() || IS_RANDO || textId == 0 || textId == 0x15F || textId != sLastCUpHint) {
+        return false;
+    }
+    if (std::find(sHeardHints.begin(), sHeardHints.end(), textId) == sHeardHints.end()) {
+        sHeardHints.push_back(textId);
+        return false; // something she hasn't said yet: the story comes first
+    }
+    out = CustomMessageManager::Instance->RetrieveMessage("SevenDays", TEXT_NAVI_TIPS + sNextTip, MF_AUTO_FORMAT);
+    FillWorldText(out);
+    sNextTip = (uint16_t)((sNextTip + 1) % NAVI_TIP_COUNT);
+    return true;
+}
+
+void SevenDays::RegisterNaviTips(const char* table) {
+    for (uint16_t i = 0; i < NAVI_TIP_COUNT; i++) {
+        CustomMessageManager::Instance->CreateMessage(table, TEXT_NAVI_TIPS + i,
+                                                      CustomMessage(sNaviTips[i], TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
+    }
 }
 
 bool SevenDays::OverridesVanillaText(uint16_t textId) {
@@ -1161,6 +1493,23 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE
 int sevendays_test_last_text() {
     return sLastTextId;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sevendays_test_trap_blasts() {
+    return sTrapBlasts;
+}
+
+// Navi's C-Up hint now, how many hints were heard, and the next tip.
+EMSCRIPTEN_KEEPALIVE
+const char* sevendays_test_cup_state() {
+    static std::string out;
+    nlohmann::json j;
+    j["cup"] = gPlayState != nullptr ? ElfMessage_GetCUpText(gPlayState) : -1;
+    j["heard"] = sHeardHints;
+    j["nextTip"] = sNextTip;
+    out = j.dump();
+    return out.c_str();
 }
 }
 #endif

@@ -163,6 +163,10 @@ enum PlaceableType : uint8_t {
     PLACEABLE_SIGN, // seeded only (the village's "Day 1" sign), no kit
     PLACEABLE_SCARECROW, // M10: decoy, raiders within 400 go for it first
     PLACEABLE_GUARDBABA, // M10: tamed Deku Baba that bites raiders within reach
+    PLACEABLE_TORCH,     // PHA-3935: lights the base; no raid spawns within TORCH_RADIUS
+    PLACEABLE_STONEWALL, // PHA-3935: a barricade with twice the HP
+    PLACEABLE_BOMBTRAP,  // PHA-3935: a bomb flower that blows up raiders who come close, then regrows
+    PLACEABLE_GATE,      // PHA-3935: a wall raiders must break, that swings open for players
     PLACEABLE_COUNT,
 };
 
@@ -177,8 +181,10 @@ int FindPlaceableTypeForKit(const std::string& kit); // -1 if none
 
 constexpr int ERA_ADULT = 0; // == gSaveContext.linkAge
 constexpr int ERA_CHILD = 1;
+constexpr int ERA_RUINS = 2; // PHA-3935: the child base after the seven-year jump, seen as an adult
 constexpr int BASE_CAP = 100; // PHA-3916: pieces share chunked collision actors (Placeables.cpp)
 constexpr float BASE_RADIUS = 800.0f;
+constexpr float TORCH_RADIUS = 300.0f; // spec: no wave spawn point within 300 units of a torch
 
 struct Placeable {
     uint16_t id = 0; // stable, assigned by the owner; also the actor's params
@@ -231,7 +237,10 @@ void ApplyTeamStateJson(const nlohmann::json& j);
 // Placement mode (a ghost ahead of Link; C-left/C-right rotate, A place, B cancel).
 void BeginPlacement(uint8_t type);
 bool InPlacement();
-void RequestPackUp(uint16_t id);        // one piece back into a kit
+void RequestPackUp(uint16_t id);        // one piece back into a kit (a damaged one: part of its materials)
+void RequestRepair(uint16_t id);        // PHA-3935: back to full HP for materials (half with the Megaton Hammer)
+std::string RepairCost(uint16_t id);    // "2 Wood, 1 Fiber"; "" when it needs no repair
+bool IsRuin(const Placeable& p);
 void RequestPackUpBase(int era);        // the whole base, every kit refunded
 uint16_t NearestPlaceable(float maxDist); // 0 if none
 
@@ -249,7 +258,11 @@ constexpr uint16_t TEXT_SIGN_DAY = SEVEN_DAYS_TEXT_BASE + 0x20;
 constexpr uint16_t TEXT_WORKBENCH = SEVEN_DAYS_TEXT_BASE + 0x21;
 constexpr uint16_t TEXT_CHEST = SEVEN_DAYS_TEXT_BASE + 0x22;
 void RegisterVillageMessages(const char* table);
+void RegisterNaviTips(const char* table); // PHA-3935
+bool NaviTipText(uint16_t textId, CustomMessage& out); // OTRGlobals glue: a heard C-Up hint becomes a tip
 uint32_t CurrentDay(); // the village sign's "Day N" (days survived + 1)
+// [[raids]], [[days]], [[next]] and [[base]] in a line, filled in when it is shown.
+void FillWorldText(CustomMessage& msg);
 
 // Internal glue between Base.cpp and Placeables.cpp
 const Placeable* FindPlaceable(uint16_t id);
@@ -275,6 +288,7 @@ enum RaidStory : uint32_t {
     STORY_DUSK_ACTIVE = 1 << 1,     // ...and its night isn't over yet
     STORY_FIRST_RAID = 1 << 2,      // Gohma is dead: the prologue is over, raids are scheduled
     STORY_FIRST_RAID_DONE = 1 << 3, // the first raid's dawn came
+    STORY_RUINS = 1 << 4,           // PHA-3935: the seven-year jump turned the child base into ruins
 };
 
 // Navi's staged raid lines (PHA-3870 "Raids, explained in stages"), one save flag each.
@@ -292,6 +306,12 @@ enum RaidEnemy : uint8_t { RAIDENEMY_STALCHILD, RAIDENEMY_KEESE, RAIDENEMY_WOLFO
 
 bool RaidsEnabled();
 void QueueRaidNavi(uint8_t line); // SevenDays.cpp: once per save
+void QueueNaviText(uint16_t textId); // SevenDays.cpp: a line Navi can say again (no firsts bit)
+// PHA-3935: Navi's warning the evening before every raid after the first (3 variants), and
+// her C-Up crafting and raid tips.
+constexpr uint16_t TEXT_RAID_EVE_EACH = SEVEN_DAYS_TEXT_BASE + 0x14;
+constexpr uint16_t TEXT_NAVI_TIPS = SEVEN_DAYS_TEXT_BASE + 0x30;
+constexpr uint16_t NAVI_TIP_COUNT = 12;
 void RaidsRegisterMessages(const char* table);
 void RaidsOnFrame();
 void RaidsRegisterHooks(bool enabled);
