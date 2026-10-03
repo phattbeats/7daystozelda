@@ -82,6 +82,8 @@ enum RecipeKind : uint8_t {
     RECIPE_CONSUMABLE, // vanilla ammo, granted by Item_Give on CRAFT_RESULT
     RECIPE_KIT,        // placeable kit, a count in the shared pool (placed in M5)
     RECIPE_TRADE,      // materials -> rupees (the workbench's Trade tab)
+    RECIPE_BUY,        // M10: rupees -> materials at a town merchant. inputs[0] is what the
+                       // merchant hands over (into the pool), inputCount 0, outputCount the price
 };
 
 struct RecipeInput {
@@ -325,6 +327,20 @@ uint8_t SceneTier(int16_t scene); // the area tier of a scene (dungeons by table
 const std::vector<const char*>& CacheBlueprints();
 const char* BossBlueprint(int16_t bossActorId); // nullptr: none of its own
 const char* BossName(int16_t bossActorId);
+
+// M10: material merchants, a stall beside a townsperson (never the vanilla
+// shops or their dialogue). Buying goes through CRAFT_REQUEST like crafting.
+struct Merchant {
+    int16_t scene;
+    int8_t room;
+    int16_t x, y, z;        // the anchor: a vanilla townsperson; the stall stands beside it
+    const char* name;       // "Talon's crates"
+    const char* line;       // the stall's textbox
+    const char* offers[3];  // RECIPE_BUY ids (nullptr-terminated)
+};
+const std::vector<Merchant>& GetMerchants();
+const Merchant* ActiveMerchant(); // the stall Link just talked to, while he stays by it
+void MerchantsRegisterHooks(bool enabled); // Loot.cpp; on with Crafting
 
 // Navi's loot lines share the firsts bitfield (SevenDays.cpp).
 enum LootLine : uint8_t {

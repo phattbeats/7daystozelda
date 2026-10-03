@@ -60,6 +60,7 @@ static const std::string LOOT_RESULT = "LOOT_RESULT";
 constexpr uint16_t TEXT_LOOT_BASE = SEVEN_DAYS_TEXT_BASE + 0x28; // + LootLine
 constexpr uint16_t TEXT_CACHE = SEVEN_DAYS_TEXT_BASE + 0x30;
 constexpr uint16_t TEXT_CACHE_EMPTY = SEVEN_DAYS_TEXT_BASE + 0x31;
+constexpr uint16_t TEXT_MERCHANT_BASE = SEVEN_DAYS_TEXT_BASE + 0x34; // + merchant index
 
 struct CacheActor {
     Actor actor;
@@ -404,8 +405,7 @@ static ColliderCylinderInit sCacheCylinderInit = {
 
 // Beside the anchor: a floor point 70-110 units away on the anchor's level, not
 // water, not too steep, with nothing solid between the two.
-static Vec3f PlaceBeside(PlayState* play, const CacheSpot& c) {
-    Vec3f anchor = { (f32)c.x, (f32)c.y, (f32)c.z };
+static Vec3f PlaceBeside(PlayState* play, Vec3f anchor) {
     for (f32 r : { 75.0f, 110.0f, 45.0f }) {
         for (int k = 0; k < 8; k++) {
             s16 angle = (s16)(k * 0x2000);
@@ -455,7 +455,7 @@ static void Cache_Init(Actor* thisx, PlayState* play) {
     self->lidTimer = 0;
     self->opened = Opened(self->key);
     thisx->room = c.room;
-    Vec3f at = PlaceBeside(play, c);
+    Vec3f at = PlaceBeside(play, { (f32)c.x, (f32)c.y, (f32)c.z });
     thisx->world.pos = thisx->home.pos = thisx->prevPos = at;
     // Face the anchor's room: turn the lid's hinge away from the wall we came off.
     Vec3f anchor = { (f32)c.x, (f32)c.y, (f32)c.z };
@@ -657,6 +657,160 @@ static void SpawnCachesHere() {
     }
 }
 
+// MARK: - M10 merchant stalls
+
+struct MerchantActor {
+    Actor actor;
+    ColliderCylinder collider;
+    uint16_t index;
+    uint8_t talking;
+};
+
+static int16_t sMerchantActorId = -1;
+static std::unordered_map<uint16_t, Actor*> sMerchantStalls; // merchant index -> actor in this scene
+static int sActiveMerchant = -1;                             // the stall Link last talked to
+
+const Merchant* ActiveMerchant() {
+    if (sActiveMerchant < 0 || gPlayState == nullptr) {
+        return nullptr;
+    }
+    auto it = sMerchantStalls.find((uint16_t)sActiveMerchant);
+    Player* player = GET_PLAYER(gPlayState);
+    if (it == sMerchantStalls.end() || player == nullptr ||
+        Actor_WorldDistXZToActor(&player->actor, it->second) > 200.0f) {
+        return nullptr;
+    }
+    return &GetMerchants()[sActiveMerchant];
+}
+
+static void Merchant_Init(Actor* thisx, PlayState* play) {
+    MerchantActor* self = (MerchantActor*)thisx;
+    self->index = (uint16_t)thisx->params;
+    if (self->index >= GetMerchants().size()) {
+        self->index = 0xFFFF;
+        Actor_Kill(thisx);
+        return;
+    }
+    const Merchant& m = GetMerchants()[self->index];
+    self->talking = 0;
+    thisx->room = m.room;
+    Vec3f anchor = { (f32)m.x, (f32)m.y, (f32)m.z };
+    Vec3f at = PlaceBeside(play, anchor);
+    thisx->world.pos = thisx->home.pos = thisx->prevPos = at;
+    // The counter faces the townsperson it stands beside... turned half away, toward the street.
+    thisx->shape.rot.y = thisx->world.rot.y = Math_Vec3f_Yaw(&at, &anchor) + 0x4000;
+    Actor_SetScale(thisx, 1.0f);
+    Collider_InitCylinder(play, &self->collider);
+    Collider_SetCylinder(play, &self->collider, thisx, &sCacheCylinderInit);
+    self->collider.dim.radius = 34;
+    thisx->colChkInfo.mass = MASS_IMMOVABLE;
+    thisx->flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY;
+    thisx->targetMode = 0;
+    thisx->textId = TEXT_MERCHANT_BASE + self->index;
+    Actor_SetFocus(thisx, 40.0f);
+    sMerchantStalls[self->index] = thisx;
+    ESYNC_LOG("[Merchant] {} at ({:.0f},{:.0f},{:.0f})", m.name, at.x, at.y, at.z);
+}
+
+static void Merchant_Destroy(Actor* thisx, PlayState* play) {
+    MerchantActor* self = (MerchantActor*)thisx;
+    if (self->index == 0xFFFF) {
+        return;
+    }
+    Collider_DestroyCylinder(play, &self->collider);
+    auto it = sMerchantStalls.find(self->index);
+    if (it != sMerchantStalls.end() && it->second == thisx) {
+        sMerchantStalls.erase(it);
+    }
+}
+
+static void Merchant_Update(Actor* thisx, PlayState* play) {
+    MerchantActor* self = (MerchantActor*)thisx;
+    if (self->talking) {
+        if (Actor_TextboxIsClosing(thisx, play) || play->msgCtx.msgMode == MSGMODE_NONE) {
+            self->talking = 0;
+            sActiveMerchant = self->index;
+            OpenCraftingWindow(3); // the Workbench page's Buy tab, with this stall's goods
+        }
+    } else if (Actor_ProcessTalkRequest(thisx, play)) {
+        self->talking = 1;
+    } else if (!InPlacement()) {
+        func_8002F2CC(thisx, play, 80.0f); // "Check" on A when Link is close
+    }
+    Collider_UpdateCylinder(thisx, &self->collider);
+    CollisionCheck_SetOC(play, &play->colChkCtx, &self->collider.base);
+}
+
+// A counter of crates with the goods on top: a wood bundle, a stone block, a
+// bone-white box. Recolored from the small crate, like the supply cache.
+static void Merchant_Draw(Actor* thisx, PlayState* play) {
+    auto tinted = [play](u8 r, u8 g, u8 b, auto draw) {
+        OPEN_DISPS(play->state.gfxCtx);
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gDPSetGrayscaleColor(POLY_OPA_DISP++, r, g, b, 170);
+        gSPGrayscale(POLY_OPA_DISP++, true);
+        CLOSE_DISPS(play->state.gfxCtx);
+        draw();
+        OPEN_DISPS(play->state.gfxCtx);
+        gSPGrayscale(POLY_OPA_DISP++, false);
+        CLOSE_DISPS(play->state.gfxCtx);
+    };
+    // The counter: two crates side by side under a plank.
+    tinted(170, 120, 70, [play]() {
+        DrawBoxDL(play, -18.0f, 0.0f, 0.0f, 0.12f, 0.12f, 0.12f, 0.0f);
+        DrawBoxDL(play, 18.0f, 0.0f, 0.0f, 0.12f, 0.12f, 0.12f, 0.0f);
+        DrawBoxDL(play, 0.0f, 24.0f, 0.0f, 0.26f, 0.02f, 0.14f, 0.0f);
+    });
+    tinted(120, 80, 40, [play]() { DrawBoxDL(play, -20.0f, 27.0f, 0.0f, 0.06f, 0.05f, 0.08f, 0.0f); }); // wood
+    tinted(150, 150, 150, [play]() { DrawBoxDL(play, 0.0f, 27.0f, 2.0f, 0.05f, 0.05f, 0.05f, 0.0f); }); // stone
+    tinted(235, 230, 200, [play]() { DrawBoxDL(play, 20.0f, 27.0f, -2.0f, 0.04f, 0.04f, 0.06f, 0.0f); }); // bone
+    // An awning on two posts, in the rupee green of a shop sign.
+    DrawBand(play, -30.0f, 0.0f, -12.0f, 1.2f, 58.0f, 1.2f, 110, 80, 40);
+    DrawBand(play, 30.0f, 0.0f, -12.0f, 1.2f, 58.0f, 1.2f, 110, 80, 40);
+    DrawBand(play, 0.0f, 58.0f, -6.0f, 34.0f, 2.0f, 10.0f, 40, 170, 70);
+}
+
+static void RegisterMerchantActor() {
+    if (sMerchantActorId >= 0 || ActorDB::Instance == nullptr) {
+        return;
+    }
+    ActorDBInit merchant;
+    merchant.name = "SevenDays_Merchant";
+    merchant.desc = "7 Days to Zelda material merchant stall (opens the Workbench's Buy tab)";
+    merchant.category = ACTORCAT_PROP;
+    merchant.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED;
+    merchant.objectId = OBJECT_GAMEPLAY_KEEP;
+    merchant.instanceSize = sizeof(MerchantActor);
+    merchant.init = Merchant_Init;
+    merchant.destroy = Merchant_Destroy;
+    merchant.update = Merchant_Update;
+    merchant.draw = Merchant_Draw;
+    sMerchantActorId = (int16_t)ActorDB::Instance->AddEntry(merchant).entry.id;
+}
+
+static void SpawnMerchantsHere() {
+    if (gPlayState == nullptr || !CraftingEnabled()) {
+        return;
+    }
+    RegisterMerchantActor();
+    if (sMerchantActorId < 0) {
+        return;
+    }
+    const auto& merchants = GetMerchants();
+    s8 cur = gPlayState->roomCtx.curRoom.num, prev = gPlayState->roomCtx.prevRoom.num;
+    for (uint16_t i = 0; i < merchants.size(); i++) {
+        const Merchant& m = merchants[i];
+        if (m.scene != gPlayState->sceneNum || (m.room != cur && m.room != prev) || sMerchantStalls.contains(i)) {
+            continue;
+        }
+        Actor* a = Actor_Spawn(&gPlayState->actorCtx, gPlayState, sMerchantActorId, m.x, m.y, m.z, 0, 0, 0, (s16)i,
+                               false);
+        if (a != nullptr) {
+            a->room = m.room;
+        }
+    }
+}
+
 // MARK: - Per frame
 
 void LootOnFrame() {
@@ -736,6 +890,12 @@ void LootRegisterMessages(const char* table) {
         table, TEXT_CACHE,
         CustomMessage("A supply cache, nailed shut and banded in brass.^You pry the lid open...", TEXTBOX_TYPE_BLACK,
                       TEXTBOX_POS_BOTTOM));
+    static_assert(TEXT_MERCHANT_BASE + 8 <= SEVEN_DAYS_TEXT_BASE + SEVEN_DAYS_TEXT_COUNT, "merchant text ids");
+    for (uint16_t i = 0; i < GetMerchants().size() && i < 8; i++) {
+        CustomMessageManager::Instance->CreateMessage(
+            table, TEXT_MERCHANT_BASE + i,
+            CustomMessage(GetMerchants()[i].line, TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM));
+    }
     CustomMessageManager::Instance->CreateMessage(
         table, TEXT_CACHE_EMPTY,
         CustomMessage("An empty supply cache. Someone already took everything.", TEXTBOX_TYPE_BLACK,
@@ -743,6 +903,11 @@ void LootRegisterMessages(const char* table) {
 }
 
 // MARK: - Registration
+
+void MerchantsRegisterHooks(bool enabled) {
+    COND_HOOK(OnSceneSpawnActors, enabled, []() { SpawnMerchantsHere(); });
+    COND_HOOK(OnLoadGame, enabled, [](int32_t fileNum) { sActiveMerchant = -1; });
+}
 
 void LootRegisterHooks(bool enabled) {
     COND_HOOK(OnSceneSpawnActors, enabled, []() { SpawnCachesHere(); });
@@ -828,6 +993,15 @@ const char* sevendays_test_loot_state() {
             n += a->id == ACTOR_OBJ_TSUBO || a->id == ACTOR_OBJ_KIBAKO || a->id == ACTOR_OBJ_KIBAKO2;
         }
         j["breakables"] = n;
+        for (auto& [index, a] : sMerchantStalls) {
+            j["merchants"].push_back({ { "index", index },
+                                       { "name", GetMerchants()[index].name },
+                                       { "room", a->room },
+                                       { "pos", { (int)a->world.pos.x, (int)a->world.pos.y, (int)a->world.pos.z } },
+                                       { "yaw", a->shape.rot.y },
+                                       { "dist", player != nullptr ? (int)Math_Vec3f_DistXYZ(&a->world.pos, &player->actor.world.pos) : -1 } });
+        }
+        j["activeMerchant"] = ActiveMerchant() != nullptr ? ActiveMerchant()->name : "";
         if (player != nullptr) {
             j["link"] = { (int)player->actor.world.pos.x, (int)player->actor.world.pos.y, (int)player->actor.world.pos.z };
         }

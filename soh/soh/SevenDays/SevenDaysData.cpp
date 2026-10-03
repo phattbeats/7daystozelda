@@ -59,6 +59,43 @@ static const std::vector<Recipe> sRecipes = {
     { "trade_stone",    "Sell Stone",       RECIPE_TRADE,      { { MAT_STONE, 3 } },                         1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },
     { "trade_bone",     "Sell Bone",        RECIPE_TRADE,      { { MAT_BONE, 2 } },                          1, ITEM_NONE,        ITEM_NONE,      10, UNLOCK_START },
     { "trade_rot",      "Sell Rot",         RECIPE_TRADE,      { { MAT_ROT, 2 } },                           1, ITEM_NONE,        ITEM_NONE,      10, UNLOCK_START },
+
+    // M10 merchants: what they hand over, and the price (out). Every price is at
+    // least twice the Trade tab's rate, so selling and buying back never pays.
+    { "buy_fiber",      "Fiber",            RECIPE_BUY,        { { MAT_FIBER, 5 } },                         0, ITEM_NONE,        ITEM_NONE,      10, UNLOCK_START },
+    { "buy_wood",       "Wood",             RECIPE_BUY,        { { MAT_WOOD, 3 } },                          0, ITEM_NONE,        ITEM_NONE,      10, UNLOCK_START },
+    { "buy_stone",      "Stone",            RECIPE_BUY,        { { MAT_STONE, 3 } },                         0, ITEM_NONE,        ITEM_NONE,      10, UNLOCK_START },
+    { "buy_bone",       "Bone",             RECIPE_BUY,        { { MAT_BONE, 2 } },                          0, ITEM_NONE,        ITEM_NONE,      20, UNLOCK_START },
+    { "buy_rot",        "Rot",              RECIPE_BUY,        { { MAT_ROT, 2 } },                           0, ITEM_NONE,        ITEM_NONE,      20, UNLOCK_START },
+    { "buy_wood_bulk",  "Wood",             RECIPE_BUY,        { { MAT_WOOD, 10 } },                         0, ITEM_NONE,        ITEM_NONE,      30, UNLOCK_START },
+    { "buy_fiber_bulk", "Fiber",            RECIPE_BUY,        { { MAT_FIBER, 15 } },                        0, ITEM_NONE,        ITEM_NONE,      30, UNLOCK_START },
+};
+
+// Kokiri Forest has none: the prologue stays gathering-first. Ore doesn't exist
+// yet; Goron City adds it when it does.
+static const std::vector<Merchant> sMerchants = {
+    // scene                   room anchor x, y, z      (beside)
+    { SCENE_MARKET_DAY,        0,   393,   0,    264,   // a market-goer by the bazaar's side of the square
+      "Market stall", "A market stall piled with bundles of wood and grass fiber.^\"Building something? Have a look!\"",
+      { "buy_wood", "buy_fiber" } },
+    { SCENE_KAKARIKO_VILLAGE,  0,   486,   80,   1423,  // the Cucco lady
+      "Kakariko lumber", "Spare lumber and fiber from the carpenters' work.^\"Rupees in the box, take what you need.\"",
+      { "buy_wood", "buy_fiber" } },
+    { SCENE_GORON_CITY,        3,   84,    -3,   -314,  // a Goron on the bottom floor
+      "Goron stone", "A heap of good cut stone.^\"Goron rock! The best for walls, brother!\"",
+      { "buy_stone" } },
+    { SCENE_GRAVEYARD,         1,   -474,  61,   447,   // by the graves, near Dampe's hut
+      "Dampe's bone pile", "Dampe's leftovers, stacked by the graves.^\"Heh heh... bones for rupees. Don't ask.\"",
+      { "buy_bone" } },
+    { SCENE_LON_LON_RANCH,     0,   64,    0,    -567,  // Malon in the yard
+      "Talon's crates", "Talon's ranch crates: fence wood and hay fiber by the bundle.^\"Bulk prices for the city folk!\"",
+      { "buy_wood_bulk", "buy_fiber_bulk" } },
+    { SCENE_ZORAS_DOMAIN,      1,   217,   178,  150,   // the shop ledge's sign
+      "Zora salvage", "Things the river washed up, sorted by the Zoras.^\"Smelly, but builders always ask for it.\"",
+      { "buy_rot", "buy_bone" } },
+    { SCENE_GERUDOS_FORTRESS,  0,   -1224, 93,   -3160, // a guard on the lower yard
+      "Gerudo spoils", "Spoils from the desert, guarded day and night.^\"Pay up, or move along.\"",
+      { "buy_bone", "buy_rot" } },
 };
 // clang-format on
 
@@ -200,6 +237,10 @@ const char* BossName(int16_t bossActorId) {
             return "Ganon";
     }
     return nullptr;
+}
+
+const std::vector<Merchant>& GetMerchants() {
+    return sMerchants;
 }
 
 const std::vector<Recipe>& GetRecipes() {

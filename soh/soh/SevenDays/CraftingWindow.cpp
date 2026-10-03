@@ -46,7 +46,7 @@ void ToggleCraftingWindow() {
 static int sRequestedTab = -1;
 static int sRequestedPageTab = -1;
 
-// Opens the pause menu on the Workbench page (tab: 0 Craft, 1 Trade, 2 Base).
+// Opens the pause menu on the Workbench page (tab: 0 Craft, 1 Trade, 2 Base, 3 Buy at a merchant).
 void OpenCraftingWindow(int tab) {
     sRequestedPageTab = tab;
     KaleidoSetup_RequestOpen(PAUSE_SEVENDAYS);
@@ -87,6 +87,9 @@ static void DrawRecipe(const Recipe& recipe) {
             break;
         case RECIPE_TRADE:
             label = fmt::format("{} -> {} rupees", recipe.name, recipe.outputCount);
+            break;
+        case RECIPE_BUY:
+            label = fmt::format("Buy {} {} for {} rupees", recipe.inputs[0].amount, recipe.name, recipe.outputCount);
             break;
     }
 
@@ -363,7 +366,7 @@ void FrameInterpolation_RecordOpenChild(const void* a, int b);
 void FrameInterpolation_RecordCloseChild(void);
 }
 
-enum PageTab : int { PAGE_CRAFT, PAGE_TRADE, PAGE_BASE };
+enum PageTab : int { PAGE_CRAFT, PAGE_TRADE, PAGE_BASE, PAGE_BUY };
 
 struct PageRow {
     std::string name;
@@ -423,6 +426,9 @@ std::vector<int> AvailableTabs() {
     if (BaseEnabled()) {
         tabs.push_back(PAGE_BASE);
     }
+    if (CraftingEnabled() && ActiveMerchant() != nullptr) {
+        tabs.push_back(PAGE_BUY); // only while Link stands at the stall he talked to
+    }
     return tabs;
 }
 
@@ -432,6 +438,8 @@ const char* TabName(int tab) {
             return "Craft";
         case PAGE_TRADE:
             return "Trade";
+        case PAGE_BUY:
+            return "Buy";
         default:
             return "Base";
     }
@@ -443,6 +451,8 @@ const char* TabHint(int tab) {
             return "Uses the shared pool";
         case PAGE_TRADE:
             return "Materials for rupees";
+        case PAGE_BUY:
+            return "Rupees for materials";
         default:
             return "Place and pack up kits";
     }
@@ -458,11 +468,37 @@ void ClosePauseMenu(PlayState* play) {
 
 std::vector<PageRow> BuildRows(PlayState* play, int tab) {
     std::vector<PageRow> rows;
+    if (tab == PAGE_BUY) {
+        const Merchant* merchant = ActiveMerchant();
+        for (int i = 0; merchant != nullptr && i < 3 && merchant->offers[i] != nullptr; i++) {
+            const Recipe* recipe = FindRecipe(merchant->offers[i]);
+            if (recipe == nullptr || recipe->kind != RECIPE_BUY) {
+                continue;
+            }
+            PageRow row;
+            std::string blocker = CraftBlocker(*recipe);
+            row.enabled = blocker.empty();
+            row.name = fmt::format("Buy {} {}", recipe->inputs[0].amount, recipe->name);
+            row.right = fmt::format("{} Rupees", recipe->outputCount);
+            row.rupee = true;
+            row.hint = row.enabled ? "Buy (into the pool)" : blocker;
+            std::string id = recipe->id;
+            row.action = [id]() {
+                if (RequestCraft(id)) {
+                    Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+                } else {
+                    Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
+                }
+            };
+            rows.push_back(std::move(row));
+        }
+        return rows;
+    }
     if (tab == PAGE_CRAFT || tab == PAGE_TRADE) {
         const PoolState& pool = GetPool();
         for (const Recipe& recipe : GetRecipes()) {
             bool trade = recipe.kind == RECIPE_TRADE;
-            if (trade != (tab == PAGE_TRADE)) {
+            if (recipe.kind == RECIPE_BUY || trade != (tab == PAGE_TRADE)) {
                 continue;
             }
             PageRow row;
@@ -802,7 +838,9 @@ extern "C" void SevenDaysKaleido_DrawPage(PlayState* play, s32 current) {
         return;
     }
     if (sRequestedPageTab >= 0 && current) {
-        int want = sRequestedPageTab == 2 ? PAGE_BASE : (sRequestedPageTab == 1 ? PAGE_TRADE : PAGE_CRAFT);
+        int want = sRequestedPageTab == 3   ? PAGE_BUY
+                   : sRequestedPageTab == 2 ? PAGE_BASE
+                                            : (sRequestedPageTab == 1 ? PAGE_TRADE : PAGE_CRAFT);
         sRequestedPageTab = -1;
         if (std::find(tabs.begin(), tabs.end(), want) != tabs.end()) {
             sPage.tab = want;
@@ -835,7 +873,8 @@ extern "C" void SevenDaysKaleido_DrawPage(PlayState* play, s32 current) {
     Gfx_SetupDL_42Opa(play->state.gfxCtx);
 
     // Title, tabs and the shared pool.
-    std::string title = "Workbench";
+    const Merchant* merchant = sPage.tab == PAGE_BUY ? ActiveMerchant() : nullptr;
+    std::string title = merchant != nullptr ? merchant->name : "Workbench";
     DrawShadowText(play, title, -TextWidth(title, 1.0f) / 2, 76 + dy, 1.0f, { 255, 255, 255 }, alpha);
 
     int tabIndex = TabIndex(tabs);
@@ -850,6 +889,9 @@ extern "C" void SevenDaysKaleido_DrawPage(PlayState* play, s32 current) {
     std::string mats;
     for (uint8_t m = 0; m < MAT_COUNT; m++) {
         mats += fmt::format("{}{} {}", m ? "  " : "", GetMaterialInfo(m).name, pool.materials[m]);
+    }
+    if (merchant != nullptr) {
+        mats += fmt::format("  Rupees {}", gSaveContext.rupees + gSaveContext.rupeeAccumulator);
     }
     DrawShadowText(play, mats, -TextWidth(mats, 0.6f) / 2, 38 + dy, 0.6f, { 220, 220, 200 }, alpha);
 

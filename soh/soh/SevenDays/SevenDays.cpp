@@ -61,12 +61,14 @@ enum FirstLine : uint8_t {
     FIRST_GATHER_BASE = 0, // + material
     FIRST_CRAFT = MAT_COUNT,
     FIRST_TRADE,
+    FIRST_BUY,
     FIRST_COUNT,
 };
 
 static const char* sFirstLineText[FIRST_COUNT - MAT_COUNT] = {
     /* FIRST_CRAFT */ "You made it yourself, Link!&Kits wait in the pool until you build.",
     /* FIRST_TRADE */ "Rupees for rocks and twigs?&Mido's shield isn't so far off now!",
+    /* FIRST_BUY   */ "Bought, not gathered... it all goes&in the village pool just the same!",
 };
 
 static PoolState sPool;
@@ -499,6 +501,10 @@ std::string CraftBlocker(const Recipe& recipe) {
     if (recipe.kind == RECIPE_TRADE && gSaveContext.rupees + recipe.outputCount > CUR_CAPACITY(UPG_WALLET)) {
         return "Your wallet is full";
     }
+    // Rupees_ChangeBy counts down over a few frames: include what is still owed.
+    if (recipe.kind == RECIPE_BUY && gSaveContext.rupees + gSaveContext.rupeeAccumulator < recipe.outputCount) {
+        return "Not enough rupees";
+    }
     if (!HasInputs(recipe)) {
         return "Not enough materials";
     }
@@ -506,6 +512,15 @@ std::string CraftBlocker(const Recipe& recipe) {
         return "Waiting for the host...";
     }
     return "";
+}
+
+// A purchase pays when it is sent (so two quick buys can't spend the same
+// rupees) and is refunded if the owner refuses it or never answers.
+static void RefundPurchase(const std::string& recipeId) {
+    const Recipe* recipe = FindRecipe(recipeId);
+    if (recipe != nullptr && recipe->kind == RECIPE_BUY) {
+        Rupees_ChangeBy(recipe->outputCount);
+    }
 }
 
 static void OnCraftResult(const nlohmann::json& payload) {
@@ -522,6 +537,7 @@ static void OnCraftResult(const nlohmann::json& payload) {
         return;
     }
     if (!payload.value("ok", false)) {
+        RefundPurchase(recipe->id);
         Notification::Emit({ .prefix = recipe->name,
                              .message = payload.value("reason", "Couldn't craft that"),
                              .remainingTime = 3.0f });
@@ -548,6 +564,15 @@ static void OnCraftResult(const nlohmann::json& payload) {
             Sfx_PlaySfxCentered(NA_SE_SY_GET_RUPY);
             QueueNavi(FIRST_TRADE);
             break;
+        case RECIPE_BUY:
+            Notification::Emit({ .prefix = fmt::format("+{}", recipe->inputs[0].amount),
+                                 .prefixColor = ImVec4(0.6f, 1.0f, 0.6f, 1.0f),
+                                 .message = fmt::format("{} (bought)", GetMaterialInfo(recipe->inputs[0].material).name),
+                                 .remainingTime = 3.0f,
+                                 .mute = true });
+            Sfx_PlaySfxCentered(NA_SE_SY_GET_ITEM);
+            QueueNavi(FIRST_BUY);
+            break;
     }
 }
 
@@ -572,6 +597,9 @@ static void ProcessCraftRequest(const nlohmann::json& payload, uint32_t requeste
         }
         if (recipe->kind == RECIPE_KIT) {
             sPool.kits[recipe->id] += recipe->outputCount;
+        } else if (recipe->kind == RECIPE_BUY) {
+            // The buyer already paid its rupees: the goods go into the pool.
+            sPool.materials[recipe->inputs[0].material] += recipe->inputs[0].amount;
         }
         sPool.rev++;
         result["ok"] = true;
@@ -594,6 +622,9 @@ bool RequestCraft(const std::string& recipeId) {
     sInFlight.reqId = sNextReqId++;
     sInFlight.recipe = recipeId;
     sInFlight.sentAt = Now();
+    if (recipe->kind == RECIPE_BUY) {
+        Rupees_ChangeBy(-(int16_t)recipe->outputCount);
+    }
 
     nlohmann::json payload;
     payload["type"] = CRAFT_REQUEST;
@@ -723,6 +754,7 @@ static void OnFrame() {
     }
 
     if (CraftInFlight() && Now() - sInFlight.sentAt > 5.0) {
+        RefundPurchase(sInFlight.recipe);
         sInFlight = {};
         Notification::Emit({ .prefix = "Crafting", .message = "The host didn't answer", .remainingTime = 3.0f });
     }
@@ -906,6 +938,7 @@ static void RegisterSevenDaysM4() {
     BaseRegisterHooks(BaseEnabled());
     RaidsRegisterHooks(RaidsEnabled());
     LootRegisterHooks(LootEnabled());
+    MerchantsRegisterHooks(CraftingEnabled());
     NightsRegisterHooks(NightsEnabled());
 
     if (!Enabled()) {
