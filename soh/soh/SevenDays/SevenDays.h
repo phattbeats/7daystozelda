@@ -173,6 +173,7 @@ enum PlaceableType : uint8_t {
     PLACEABLE_BOMBTRAP,  // PHA-3935: a bomb flower that blows up raiders who come close, then regrows
     PLACEABLE_GATE,      // PHA-3935: a wall raiders must break, that swings open for players
     PLACEABLE_IRONWALL,  // PHA-3935: Silver Gauntlets tier, twice a stone wall's HP
+    PLACEABLE_PALISADE,  // PHA-3904: a tall wall of upright logs (Majora's Mask practice logs)
     PLACEABLE_COUNT,
 };
 

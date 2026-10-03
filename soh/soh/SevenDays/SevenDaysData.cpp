@@ -52,6 +52,7 @@ static const std::vector<Recipe> sRecipes = {
 
     { "workbench",      "Workbench",        RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_STONE, 4 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
     { "barricade",      "Barricade",        RECIPE_KIT,        { { MAT_WOOD, 6 }, { MAT_FIBER, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "palisade",       "Palisade wall",    RECIPE_KIT,        { { MAT_WOOD, 10 }, { MAT_FIBER, 3 } },       2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
     { "torch",          "Torch",            RECIPE_KIT,        { { MAT_WOOD, 2 }, { MAT_FIBER, 1 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
     { "spikes",         "Spike strip",      RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_BONE, 3 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE, true },
     { "chest",          "Storage chest",    RECIPE_KIT,        { { MAT_WOOD, 8 } },                          1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },

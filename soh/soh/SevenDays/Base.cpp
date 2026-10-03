@@ -78,10 +78,10 @@ const BaseState& GetBase() {
 // clang-format off
 static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     //                         kit          name              halfX halfZ height maxHp
-    /* PLACEABLE_BARRICADE */ { "barricade", "Barricade",      60,   24,   48,    100 },
+    /* PLACEABLE_BARRICADE */ { "barricade", "Barricade",      60,   10,   48,    100 },
     /* PLACEABLE_SPIKES    */ { "spikes",    "Spike strip",    45,   15,   8,     60  },
-    /* PLACEABLE_WORKBENCH */ { "workbench", "Workbench",      30,   24,   48,    0   },
-    /* PLACEABLE_CHEST     */ { "chest",     "Storage chest",  20,   20,   40,    0   },
+    /* PLACEABLE_WORKBENCH */ { "workbench", "Workbench",      40,   27,   52,    0   },
+    /* PLACEABLE_CHEST     */ { "chest",     "Storage chest",  26,   20,   44,    0   },
     /* PLACEABLE_SIGN      */ { "",          "Sign",           20,   5,    60,    0   },
     /* PLACEABLE_SCARECROW */ { "scarecrow", "Scarecrow decoy", 18,   18,   75,    80  },
     /* PLACEABLE_GUARDBABA */ { "guardbaba", "Guard Baba",     18,   18,   50,    60  },
@@ -90,6 +90,7 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     /* PLACEABLE_BOMBTRAP  */ { "bombtrap",  "Bomb-flower trap", 22, 22,   8,     0   },
     /* PLACEABLE_GATE      */ { "gate",      "Player gate",    60,   8,    90,    150 },
     /* PLACEABLE_IRONWALL  */ { "ironwall",  "Iron wall",      60,   30,   60,    400 },
+    /* PLACEABLE_PALISADE  */ { "palisade",  "Palisade wall",  62,   16,   96,    150 },
 };
 // clang-format on
 

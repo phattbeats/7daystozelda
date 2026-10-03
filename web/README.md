@@ -20,6 +20,10 @@ Ocarina of Time co-op (shared enemies, nearest-player targeting, enemy sounds an
 4. **SWAG:** copy `swag/zelda.subdomain.conf` into SWAG's `/config/nginx/proxy-confs/` and restart SWAG. It's the stock lazy-resolve pattern (`$upstream_app soh-web`), so SWAG still starts if this stack is down.
 5. Open `https://zelda.phatt.vip`.
 
+### Majora's Mask models in soh.o2r
+
+Since PHA-3904 the live `soh.o2r` also carries a few Majora's Mask models (the palisade wall's logs, the workbench's desk, hammer and blade), cut from an MM (USA) ROM by `art/mm-pack/build_mm_pack.py --o2r public/soh.o2r`. They are Nintendo data: they live only in the deployed image and the private Nextcloud folder, never in this repo or a public release. Any deploy that replaces `soh.o2r` must re-append them, or the game falls back to OoT models (the palisade becomes a tall horse fence, the workbench the shop shelves). Re-gzip `soh.o2r.gz` afterwards: `server.js` serves the `.gz` sibling.
+
 Rename the subdomain by changing `server_name zelda.*;` and the CNAME. The container name `soh-web` must stay lowercase; SWAG resolves it literally.
 
 **Don't add `proxy_read_timeout` to the conf.** SWAG's `proxy.conf` already sets it, and nginx refuses a duplicate, which stops SWAG and takes every site down with it. It isn't needed: the relay pings every 25 s, inside both SWAG's 240 s timeout and Cloudflare's 100 s idle cutoff.

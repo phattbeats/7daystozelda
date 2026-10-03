@@ -1,0 +1,7 @@
+# The pack and anything it is built from or into is Nintendo data.
+pack/
+*.o2r
+*.z64
+*.n64
+*.v64
+__pycache__/

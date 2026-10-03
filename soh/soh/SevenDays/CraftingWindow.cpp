@@ -418,12 +418,13 @@ const char* RecipeIcon(const Recipe& recipe) {
     static const std::map<std::string, const char*> sIcons = {
         { "sticks", gItemIconDekuStickTex },      { "nuts", gItemIconDekuNutTex },
         { "seeds", gItemIconDekuSeedsTex },       { "arrows", gItemIconBowTex },
-        { "bombs", gItemIconBombTex },            { "workbench", gItemIconHammerTex },
+        { "bombs", gItemIconBombTex },            { "workbench", gItemIconPoachersSawTex },
         { "barricade", gItemIconShieldDekuTex },  { "torch", gItemIconDinsFireTex },
-        { "spikes", gItemIconMaskSkullTex },      { "chest", gItemIconBombBag20Tex },
+        { "spikes", gItemIconMaskSkullTex },      { "chest", gMapChestIconTex },
         { "stonewall", gItemIconShieldHylianTex }, { "bombtrap", gItemIconBombchuTex },
         { "gate", gItemIconHookshotTex },         { "scarecrow", gItemIconSlingshotTex },
         { "guardbaba", gItemIconDekuNutTex },     { "ironwall", gItemIconSilverGauntletsTex },
+        { "palisade", gItemIconHammerTex },
     };
     auto it = sIcons.find(recipe.id);
     return it != sIcons.end() ? it->second : nullptr;
@@ -724,7 +725,9 @@ void DrawIcon(PlayState* play, const char* icon, bool rupee, s16 x, s16 top, boo
     }
     OPEN_DISPS(play->state.gfxCtx);
     Vtx* v = (Vtx*)Graph_Alloc(play->state.gfxCtx, 4 * sizeof(Vtx));
-    s16 size = rupee ? 16 : 32;
+    // The storage chest uses the dungeon map's chest mark (RGBA16 8x8), blown up.
+    bool chest = icon == gMapChestIconTex;
+    s16 size = rupee ? 16 : (chest ? 8 : 32);
     s16 t = size << 5;
     v[0] = { { { x, top, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } };
     v[1] = { { { (s16)(x + 16), top, 0 }, 0, { t, 0 }, { 255, 255, 255, 255 } } };
@@ -741,6 +744,10 @@ void DrawIcon(PlayState* play, const char* icon, bool rupee, s16 x, s16 top, boo
         gDPLoadTextureBlock(POLY_OPA_DISP++, gRupeeCounterIconTex, G_IM_FMT_IA, G_IM_SIZ_8b, 16, 16, 0,
                             G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
                             G_TX_NOLOD, G_TX_NOLOD);
+    } else if (chest) {
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, alpha);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, icon, G_IM_FMT_RGBA, G_IM_SIZ_16b, 8, 8, 0, G_TX_NOMIRROR | G_TX_CLAMP,
+                            G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
     } else {
         gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, alpha);
         gDPLoadTextureBlock(POLY_OPA_DISP++, icon, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,

@@ -24,7 +24,28 @@ extern "C" {
 #include "objects/object_pu_box/object_pu_box.h"
 #include "objects/object_ingate/object_ingate.h"
 #include "objects/object_bombf/object_bombf.h"
+#include "objects/object_umajump/object_umajump.h"
+#include "objects/object_shop_dungen/object_shop_dungen.h"
+#include "objects/object_box/object_box.h"
 extern PlayState* gPlayState;
+uint8_t ResourceMgr_FileExists(const char* resName);
+}
+
+// PHA-3904: models cut from Majora's Mask by art/mm-pack/build_mm_pack.py. They are
+// not in oot.o2r or in the repo; the deploy appends them to the server's soh.o2r.
+// Each draw checks the pack is there and falls back to an OoT model when it isn't.
+static const ALIGN_ASSET(2) char gMMPracticeLogDL[] = "__OTR__objects/7dtz_mm/maruta/gMMPracticeLogDL";
+static const ALIGN_ASSET(2) char gMMSmithyHammerDL[] = "__OTR__objects/7dtz_mm/kgy/gMMSmithyHammerDL";
+static const ALIGN_ASSET(2) char gMMSmithyBladeDL[] = "__OTR__objects/7dtz_mm/kgy/gMMSmithyBladeDL";
+static const ALIGN_ASSET(2) char gMMInnDeskDL[] = "__OTR__objects/7dtz_mm/gMMInnDeskDL";
+
+static bool MMPackLoaded() {
+    static int8_t sLoaded = -1;
+    if (sLoaded < 0) {
+        sLoaded = ResourceMgr_FileExists(gMMPracticeLogDL) && ResourceMgr_FileExists(gMMSmithyHammerDL) &&
+                  ResourceMgr_FileExists(gMMSmithyBladeDL) && ResourceMgr_FileExists(gMMInnDeskDL);
+    }
+    return sLoaded == 1;
 }
 
 /**
@@ -32,10 +53,13 @@ extern PlayState* gPlayState;
  * table changes):
  *
  *   SevenDays_Placeable  one actor for every placeable type (params = stable id).
- *                        Drawn with display lists the ROM already has (large/small
- *                        crates, the rectangular sign, the spike, the wooden torch
- *                        stand, push blocks, a bomb flower, Ingo's gate). It has no
- *                        collision of its own: see SevenDays_BaseCollision.
+ *                        Drawn with OoT's own display lists (the horse-jump fence,
+ *                        the treasure chest, the rectangular sign, the spike, the
+ *                        wooden torch stand, push blocks, a bomb flower, Ingo's gate)
+ *                        and, since PHA-3904, a few Majora's Mask models from the
+ *                        server's soh.o2r (palisade logs, the workbench's desk and
+ *                        hammer). It has no collision of its own: see
+ *                        SevenDays_BaseCollision.
  *   SevenDays_BaseCollision  PHA-3916: the pieces' boxes (8 vertices, 12 triangles
  *                        each), merged into one CollisionHeader per 640-unit
  *                        chunk of the base and registered with DynaPoly_SetBgActor,
@@ -373,6 +397,116 @@ static void DrawDL(PlayState* play, Gfx* dl, float tx, float ty, float tz, float
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// The treasure chest is a skeleton (base + lid limbs), posed closed like En_Box's
+// frame 0. One shared pose serves every chest and the ghost: nothing animates it.
+static SkelAnime sChestSkel;
+static Vec3s sChestJoints[5];
+static Vec3s sChestMorph[5];
+static bool sChestReady = false;
+
+static void ChestPostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* arg) {
+    if (limbIndex == 1 || limbIndex == 3) {
+        OPEN_DISPS(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++,
+                       limbIndex == 1 ? (Gfx*)gTreasureChestChestFrontDL : (Gfx*)gTreasureChestChestSideAndLidDL);
+        CLOSE_DISPS(play->state.gfxCtx);
+    }
+}
+
+static void DrawChest(PlayState* play) {
+    if (!sChestReady) {
+        AnimationHeader* anim = (AnimationHeader*)gTreasureChestAnim_00024C;
+        SkelAnime_Init(play, &sChestSkel, (SkeletonHeader*)gTreasureChestSkel, anim, sChestJoints, sChestMorph, 5);
+        Animation_Change(&sChestSkel, anim, 0.0f, 0.0f, 0.0f, ANIMMODE_ONCE, 0.0f);
+        SkelAnime_Update(&sChestSkel);
+        sChestReady = true;
+    }
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+    Matrix_RotateY(M_PI, MTXMODE_APPLY); // En_Box turns the model around too
+    Matrix_Scale(0.01f, 0.01f, 0.01f, MTXMODE_APPLY);
+    // Segment 8 is En_Box's render-mode hook; an empty list keeps the opaque mode.
+    Gfx* empty = (Gfx*)Graph_Alloc(play->state.gfxCtx, sizeof(Gfx));
+    gSPEndDisplayList(empty);
+    gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)empty);
+    gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, 255);
+    CLOSE_DISPS(play->state.gfxCtx);
+    SkelAnime_DrawOpa(play, sChestSkel.skeleton, sChestSkel.jointTable, nullptr, ChestPostLimbDraw, nullptr);
+    Matrix_Pop();
+}
+
+// A model drawn about the Y axis too (yaw in binary angle units).
+static void DrawDLYaw(PlayState* play, Gfx* dl, float tx, float ty, float tz, s16 yaw, float sx, float sy,
+                      float sz, float rz = 0.0f) {
+    Matrix_Push();
+    Matrix_Translate(tx, ty, tz, MTXMODE_APPLY);
+    Matrix_RotateY(BINANG_TO_RAD(yaw), MTXMODE_APPLY);
+    DrawDL(play, dl, 0.0f, 0.0f, 0.0f, sx, sy, sz, rz);
+    Matrix_Pop();
+}
+
+// Palisade wall: five Majora's Mask practice logs (630 tall, 182 wide at scale 1)
+// stood side by side, about 96 units tall. Below half HP one log has fallen
+// against its neighbour and another has snapped off.
+static void DrawPalisade(PlayState* play, float hpFrac) {
+    if (!MMPackLoaded()) {
+        // No MM pack: the horse-jump fence stretched to the wall's height.
+        DrawDL(play, (Gfx*)gJumpableHorseFenceDL, 0.0f, 0.0f, 0.0f, 0.0375f, 0.12f, 0.1f);
+        return;
+    }
+    static const float kHeight[5] = { 1.0f, 0.95f, 1.04f, 0.97f, 1.01f };
+    static const s16 kYaw[5] = { 0x0000, 0x3000, 0x6800, 0x9C00, 0xD000 };
+    const float s = 96.0f / 630.0f;
+    for (int i = 0; i < 5; i++) {
+        float x = -48.0f + 24.0f * i, sy = s * kHeight[i], rz = 0.0f;
+        if (hpFrac < 0.5f && i == 1) {
+            sy *= 0.55f; // snapped off
+        } else if (hpFrac < 0.5f && i == 3) {
+            rz = -0.3f; // leaning on the log beside it
+        }
+        DrawDLYaw(play, (Gfx*)gMMPracticeLogDL, x, 0.0f, 0.0f, kYaw[i], s, sy, s, rz);
+    }
+}
+
+// Workbench: the Stock Pot Inn's desk with drawers (44 x 29 x 29 in the room, at
+// -435..-391, 210..239, 360..389), scaled 1.8x, with Gabora's smithing hammer and a
+// red-hot sword blank from the Mountain Village smithy lying on top.
+static void DrawWorkbench(PlayState* play) {
+    if (!MMPackLoaded()) {
+        // No MM pack: the dungeon shop's wooden shelves at half size.
+        DrawDL(play, (Gfx*)gShopDungenWoodenShelvesDL, 0.0f, 0.0f, 9.0f, 0.5f, 0.5f, 0.5f);
+        return;
+    }
+    const float s = 1.8f, top = 29.0f * s;
+    DrawDL(play, (Gfx*)gMMInnDeskDL, 413.0f * s, -210.0f * s, -374.5f * s, s, s, s);
+    OPEN_DISPS(play->state.gfxCtx);
+    // The hammer stands with its handle along +y and its head across x (315..3034)
+    // at 0.01. Laid flat: handle along x, head pointing back, resting on the top.
+    Matrix_Push();
+    Matrix_Translate(-10.0f, top + 4.6f, -2.0f, MTXMODE_APPLY);
+    Matrix_RotateX(M_PI / 2, MTXMODE_APPLY);
+    Matrix_RotateZ(-M_PI / 2, MTXMODE_APPLY);
+    Matrix_Scale(0.006f, 0.006f, 0.006f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gMMSmithyHammerDL);
+    Matrix_Pop();
+    // The blade (x 426..1727, its width along y) laid flat in front of the hammer.
+    // Segments 8 and 9 are En_Kgy's render-mode hooks: empty lists keep the opaque mode.
+    Gfx* empty = (Gfx*)Graph_Alloc(play->state.gfxCtx, sizeof(Gfx));
+    gSPEndDisplayList(empty);
+    gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)empty);
+    gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)empty);
+    Matrix_Push();
+    Matrix_Translate(-21.0f, top + 1.6f, 12.0f, MTXMODE_APPLY);
+    Matrix_RotateX(M_PI / 2, MTXMODE_APPLY);
+    Matrix_Scale(0.02f, 0.02f, 0.02f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gMMSmithyBladeDL);
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 // The model of each type, in the actor's local space (origin on the floor).
 static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw);
 
@@ -454,14 +588,16 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActo
                      self != nullptr ? (s16)(self->babaYaw - self->actor.shape.rot.y) : 0);
             break;
         case PLACEABLE_BARRICADE:
-            // Two large crates side by side. Below half HP one is knocked askew:
-            // the village's "broken fence" is a barricade that already took a beating.
-            DrawDL(play, (Gfx*)gLargeCrateDL, -30.0f, 0.0f, 0.0f, 0.1f, 0.1f, 0.1f);
+            // The horse-jump fence (Hyrule Field / Lon Lon), stretched up to chest
+            // height. Below half HP it sags and leans: it already took a beating.
             if (hpFrac >= 0.5f) {
-                DrawDL(play, (Gfx*)gLargeCrateDL, 30.0f, 0.0f, 0.0f, 0.1f, 0.1f, 0.1f);
+                DrawDL(play, (Gfx*)gJumpableHorseFenceDL, 0.0f, 0.0f, 0.0f, 0.0375f, 0.06f, 0.1f);
             } else {
-                DrawDL(play, (Gfx*)gLargeCrateDL, 34.0f, -6.0f, 4.0f, 0.1f, 0.08f, 0.1f, -0.45f);
+                DrawDL(play, (Gfx*)gJumpableHorseFenceDL, 0.0f, -4.0f, 0.0f, 0.0375f, 0.05f, 0.1f, -0.08f);
             }
+            break;
+        case PLACEABLE_PALISADE:
+            DrawPalisade(play, hpFrac);
             break;
         case PLACEABLE_SPIKES:
             for (int i = -1; i <= 1; i++) {
@@ -469,11 +605,10 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActo
             }
             break;
         case PLACEABLE_WORKBENCH:
-            DrawDL(play, (Gfx*)gLargeCrateDL, 0.0f, 0.0f, 0.0f, 0.1f, 0.1f, 0.1f);
-            DrawDL(play, (Gfx*)gSmallWoodenBoxDL, 14.0f, 48.0f, 6.0f, 0.06f, 0.06f, 0.06f);
+            DrawWorkbench(play);
             break;
         case PLACEABLE_CHEST:
-            DrawDL(play, (Gfx*)gSmallWoodenBoxDL, 0.0f, 0.0f, 0.0f, 0.2f, 0.2f, 0.2f);
+            DrawChest(play);
             break;
         case PLACEABLE_SIGN:
             DrawDL(play, (Gfx*)gSignRectangularDL, 0.0f, 0.0f, 0.0f, 0.01f, 0.01f, 0.01f);
