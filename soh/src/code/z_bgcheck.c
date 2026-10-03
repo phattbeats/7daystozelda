@@ -1506,6 +1506,8 @@ typedef struct {
 /**
  * Allocate CollisionContext
  */
+s32 SevenDays_DynaBudget(s16 sceneNum); // soh/SevenDays/Placeables.cpp
+
 void BgCheck_Allocate(CollisionContext* colCtx, PlayState* play, CollisionHeader* colHeader) {
     static BgCheckSceneSubdivisionEntry sceneSubdivisionList[] = {
         { SCENE_SHADOW_TEMPLE, { 23, 7, 14 }, -1 },
@@ -1612,6 +1614,22 @@ void BgCheck_Allocate(CollisionContext* colCtx, PlayState* play, CollisionHeader
     colCtx->memSize *= 2;
     colCtx->dyna.polyListMax *= 2;
     colCtx->dyna.vtxListMax *= 2;
+
+    // 7 Days to Zelda: a base's pieces share one combined collision actor, which
+    // can hold 100+ boxes (12 polys each). Grow the dynamic lists in the scenes a
+    // base can stand in, and the BG budget with them, so the scene's own lookup
+    // nodes are not squeezed.
+    {
+        s32 dynaMax = SevenDays_DynaBudget(play->sceneNum);
+        if (dynaMax > colCtx->dyna.polyListMax) {
+            colCtx->memSize += (dynaMax - colCtx->dyna.polyListMax) * sizeof(CollisionPoly) +
+                               (dynaMax - colCtx->dyna.vtxListMax) * sizeof(Vec3s) +
+                               (dynaMax - colCtx->dyna.polyNodesMax) * sizeof(SSNode);
+            colCtx->dyna.polyListMax = dynaMax;
+            colCtx->dyna.vtxListMax = dynaMax;
+            colCtx->dyna.polyNodesMax = dynaMax;
+        }
+    }
 
     memSize = colCtx->subdivAmount.x * sizeof(StaticLookup) * colCtx->subdivAmount.y * colCtx->subdivAmount.z +
               colCtx->colHeader->numPolygons * sizeof(u8) + colCtx->dyna.polyNodesMax * sizeof(SSNode) +

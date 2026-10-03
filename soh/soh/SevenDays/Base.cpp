@@ -1259,6 +1259,23 @@ const char* sevendays_test_base() {
             n += a->id == PlaceableActorId();
         }
         j["placeableActors"] = n;
+        // PHA-3916: dynamic collision headroom (slots in use, the lists' size and
+        // fill) and the actor arena left after the bigger lists.
+        DynaCollisionContext& dyna = gPlayState->colCtx.dyna;
+        int slots = 0;
+        for (int i = 0; i < BG_ACTOR_MAX; i++) {
+            slots += (dyna.bgActorFlags[i] & 1) != 0;
+        }
+        u32 maxFree = 0, free = 0, alloc = 0;
+        ZeldaArena_GetSizes(&maxFree, &free, &alloc);
+        j["dyna"] = { { "slots", slots },
+                      { "polyMax", dyna.polyListMax },
+                      { "nodeMax", dyna.polyNodes.max },
+                      { "nodes", dyna.polyNodes.count } };
+        j["arenaFree"] = free;
+        j["floorBgId"] = player->actor.floorBgId;
+        j["frames"] = gPlayState->gameplayFrames;
+        j["wallBgId"] = player->actor.wallBgId;
     }
     out = j.dump();
     return out.c_str();

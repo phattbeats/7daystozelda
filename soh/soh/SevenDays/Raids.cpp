@@ -732,8 +732,20 @@ static bool TrySpawnRaider() {
 }
 
 // Barricade damage: every raider's body against every destructible piece's box.
+// The pieces are looked up once per frame, not once per raider (100+ pieces).
+struct DrainPiece {
+    uint16_t id;
+    Actor* actor;
+    const PlaceableInfo* info;
+};
 static void DrainBarricades() {
-    auto pieces = SpawnedPlaceables();
+    std::vector<DrainPiece> pieces;
+    for (auto& [id, actor] : SpawnedPlaceables()) {
+        const Placeable* p = FindPlaceable(id);
+        if (p != nullptr && GetPlaceableInfo(p->type).maxHp != 0 && p->type != PLACEABLE_SPIKES) {
+            pieces.push_back({ id, actor, &GetPlaceableInfo(p->type) }); // spikes are walked over (and bite back)
+        }
+    }
     if (pieces.empty()) {
         return;
     }
@@ -743,15 +755,8 @@ static void DrainBarricades() {
         if (!IsRaiderType(a->id) || a->colChkInfo.health == 0 || a->update == nullptr) {
             continue;
         }
-        for (auto& [id, actor] : pieces) {
-            const Placeable* p = FindPlaceable(id);
-            if (p == nullptr) {
-                continue;
-            }
-            const PlaceableInfo& info = GetPlaceableInfo(p->type);
-            if (info.maxHp == 0 || p->type == PLACEABLE_SPIKES) {
-                continue; // spikes are walked over (and bite back)
-            }
+        for (auto& [id, actor, infoPtr] : pieces) {
+            const PlaceableInfo& info = *infoPtr;
             f32 dx = a->world.pos.x - actor->world.pos.x, dz = a->world.pos.z - actor->world.pos.z;
             f32 dy = a->world.pos.y - actor->world.pos.y;
             if (dy < -30.0f || dy > info.height + 60.0f) {
@@ -777,11 +782,16 @@ static void DrainBarricades() {
 
 static bool TouchingBarricade(Actor* a) {
     for (auto& [id, actor] : SpawnedPlaceables()) {
+        // Cheap distance reject first: the lookup is linear in the piece count.
+        f32 d = Math_Vec3f_DistXZ(&a->world.pos, &actor->world.pos);
+        if (d > 200.0f) {
+            continue;
+        }
         const Placeable* p = FindPlaceable(id);
         if (p == nullptr || GetPlaceableInfo(p->type).maxHp == 0) {
             continue;
         }
-        if (Math_Vec3f_DistXZ(&a->world.pos, &actor->world.pos) < GetPlaceableInfo(p->type).halfX + 45.0f) {
+        if (d < GetPlaceableInfo(p->type).halfX + 45.0f) {
             return true;
         }
     }

@@ -171,7 +171,7 @@ int FindPlaceableTypeForKit(const std::string& kit); // -1 if none
 
 constexpr int ERA_ADULT = 0; // == gSaveContext.linkAge
 constexpr int ERA_CHILD = 1;
-constexpr int BASE_CAP = 24;
+constexpr int BASE_CAP = 100; // PHA-3916: pieces share chunked collision actors (Placeables.cpp)
 constexpr float BASE_RADIUS = 800.0f;
 
 struct Placeable {

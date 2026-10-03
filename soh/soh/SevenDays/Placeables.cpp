@@ -24,11 +24,16 @@ extern PlayState* gPlayState;
  * table changes):
  *
  *   SevenDays_Placeable  one actor for every placeable type (params = stable id).
- *                        A DynaPolyActor with an in-code box CollisionHeader
- *                        (8 vertices, 12 triangles) registered with
- *                        DynaPoly_SetBgActor, so Link and enemies collide with it
- *                        like scenery. Drawn with display lists the ROM already
- *                        has (large/small crates, the rectangular sign, the spike).
+ *                        Drawn with display lists the ROM already has (large/small
+ *                        crates, the rectangular sign, the spike). It has no
+ *                        collision of its own: see SevenDays_BaseCollision.
+ *   SevenDays_BaseCollision  PHA-3916: the pieces' boxes (8 vertices, 12 triangles
+ *                        each), merged into one CollisionHeader per 640-unit
+ *                        chunk of the base and registered with DynaPoly_SetBgActor,
+ *                        so Link and enemies collide with them like scenery. A base
+ *                        takes a handful of the scene's 50 dyna slots however many
+ *                        pieces it has; chunking keeps each bounding sphere small,
+ *                        so a floor or wall check only walks the nearby pieces.
  *   SevenDays_Ghost      placement mode's translucent ghost. ACTORCAT_SWITCH so it
  *                        updates before Link and can take the buttons it uses.
  */
@@ -36,7 +41,7 @@ extern PlayState* gPlayState;
 using namespace SevenDays;
 
 struct PlaceableActor {
-    DynaPolyActor dyna;
+    Actor actor;
     ColliderCylinder spikeCollider;
     uint16_t id;
     uint8_t type;
@@ -48,6 +53,7 @@ struct PlaceableActor {
 
 static int16_t sPlaceableId = -1;
 static int16_t sGhostId = -1;
+static int16_t sCollisionId = -1;
 
 int16_t SevenDays::PlaceableActorId() {
     return sPlaceableId;
@@ -125,6 +131,190 @@ static void BuildBox(BoxCollision& box, const PlaceableInfo& info) {
     hdr.cameraDataList = nullptr;
     hdr.numWaterBoxes = 0;
     hdr.waterBoxes = nullptr;
+}
+
+// MARK: - SevenDays_BaseCollision: the pieces' boxes, one header per chunk
+
+constexpr f32 CHUNK_SIZE = 640.0f;
+constexpr int CHUNK_MAX = 24; // a BASE_RADIUS base spans at most 4x4 chunks
+
+struct CollisionChunk {
+    bool used = false;
+    int cx = 0, cz = 0;
+    Actor* actor = nullptr; // the SevenDays_BaseCollision actor (params = slot)
+    s32 bgId = BG_ACTOR_MAX;
+    std::vector<Vec3s> verts;
+    std::vector<CollisionPoly> polys;
+    CollisionHeader header;
+};
+static CollisionChunk sChunks[CHUNK_MAX];
+static bool sCollisionDirty = false;
+
+// Fill a chunk's header with the boxes of its pieces, relative to its actor.
+static void FillChunk(CollisionChunk& ch, const std::vector<Actor*>& pieces) {
+    ch.verts.clear();
+    ch.polys.clear();
+    Vec3f origin = ch.actor->world.pos;
+    s16 minX = 0x7FFF, minY = 0x7FFF, minZ = 0x7FFF, maxX = -0x7FFF, maxY = -0x7FFF, maxZ = -0x7FFF;
+    for (Actor* a : pieces) {
+        const BoxCollision& box = sBoxes[((PlaceableActor*)a)->type];
+        // The same transform DynaPoly_ExpandSRT applied to a piece's own header.
+        MtxF mtx;
+        SkinMatrix_SetTranslateRotateYXZScale(&mtx, 1.0f, 1.0f, 1.0f, 0, a->shape.rot.y, 0, a->world.pos.x - origin.x,
+                                              a->world.pos.y - origin.y, a->world.pos.z - origin.z);
+        u16 base = (u16)ch.verts.size();
+        for (const Vec3s& v : box.verts) {
+            Vec3f in = { (f32)v.x, (f32)v.y, (f32)v.z }, out;
+            SkinMatrix_Vec3fMtxFMultXYZ(&mtx, &in, &out);
+            Vec3s o = { (s16)lroundf(out.x), (s16)lroundf(out.y), (s16)lroundf(out.z) };
+            minX = std::min(minX, o.x), minY = std::min(minY, o.y), minZ = std::min(minZ, o.z);
+            maxX = std::max(maxX, o.x), maxY = std::max(maxY, o.y), maxZ = std::max(maxZ, o.z);
+            ch.verts.push_back(o);
+        }
+        // A rotation about Y keeps each triangle's winding: ExpandSRT recomputes
+        // the normals from the moved vertices.
+        for (const CollisionPoly& p : box.polys) {
+            CollisionPoly q = p;
+            q.flags_vIA = p.flags_vIA + base;
+            q.flags_vIB = p.flags_vIB + base;
+            q.vIC = p.vIC + base;
+            ch.polys.push_back(q);
+        }
+    }
+    CollisionHeader& hdr = ch.header;
+    hdr = sBoxes[0].header;
+    hdr.minBounds = { minX, minY, minZ };
+    hdr.maxBounds = { maxX, maxY, maxZ };
+    hdr.numVertices = (u16)ch.verts.size();
+    hdr.vtxList = ch.verts.data();
+    hdr.numPolygons = (u16)ch.polys.size();
+    hdr.polyList = ch.polys.data();
+    hdr.surfaceTypeList = sBoxes[0].surface;
+}
+
+static bool ChunkAlive(const CollisionChunk& ch) {
+    return ch.used && ch.actor != nullptr && ch.actor->update != nullptr;
+}
+
+// Regroup every live piece into chunks and rebuild the headers that changed
+// hands. Runs when a piece spawns or goes away, never per frame.
+static void RebuildBaseCollision(PlayState* play) {
+    if (!sCollisionDirty) {
+        return;
+    }
+    sCollisionDirty = false;
+    // Forget chunks whose actor is not in this scene's list (a reset that
+    // skipped Collision_Destroy must not leave a dangling pointer).
+    bool seen[CHUNK_MAX] = {};
+    for (Actor* a = play->actorCtx.actorLists[ACTORCAT_BG].head; a != nullptr; a = a->next) {
+        if (a->id == sCollisionId && a->params >= 0 && a->params < CHUNK_MAX && sChunks[a->params].actor == a) {
+            seen[a->params] = true;
+        }
+    }
+    for (int i = 0; i < CHUNK_MAX; i++) {
+        if (!seen[i]) {
+            sChunks[i].used = false;
+            sChunks[i].actor = nullptr;
+            sChunks[i].bgId = BG_ACTOR_MAX;
+        }
+    }
+    std::vector<Actor*> byChunk[CHUNK_MAX];
+    for (Actor* a = play->actorCtx.actorLists[ACTORCAT_BG].head; a != nullptr; a = a->next) {
+        if (a->id != sPlaceableId || a->update == nullptr || ((PlaceableActor*)a)->type >= PLACEABLE_COUNT) {
+            continue;
+        }
+        int cx = (int)floorf(a->world.pos.x / CHUNK_SIZE), cz = (int)floorf(a->world.pos.z / CHUNK_SIZE);
+        int slot = -1, freeSlot = -1;
+        for (int i = 0; i < CHUNK_MAX; i++) {
+            if (ChunkAlive(sChunks[i]) || !byChunk[i].empty()) {
+                if (sChunks[i].cx == cx && sChunks[i].cz == cz) {
+                    slot = i;
+                    break;
+                }
+            } else if (freeSlot < 0) {
+                freeSlot = i;
+            }
+        }
+        if (slot < 0) {
+            // Out of chunks (never for a BASE_RADIUS base): share the last one.
+            slot = freeSlot >= 0 ? freeSlot : CHUNK_MAX - 1;
+            if (freeSlot >= 0) {
+                sChunks[slot].cx = cx;
+                sChunks[slot].cz = cz;
+            }
+        }
+        byChunk[slot].push_back(a);
+    }
+    int polys = 0, chunks = 0;
+    for (int i = 0; i < CHUNK_MAX; i++) {
+        CollisionChunk& ch = sChunks[i];
+        if (byChunk[i].empty()) {
+            if (ChunkAlive(ch)) {
+                Actor_Kill(ch.actor);
+            }
+            ch.used = false;
+            ch.actor = nullptr;
+            continue;
+        }
+        if (!ChunkAlive(ch)) {
+            ch.used = true;
+            ch.bgId = BG_ACTOR_MAX;
+            ch.actor = Actor_Spawn(&play->actorCtx, play, sCollisionId, (ch.cx + 0.5f) * CHUNK_SIZE,
+                                   byChunk[i][0]->world.pos.y, (ch.cz + 0.5f) * CHUNK_SIZE, 0, 0, 0, (s16)i, false);
+            if (ch.actor == nullptr) {
+                ch.used = false;
+                continue;
+            }
+            ch.actor->room = -1;
+        }
+        FillChunk(ch, byChunk[i]);
+        if (ch.bgId >= BG_ACTOR_MAX) {
+            ch.bgId = DynaPoly_SetBgActor(play, &play->colCtx.dyna, ch.actor, &ch.header);
+        } else {
+            // Same slot, new geometry: DynaPoly_Setup re-expands it next frame.
+            func_8003EE6C(play, &play->colCtx.dyna);
+        }
+        polys += ch.header.numPolygons;
+        chunks++;
+    }
+    ESYNC_LOG("[SevenDays] base collision: {} polys in {} chunks (dyna max {})", polys, chunks,
+                play->colCtx.dyna.polyListMax);
+}
+
+static void Collision_Init(Actor* thisx, PlayState* play) {
+    DynaPolyActor_Init((DynaPolyActor*)thisx, 0);
+    thisx->room = -1;
+    Actor_SetScale(thisx, 1.0f);
+}
+
+static void Collision_Destroy(Actor* thisx, PlayState* play) {
+    if (thisx->params < 0 || thisx->params >= CHUNK_MAX) {
+        return;
+    }
+    CollisionChunk& ch = sChunks[thisx->params];
+    if (ch.actor != thisx) {
+        return;
+    }
+    if (ch.bgId < BG_ACTOR_MAX) {
+        DynaPoly_DeleteBgActor(play, &play->colCtx.dyna, ch.bgId);
+    }
+    ch.used = false;
+    ch.actor = nullptr;
+    ch.bgId = BG_ACTOR_MAX;
+    // A scene change takes the pieces with it; a lone kill (an actor-list purge)
+    // gets rebuilt from whatever pieces are left.
+    sCollisionDirty = true;
+}
+
+static void Collision_Update(Actor* thisx, PlayState* play) {
+    RebuildBaseCollision(play);
+}
+
+// PHA-3916: grow the dynamic collision lists where a base can stand
+// (BgCheck_Allocate, z_bgcheck.c). 4096 polys/vertices/nodes, about 80 KB of
+// the play arena: room for 100+ pieces next to the scene's own movers.
+extern "C" s32 SevenDays_DynaBudget(s16 sceneNum) {
+    return BaseEnabled() && IsOutdoorScene(sceneNum) ? 4096 : 0;
 }
 
 // MARK: - Drawing
@@ -281,8 +471,7 @@ static void Placeable_Init(Actor* thisx, PlayState* play) {
         thisx->world.pos.y = thisx->home.pos.y = floorY;
     }
 
-    DynaPolyActor_Init(&self->dyna, 0);
-    self->dyna.bgId = DynaPoly_SetBgActor(play, &play->colCtx.dyna, thisx, &sBoxes[self->type].header);
+    sCollisionDirty = true;
 
     uint16_t textId = TextFor(self->type);
     if (textId != 0) {
@@ -303,7 +492,7 @@ static void Placeable_Destroy(Actor* thisx, PlayState* play) {
     if (self->type == 0xFF) {
         return;
     }
-    DynaPoly_DeleteBgActor(play, &play->colCtx.dyna, self->dyna.bgId);
+    sCollisionDirty = true;
     if (self->type == PLACEABLE_SPIKES) {
         Collider_DestroyCylinder(play, &self->spikeCollider);
     }
@@ -313,6 +502,7 @@ static void Placeable_Destroy(Actor* thisx, PlayState* play) {
 static void Placeable_Update(Actor* thisx, PlayState* play) {
     PlaceableActor* self = (PlaceableActor*)thisx;
     const PlaceableInfo& info = GetPlaceableInfo(self->type);
+    RebuildBaseCollision(play);
 
     if (thisx->textId != 0) {
         if (self->talking) {
@@ -457,6 +647,19 @@ void SevenDays::RegisterPlaceableActors() {
     ghost.update = Ghost_Update;
     ghost.draw = Ghost_Draw;
     sGhostId = (int16_t)ActorDB::Instance->AddEntry(ghost).entry.id;
+
+    ActorDBInit collision;
+    collision.name = "SevenDays_BaseCollision";
+    collision.desc = "7 Days to Zelda: the collision of a chunk of the base's pieces";
+    collision.category = ACTORCAT_BG;
+    collision.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED;
+    collision.objectId = OBJECT_GAMEPLAY_KEEP;
+    collision.instanceSize = sizeof(DynaPolyActor);
+    collision.init = Collision_Init;
+    collision.destroy = Collision_Destroy;
+    collision.update = Collision_Update;
+    collision.draw = nullptr;
+    sCollisionId = (int16_t)ActorDB::Instance->AddEntry(collision).entry.id;
 }
 
 Actor* SevenDays::SpawnPlaceableActor(const Placeable& p) {
