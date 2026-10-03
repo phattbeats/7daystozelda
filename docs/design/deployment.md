@@ -73,3 +73,12 @@ Brandon OK'd printing the invite key in the 7DtZ devlog, which is for subscriber
 - Anyone who already opened the bare URL needs the keyed link once. After that, a cookie lasting a year remembers the key.
 - Verified on the live site: the bare `/` returns 403 with the "needs the invite link" page; `/?key=` returns 200 and sets the cookie; `/anchor` returns 403 for a WebSocket upgrade without the cookie and 101 with it; `/healthz` returns 200; the container is healthy.
 - **On every redeploy, keep `-e ACCESS_KEY=<ACCESS_KEY>`** in the run command. If you leave it out, the site is open again.
+
+
+## Change 2026-10-03: PHA-3935 game build (spec gaps)
+Brandon asked for a redeploy after PHA-3935.
+- Built from `main` at `54b3271` (includes PHA-3901 colors and PHA-3939 lobby pickers). Only `soh.js` and `soh.wasm` changed, plus fresh `.gz` copies. `soh.data` is byte-identical to the live one, so `soh.data` and `soh.o2r` (with the title pack) stay as they were.
+- `public/index.html` is the live page with `soh.js?v=66c28587` (was `f23bbb19`), plus its `.gz`.
+- Deploy: tagged `soh-web:pha3939` as the rollback `soh-web:pre-pha3935`, then built `soh-web:pha3935` (also tagged `latest`) FROM the rollback with `COPY public/`. Build dir: `appdata/7daystozelda/deploy-pha3935/`. Recreated `soh-web` with the step 3 command, the log options, `-e ACCESS_KEY` copied from the old container, and `docker network connect phattvip`.
+- Verified on the live site: `/healthz` 200, bare `/` 403, keyed URL 200; Cloudflare serves the new `soh.js` (md5 matches) and `soh.wasm` 200; container healthy. In the game on zelda.phatt.vip (GPU Chrome, solo, an imported save): new piece types load from the save, Link walks through the player gate, a barricade upgrades to stone then iron, an iron wall is repaired and a new one crafted and placed, Navi's C-Up tip and evening warning show, and a raid night spawned 9 raiders all 335+ from a torch while the bomb traps went off 3 times.
+- Rollback: `docker rm -f soh-web` and rerun the step 3 command with `soh-web:pre-pha3935`.
