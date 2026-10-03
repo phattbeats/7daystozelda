@@ -1670,6 +1670,17 @@ const char* sevendays_test_raid_state() {
     }
     j["eveWarnedDay"] = sEveWarnedDay;
     j["townsfolkHidden"] = sTownsfolkHidden;
+    j["rocks"] = nlohmann::json::array(); // PHA-3935 tests: boulders and rocks to break
+    if (gPlayState != nullptr) {
+        for (int cat = 0; cat < ACTORCAT_MAX; cat++) {
+            for (Actor* a = gPlayState->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
+                if (a->id == ACTOR_OBJ_BOMBIWA || a->id == ACTOR_OBJ_HAMISHI || a->id == ACTOR_EN_ISHI) {
+                    j["rocks"].push_back({ a->id, a->params, (int)a->world.pos.x, (int)a->world.pos.y,
+                                           (int)a->world.pos.z });
+                }
+            }
+        }
+    }
     j["npcs"] = nlohmann::json::array();
     if (gPlayState != nullptr) {
         for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_NPC].head; a != nullptr; a = a->next) {
@@ -1755,6 +1766,13 @@ void sevendays_test_raid(const char* cmdC) {
             Item_Give(gPlayState, ITEM_BRACELET);
             Item_Give(gPlayState, ITEM_GAUNTLETS_SILVER);
         }
+    } else if (cmd == "bomb") {
+        // PHA-3935 tests: a lit bomb 50 ahead of Link (boulders for Stone and Ore).
+        Player* player = GET_PLAYER(gPlayState);
+        Vec3f at = player->actor.world.pos;
+        at.x += Math_SinS(player->actor.shape.rot.y) * 50.0f;
+        at.z += Math_CosS(player->actor.shape.rot.y) * 50.0f;
+        Actor_Spawn(&gPlayState->actorCtx, gPlayState, ACTOR_EN_BOM, at.x, at.y, at.z, 0, 0, 0, 0, false);
     } else if (cmd == "age") {
         SwitchAge(); // PHA-3935 tests: the seven-year jump without the Master Sword
     } else if (cmd.rfind("bp:", 0) == 0) {

@@ -418,6 +418,21 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActo
                 DrawDL(play, (Gfx*)gBlockSmallDL, 30.0f, 0.0f, 0.0f, 0.0075f, 0.005f, 0.0075f); // knocked down
             }
             break;
+        case PLACEABLE_IRONWALL:
+            // The stone wall's blocks, washed steel blue-grey, with an iron grate across.
+            {
+                OPEN_DISPS(play->state.gfxCtx);
+                gDPSetGrayscaleColor(POLY_OPA_DISP++, 120, 130, 150, 255);
+                gSPGrayscale(POLY_OPA_DISP++, true);
+                CLOSE_DISPS(play->state.gfxCtx);
+                DrawDL(play, (Gfx*)gBlockSmallDL, -30.0f, 0.0f, 0.0f, 0.0075f, 0.0075f, 0.0075f);
+                DrawDL(play, (Gfx*)gBlockSmallDL, 30.0f, 0.0f, 0.0f, 0.0075f, hpFrac >= 0.5f ? 0.0075f : 0.005f,
+                       0.0075f);
+                OPEN_DISPS(play->state.gfxCtx);
+                gSPGrayscale(POLY_OPA_DISP++, false);
+                CLOSE_DISPS(play->state.gfxCtx);
+            }
+            break;
         case PLACEABLE_BOMBTRAP:
             DrawBombFlower(play, self);
             break;
@@ -1172,7 +1187,7 @@ void SevenDays::RegisterPlaceableActors() {
     ActorDBInit placeable;
     placeable.name = "SevenDays_Placeable";
     placeable.desc = "7 Days to Zelda placeable (barricade, spike strip, workbench, storage chest, sign, scarecrow, Guard Baba, "
-                       "torch, stone wall, bomb-flower trap, player gate)";
+                       "torch, stone wall, bomb-flower trap, player gate, iron wall)";
     placeable.category = ACTORCAT_BG;
     placeable.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED;
     placeable.objectId = OBJECT_GAMEPLAY_KEEP;

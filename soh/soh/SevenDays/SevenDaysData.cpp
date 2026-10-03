@@ -20,6 +20,8 @@ static const MaterialInfo sMaterials[MAT_COUNT] = {
     /* MAT_WOOD */ { "Wood", "Ow! ...but look, wood!&Roll into a tree once a day for more." },
     /* MAT_BONE */ { "Bone", "Stalchild bones! Gross...&but spikes need them!" },
     /* MAT_ROT */ { "Rot", "Eww, rot! Hold your nose, Link.&It makes Deku Nuts, believe it or not!" },
+    /* MAT_ORE */ { "Ore", "That boulder was full of ore!&The hammer can turn wood into stone walls now!" },
+    /* MAT_IRON */ { "Iron", "Iron, from a silver rock!&Iron walls are the toughest there are!" },
 };
 
 const MaterialInfo& GetMaterialInfo(uint8_t material) {
@@ -30,8 +32,11 @@ const MaterialInfo& GetMaterialInfo(uint8_t material) {
 static const GatherSource sGatherSources[] = {
     // actor              material   amt unlock            dedupe s  perDay
     { ACTOR_EN_KUSA,      MAT_FIBER, 2,  UNLOCK_START,     60,       false }, // grass/bushes cut or thrown; regrows
-    { ACTOR_EN_ISHI,      MAT_STONE, 1,  UNLOCK_START,     120,      false }, // small rocks lifted and broken
+    { ACTOR_EN_ISHI,      MAT_STONE, 1,  UNLOCK_START,     120,      false, 0 }, // small rocks lifted and broken
     { ACTOR_OBJ_BOMBIWA,  MAT_STONE, 3,  UNLOCK_BOMB_BAG,  120,      false }, // bombable boulders
+    { ACTOR_OBJ_BOMBIWA,  MAT_ORE,   1,  UNLOCK_HAMMER,    120,      false }, // ...with the hammer, some ore too
+    { ACTOR_OBJ_HAMISHI,  MAT_ORE,   3,  UNLOCK_HAMMER,    120,      false }, // bronze boulders the hammer breaks
+    { ACTOR_EN_ISHI,      MAT_IRON,  2,  UNLOCK_SILVER_GAUNTLETS, 120, false, 1 }, // silver rocks thrown and broken
     { ACTOR_EN_WOOD02,    MAT_WOOD,  2,  UNLOCK_START,     1800,     true  }, // rolling into a tree, once a day
     { ACTOR_EN_SKB,       MAT_BONE,  1,  UNLOCK_DEKU_TREE, 60,       false }, // Stalchildren
     { ACTOR_EN_RD,        MAT_ROT,   2,  UNLOCK_DEKU_TREE, 60,       false }, // ReDeads and Gibdos
@@ -55,12 +60,15 @@ static const std::vector<Recipe> sRecipes = {
     { "stonewall",      "Stone wall",       RECIPE_KIT,        { { MAT_STONE, 6 }, { MAT_WOOD, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG, true },
     { "bombtrap",       "Bomb-flower trap", RECIPE_KIT,        { { MAT_STONE, 4 }, { MAT_ROT, 2 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG, true },
     { "gate",           "Player gate",      RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_STONE, 4 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_HOOKSHOT, true },
+    { "ironwall",       "Iron wall",        RECIPE_KIT,        { { MAT_IRON, 4 }, { MAT_STONE, 4 }, { MAT_ORE, 2 } }, 3, ITEM_NONE, ITEM_NONE,   1,  UNLOCK_SILVER_GAUNTLETS },
 
     { "trade_fiber",    "Sell Fiber",       RECIPE_TRADE,      { { MAT_FIBER, 5 } },                         1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },
     { "trade_wood",     "Sell Wood",        RECIPE_TRADE,      { { MAT_WOOD, 3 } },                          1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },
     { "trade_stone",    "Sell Stone",       RECIPE_TRADE,      { { MAT_STONE, 3 } },                         1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },
     { "trade_bone",     "Sell Bone",        RECIPE_TRADE,      { { MAT_BONE, 2 } },                          1, ITEM_NONE,        ITEM_NONE,      10, UNLOCK_START },
     { "trade_rot",      "Sell Rot",         RECIPE_TRADE,      { { MAT_ROT, 2 } },                           1, ITEM_NONE,        ITEM_NONE,      10, UNLOCK_START },
+    { "trade_ore",      "Sell Ore",         RECIPE_TRADE,      { { MAT_ORE, 2 } },                           1, ITEM_NONE,        ITEM_NONE,      20, UNLOCK_HAMMER },
+    { "trade_iron",     "Sell Iron",        RECIPE_TRADE,      { { MAT_IRON, 1 } },                          1, ITEM_NONE,        ITEM_NONE,      20, UNLOCK_SILVER_GAUNTLETS },
 
     // M10 merchants: what they hand over, and the price (out). Every price is at
     // least twice the Trade tab's rate, so selling and buying back never pays.
@@ -71,10 +79,11 @@ static const std::vector<Recipe> sRecipes = {
     { "buy_rot",        "Rot",              RECIPE_BUY,        { { MAT_ROT, 2 } },                           0, ITEM_NONE,        ITEM_NONE,      20, UNLOCK_START },
     { "buy_wood_bulk",  "Wood",             RECIPE_BUY,        { { MAT_WOOD, 10 } },                         0, ITEM_NONE,        ITEM_NONE,      30, UNLOCK_START },
     { "buy_fiber_bulk", "Fiber",            RECIPE_BUY,        { { MAT_FIBER, 15 } },                        0, ITEM_NONE,        ITEM_NONE,      30, UNLOCK_START },
+    { "buy_ore",        "Ore",              RECIPE_BUY,        { { MAT_ORE, 2 } },                           0, ITEM_NONE,        ITEM_NONE,      50, UNLOCK_HAMMER },
 };
 
-// Kokiri Forest has none: the prologue stays gathering-first. Ore doesn't exist
-// yet; Goron City adds it when it does.
+// Kokiri Forest has none: the prologue stays gathering-first. Goron City sells Ore
+// once the hammer opens it (PHA-3935).
 static const std::vector<Merchant> sMerchants = {
     // scene                   room anchor x, y, z      (beside)
     { SCENE_MARKET_DAY,        0,   393,   0,    264,   // a market-goer by the bazaar's side of the square
@@ -85,7 +94,7 @@ static const std::vector<Merchant> sMerchants = {
       { "buy_wood", "buy_fiber" } },
     { SCENE_GORON_CITY,        3,   84,    -3,   -314,  // a Goron on the bottom floor
       "Goron stone", "A heap of good cut stone.^\"Goron rock! The best for walls, brother!\"",
-      { "buy_stone" } },
+      { "buy_stone", "buy_ore" } },
     { SCENE_GRAVEYARD,         1,   -474,  61,   447,   // by the graves, near Dampe's hut
       "Dampe's bone pile", "Dampe's leftovers, stacked by the graves.^\"Heh heh... bones for rupees. Don't ask.\"",
       { "buy_bone" } },
@@ -103,17 +112,17 @@ static const std::vector<Merchant> sMerchants = {
 
 // MARK: - M7 loot
 
-// Material weights (Fiber, Stone, Wood, Bone, Rot) by area tier. Pots, crates and
-// supply caches roll on these: low tiers pay the forest's materials, deeper
-// dungeons pay stone, bone and rot.
+// Material weights (Fiber, Stone, Wood, Bone, Rot, Ore, Iron) by area tier. Pots,
+// crates and supply caches roll on these: low tiers pay the forest's materials,
+// deeper dungeons pay stone, bone and rot, the last two ore and iron.
 // clang-format off
 static const uint8_t sLootWeights[][MAT_COUNT] = {
-    /* UNLOCK_START            */ { 40, 10, 40, 10, 0  },
-    /* UNLOCK_DEKU_TREE        */ { 30, 10, 35, 20, 5  },
-    /* UNLOCK_BOMB_BAG         */ { 10, 40, 20, 20, 10 },
-    /* UNLOCK_HOOKSHOT         */ { 10, 35, 20, 20, 15 },
-    /* UNLOCK_HAMMER           */ { 5,  40, 15, 20, 20 },
-    /* UNLOCK_SILVER_GAUNTLETS */ { 5,  35, 15, 25, 20 },
+    /* UNLOCK_START            */ { 40, 10, 40, 10, 0,  0,  0 },
+    /* UNLOCK_DEKU_TREE        */ { 30, 10, 35, 20, 5,  0,  0 },
+    /* UNLOCK_BOMB_BAG         */ { 10, 40, 20, 20, 10, 0,  0 },
+    /* UNLOCK_HOOKSHOT         */ { 10, 35, 20, 20, 15, 0,  0 },
+    /* UNLOCK_HAMMER           */ { 5,  30, 15, 20, 15, 15, 0 },
+    /* UNLOCK_SILVER_GAUNTLETS */ { 5,  25, 10, 20, 15, 15, 10 },
 };
 
 struct SceneTierRow {
@@ -249,13 +258,14 @@ const std::vector<Recipe>& GetRecipes() {
     return sRecipes;
 }
 
-const GatherSource* FindGatherSource(int16_t actorId) {
+std::vector<const GatherSource*> FindGatherSources(int16_t actorId) {
+    std::vector<const GatherSource*> out;
     for (auto& source : sGatherSources) {
         if (source.actorId == actorId) {
-            return &source;
+            out.push_back(&source);
         }
     }
-    return nullptr;
+    return out;
 }
 
 const Recipe* FindRecipe(const std::string& id) {
@@ -268,8 +278,7 @@ const Recipe* FindRecipe(const std::string& id) {
 }
 
 // Tiers read the save: items owned, upgrades, boss flags. Hammer and Silver
-// Gauntlets open Ore and iron, which arrive with placeables (M5+); their tiers
-// already resolve so recipes can be added to the table without logic changes.
+// Gauntlets open Ore and Iron (PHA-3935).
 bool IsUnlocked(Unlock unlock) {
     switch (unlock) {
         case UNLOCK_START:

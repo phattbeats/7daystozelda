@@ -57,15 +57,21 @@ static const std::string MATERIALS_REQUEST = "MATERIALS_REQUEST";
 static const char* CUSTOM_MESSAGE_TABLE = "SevenDays";
 
 // Navi first-time lines, one save flag each.
+// The bits and text ids are saved with the file: materials added after the first
+// five (PHA-3935) keep their first-gather lines in GATHER_FIRST_BIT_NEW+ instead.
 enum FirstLine : uint8_t {
-    FIRST_GATHER_BASE = 0, // + material
-    FIRST_CRAFT = MAT_COUNT,
+    FIRST_GATHER_BASE = 0, // + material (the first MAT_LEGACY_COUNT)
+    FIRST_CRAFT = MAT_LEGACY_COUNT,
     FIRST_TRADE,
     FIRST_BUY,
     FIRST_COUNT,
 };
 
-static const char* sFirstLineText[FIRST_COUNT - MAT_COUNT] = {
+constexpr uint8_t GATHER_FIRST_BIT_NEW = 28;       // Ore 28, Iron 29
+constexpr uint16_t GATHER_TEXT_OFFSET_NEW = 0x17; // Ore 0x17, Iron 0x18
+static_assert(GATHER_FIRST_BIT_NEW + (MAT_COUNT - MAT_LEGACY_COUNT) <= 32, "firsts bitfield");
+
+static const char* sFirstLineText[FIRST_COUNT - MAT_LEGACY_COUNT] = {
     /* FIRST_CRAFT */ "You made it yourself, Link!&Kits wait in the pool until you build.",
     /* FIRST_TRADE */ "Rupees for rocks and twigs?&Mido's shield isn't so far off now!",
     /* FIRST_BUY   */ "Bought, not gathered... it all goes&in the village pool just the same!",
@@ -260,6 +266,23 @@ static void QueueNavi(uint8_t first) {
     sPendingNavi.push_back(SEVEN_DAYS_TEXT_BASE + first);
 }
 
+static uint16_t GatherFirstText(uint8_t material) {
+    return SEVEN_DAYS_TEXT_BASE + (material < MAT_LEGACY_COUNT ? FIRST_GATHER_BASE + material
+                                                               : GATHER_TEXT_OFFSET_NEW + material - MAT_LEGACY_COUNT);
+}
+
+static void QueueGatherNavi(uint8_t material) {
+    if (material < MAT_LEGACY_COUNT) {
+        QueueNavi(FIRST_GATHER_BASE + material);
+        return;
+    }
+    uint32_t bit = 1u << (GATHER_FIRST_BIT_NEW + material - MAT_LEGACY_COUNT);
+    if (material < MAT_COUNT && !(sFirsts & bit)) {
+        sFirsts |= bit;
+        sPendingNavi.push_back(GatherFirstText(material));
+    }
+}
+
 void QueueNaviText(uint16_t textId) {
     if (std::find(sPendingNavi.begin(), sPendingNavi.end(), textId) == sPendingNavi.end()) {
         sPendingNavi.push_back(textId);
@@ -331,13 +354,13 @@ static void RegisterMessages() {
     LootRegisterMessages(CUSTOM_MESSAGE_TABLE);
     for (uint8_t m = 0; m < MAT_COUNT; m++) {
         CustomMessageManager::Instance->CreateMessage(
-            CUSTOM_MESSAGE_TABLE, SEVEN_DAYS_TEXT_BASE + FIRST_GATHER_BASE + m,
+            CUSTOM_MESSAGE_TABLE, GatherFirstText(m),
             CustomMessage(GetMaterialInfo(m).firstLine, TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     }
     for (uint8_t f = FIRST_CRAFT; f < FIRST_COUNT; f++) {
         CustomMessageManager::Instance->CreateMessage(
             CUSTOM_MESSAGE_TABLE, SEVEN_DAYS_TEXT_BASE + f,
-            CustomMessage(sFirstLineText[f - MAT_COUNT], TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
+            CustomMessage(sFirstLineText[f - MAT_LEGACY_COUNT], TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     }
 }
 
@@ -356,7 +379,7 @@ static void OnCredited(uint8_t material, uint32_t amount, bool quiet = false) {
     });
     Sfx_PlaySfxCentered(NA_SE_SY_GET_ITEM);
     if (!quiet) {
-        QueueNavi(FIRST_GATHER_BASE + material);
+        QueueGatherNavi(material);
     } else {
         QueueLootNavi(LOOTLINE_POT); // quiet credits are pots and crates (Loot.cpp): their own line
     }
@@ -433,15 +456,22 @@ void SendGather(uint8_t material, uint32_t amount, uint64_t sourceKey, uint32_t 
     }
 }
 
+static void GatherFrom(Actor* actor, const GatherSource* source);
+
 static void Gather(Actor* actor) {
     if (!CraftingEnabled() || gPlayState == nullptr || actor == nullptr) {
         return;
     }
-    const GatherSource* source = FindGatherSource(actor->id);
-    if (source == nullptr || !IsUnlocked(source->unlock)) {
-        return;
+    for (const GatherSource* source : FindGatherSources(actor->id)) {
+        if (!IsUnlocked(source->unlock) ||
+            (source->large >= 0 && actor->id == ACTOR_EN_ISHI && (actor->params & 1) != source->large)) {
+            continue;
+        }
+        GatherFrom(actor, source);
     }
+}
 
+static void GatherFrom(Actor* actor, const GatherSource* source) {
     uint64_t sourceKey = 0;
     if (actor->category == ACTORCAT_ENEMY) {
         // Mirrored deaths play out on every client in the scene; EnemySync's key
@@ -451,6 +481,9 @@ static void Gather(Actor* actor) {
     if (sourceKey == 0) {
         sourceKey = StaticSourceKey(actor, source->perDay ? (uint32_t)gSaveContext.totalDays : 0);
     }
+    // One actor can pay two materials (a hammered boulder: Stone and Ore); the owner
+    // dedupes by key, so each material gets its own.
+    sourceKey ^= (uint64_t)source->material << 56;
 
     nlohmann::json payload;
     payload["type"] = GATHER;
@@ -1000,16 +1033,17 @@ static void RegisterSevenDaysM4() {
         if (actor->init != NULL) {
             return;
         }
-        if (actor->id == ACTOR_EN_ISHI && (actor->params & 1) == 0) {
+        if (actor->id == ACTOR_EN_ISHI) {
             // Only a rock that was broken: thrown (it left home) or smashed where it
             // sat (AC hit). Obj_Mure2 rock circles despawn their rocks with
-            // Actor_Kill when Link walks away, which must not pay out.
+            // Actor_Kill when Link walks away, which must not pay out. Small rocks
+            // pay Stone; silver rocks pay Iron with the Silver Gauntlets (PHA-3935).
             EnIshi* rock = (EnIshi*)actor;
             bool thrown = Math_Vec3f_DistXZ(&actor->world.pos, &actor->home.pos) > 10.0f;
             if (thrown || (rock->collider.base.acFlags & AC_HIT)) {
                 Gather(actor);
             }
-        } else if (actor->id == ACTOR_OBJ_BOMBIWA) {
+        } else if (actor->id == ACTOR_OBJ_BOMBIWA || actor->id == ACTOR_OBJ_HAMISHI) {
             Gather(actor);
         }
     });

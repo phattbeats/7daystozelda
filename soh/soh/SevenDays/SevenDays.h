@@ -53,8 +53,11 @@ enum Material : uint8_t {
     MAT_WOOD,
     MAT_BONE,
     MAT_ROT,
+    MAT_ORE,  // PHA-3935: Megaton Hammer tier, from boulders
+    MAT_IRON, // PHA-3935: Silver Gauntlets tier, from silver rocks
     MAT_COUNT,
 };
+constexpr uint8_t MAT_LEGACY_COUNT = MAT_ROT + 1; // materials before PHA-3935 (Navi's firsts layout)
 
 // Tool/boss tiers that open gathering sources and recipes (PHA-3870 progression).
 enum Unlock : uint8_t {
@@ -116,8 +119,10 @@ struct GatherSource {
     Unlock unlock;
     uint16_t dedupeSeconds; // owner ignores the same sourceKey for this long (regrowth)
     bool perDay;            // sourceKey also carries the in-game day (trees: once a day)
+    int8_t large = -1;      // EnIshi: 0 small rocks, 1 silver rocks (-1: any)
 };
-const GatherSource* FindGatherSource(int16_t actorId);
+// Every row for this actor (a hammered bombable boulder pays Stone and Ore).
+std::vector<const GatherSource*> FindGatherSources(int16_t actorId);
 
 // Shared pool as last known on this client (the owner's copy is authoritative).
 struct PoolState {
@@ -167,6 +172,7 @@ enum PlaceableType : uint8_t {
     PLACEABLE_STONEWALL, // PHA-3935: a barricade with twice the HP
     PLACEABLE_BOMBTRAP,  // PHA-3935: a bomb flower that blows up raiders who come close, then regrows
     PLACEABLE_GATE,      // PHA-3935: a wall raiders must break, that swings open for players
+    PLACEABLE_IRONWALL,  // PHA-3935: Silver Gauntlets tier, twice a stone wall's HP
     PLACEABLE_COUNT,
 };
 
@@ -247,6 +253,11 @@ bool InPlacement();
 void RequestPackUp(uint16_t id);        // one piece back into a kit (a damaged one: part of its materials)
 void RequestRepair(uint16_t id);        // PHA-3935: back to full HP for materials (half with the Megaton Hammer)
 std::string RepairCost(uint16_t id);    // "2 Wood, 1 Fiber"; "" when it needs no repair
+// PHA-3935: Megaton Hammer upgrades in place, barricade -> stone wall -> iron wall, for the
+// difference between the two kits. -1 when the piece has no upgrade (or it isn't unlocked).
+int UpgradeTarget(uint16_t id);
+std::string UpgradeCost(uint16_t id);
+void RequestUpgrade(uint16_t id);
 bool IsRuin(const Placeable& p);
 void RequestPackUpBase(int era);        // the whole base, every kit refunded
 uint16_t NearestPlaceable(float maxDist); // 0 if none

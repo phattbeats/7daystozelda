@@ -195,6 +195,15 @@ static void DrawRaidIntervalRow() {
     }
 }
 
+// PHA-3935: Ore and Iron stay off the materials line until their tier opens (or the
+// pool has some), so the line still fits the page.
+static bool MaterialShown(uint8_t m) {
+    if (m < MAT_LEGACY_COUNT || GetPool().materials[m] > 0) {
+        return true;
+    }
+    return IsUnlocked(m == MAT_ORE ? UNLOCK_HAMMER : UNLOCK_SILVER_GAUNTLETS);
+}
+
 // M5: kits in the pool become pieces of the base.
 static void DrawBaseTab() {
     const PoolState& pool = GetPool();
@@ -251,6 +260,13 @@ static void DrawBaseTab() {
     if (p != nullptr && GetPlaceableInfo(p->type).maxHp > 0 && !IsRuin(*p)) {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(1, 1, 1, 0.6f), "%u/%u HP", p->hp, GetPlaceableInfo(p->type).maxHp);
+    }
+    int upTo = p != nullptr ? UpgradeTarget(nearest) : -1;
+    if (upTo >= 0) {
+        std::string up = fmt::format("Upgrade to {} ({})", GetPlaceableInfo((uint8_t)upTo).name, UpgradeCost(nearest));
+        if (ImGui::Button(up.c_str(), ImVec2(ImGui::GetFontSize() * 14.0f, kButtonHeight))) {
+            RequestUpgrade(nearest);
+        }
     }
     ImGui::SameLine();
     static bool confirm = false;
@@ -326,6 +342,9 @@ void SevenDaysCraftingWindow::DrawElement() {
     const PoolState& pool = GetPool();
 
     for (uint8_t m = 0; m < MAT_COUNT; m++) {
+        if (!MaterialShown(m)) {
+            continue;
+        }
         if (m > 0) {
             ImGui::SameLine(0, 18.0f);
         }
@@ -416,7 +435,7 @@ const char* RecipeIcon(const Recipe& recipe) {
         { "spikes", gItemIconMaskSkullTex },      { "chest", gItemIconBombBag20Tex },
         { "stonewall", gItemIconShieldHylianTex }, { "bombtrap", gItemIconBombchuTex },
         { "gate", gItemIconHookshotTex },         { "scarecrow", gItemIconSlingshotTex },
-        { "guardbaba", gItemIconDekuNutTex },
+        { "guardbaba", gItemIconDekuNutTex },     { "ironwall", gItemIconSilverGauntletsTex },
     };
     auto it = sIcons.find(recipe.id);
     return it != sIcons.end() ? it->second : nullptr;
@@ -624,6 +643,21 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
         RequestRepair(nearest);
     };
     rows.push_back(std::move(repair));
+
+    // PHA-3935: the Megaton Hammer rebuilds walls in place.
+    int upTo = p != nullptr ? UpgradeTarget(nearest) : -1;
+    if (upTo >= 0) {
+        PageRow up;
+        up.name = fmt::format("Upgrade to {}", GetPlaceableInfo((uint8_t)upTo).name);
+        up.icon = gItemIconHammerTex;
+        up.enabled = true;
+        up.hint = UpgradeCost(nearest);
+        up.action = [nearest]() {
+            Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+            RequestUpgrade(nearest);
+        };
+        rows.push_back(std::move(up));
+    }
 
     PageRow all;
     all.name = sPage.confirmPackAll ? "Really pack it all?" : "Pack up the whole base";
@@ -918,7 +952,9 @@ extern "C" void SevenDaysKaleido_DrawPage(PlayState* play, s32 current) {
     const PoolState& pool = GetPool();
     std::string mats;
     for (uint8_t m = 0; m < MAT_COUNT; m++) {
-        mats += fmt::format("{}{} {}", m ? "  " : "", GetMaterialInfo(m).name, pool.materials[m]);
+        if (MaterialShown(m)) {
+            mats += fmt::format("{}{} {}", m ? "  " : "", GetMaterialInfo(m).name, pool.materials[m]);
+        }
     }
     if (merchant != nullptr) {
         mats += fmt::format("  Rupees {}", gSaveContext.rupees + gSaveContext.rupeeAccumulator);

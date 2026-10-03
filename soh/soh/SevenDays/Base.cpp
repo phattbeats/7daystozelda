@@ -32,6 +32,7 @@ extern PlayState* gPlayState;
  *   BASE_REQUEST   joiner  -> owner    the joiner's cached copy; higher rev wins
  *   BASE_HP        enemy authority -> owner  id, hp (owner sequences it into a BASE_DELTA)
  *   REPAIR_REQUEST player  -> owner    id, hammer (PHA-3935: full HP for materials)
+ *   UPGRADE_REQUEST player -> owner    id (PHA-3935: Megaton Hammer, wood -> stone -> iron in place)
  *
  * Every client spawns its own copy of each placeable on OnSceneSpawnActors
  * (room -1, keyed by the stable id); only add/remove/HP events travel.
@@ -55,6 +56,7 @@ static const std::string BASE_STATE = "BASE_STATE";
 static const std::string BASE_REQUEST = "BASE_REQUEST";
 static const std::string BASE_HP = "BASE_HP";
 static const std::string REPAIR_REQUEST = "REPAIR_REQUEST";
+static const std::string UPGRADE_REQUEST = "UPGRADE_REQUEST";
 
 static BaseState sBase;
 static std::unordered_map<uint16_t, Actor*> sSpawned; // placeable id -> actor in the current scene
@@ -87,6 +89,7 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     /* PLACEABLE_STONEWALL */ { "stonewall", "Stone wall",     60,   30,   60,    200 },
     /* PLACEABLE_BOMBTRAP  */ { "bombtrap",  "Bomb-flower trap", 22, 22,   8,     0   },
     /* PLACEABLE_GATE      */ { "gate",      "Player gate",    60,   8,    90,    150 },
+    /* PLACEABLE_IRONWALL  */ { "ironwall",  "Iron wall",      60,   30,   60,    400 },
 };
 // clang-format on
 
@@ -742,6 +745,100 @@ static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester
     }
 }
 
+// PHA-3935: the Megaton Hammer rebuilds walls in place, wood -> stone -> iron. It costs
+// the difference between the two kits (never less than one of each new material),
+// and the piece keeps its id, place and share of HP.
+static int UpgradeTargetOf(uint8_t type) {
+    switch (type) {
+        case PLACEABLE_BARRICADE:
+            return PLACEABLE_STONEWALL;
+        case PLACEABLE_STONEWALL:
+            return PLACEABLE_IRONWALL;
+    }
+    return -1;
+}
+
+static Unlock UpgradeUnlock(int to) {
+    return to == PLACEABLE_IRONWALL ? UNLOCK_SILVER_GAUNTLETS : UNLOCK_HAMMER;
+}
+
+static std::vector<RecipeInput> UpgradeInputs(uint8_t from, uint8_t to) {
+    std::vector<RecipeInput> out;
+    const Recipe* a = FindRecipe(GetPlaceableInfo(from).kit);
+    const Recipe* b = FindRecipe(GetPlaceableInfo(to).kit);
+    if (a == nullptr || b == nullptr) {
+        return out;
+    }
+    for (int i = 0; i < b->inputCount; i++) {
+        int have = 0;
+        for (int k = 0; k < a->inputCount; k++) {
+            have += a->inputs[k].material == b->inputs[i].material ? a->inputs[k].amount : 0;
+        }
+        int need = std::max<int>(b->inputs[i].amount - have, have == 0 ? 1 : 0);
+        if (need > 0) {
+            out.push_back({ b->inputs[i].material, (uint16_t)need });
+        }
+    }
+    return out;
+}
+
+static void ProcessUpgradeRequest(const nlohmann::json& payload, uint32_t requester) {
+    auto tell = [&](const std::string& msg, bool error) {
+        if (requester == OwnId()) {
+            Toast("Upgrade", msg, error);
+        } else {
+            nlohmann::json r;
+            r["type"] = PLACE_RESULT;
+            r["reqId"] = 0;
+            r["notice"] = msg;
+            r["error"] = error;
+            SendTo(requester, r);
+        }
+    };
+    uint16_t id = payload.value("id", (uint16_t)0);
+    Placeable* p = FindPlaceableMut(id);
+    if (p == nullptr || IsRuin(*p)) {
+        return tell("That piece is gone", true);
+    }
+    int to = UpgradeTargetOf(p->type);
+    if (to < 0) {
+        return tell(fmt::format("The {} can't be upgraded", GetPlaceableInfo(p->type).name), true);
+    }
+    if (!payload.value("hammer", false)) {
+        return tell("Upgrading walls takes the Megaton Hammer", true);
+    }
+    if (to == PLACEABLE_IRONWALL && !payload.value("silver", false)) {
+        return tell("Iron walls take the Silver Gauntlets' iron", true);
+    }
+    auto cost = UpgradeInputs(p->type, (uint8_t)to);
+    PoolState& pool = Net::MutablePool();
+    for (auto& in : cost) {
+        if (pool.materials[in.material] < in.amount) {
+            return tell(fmt::format("Upgrading to a {} takes {}", GetPlaceableInfo(to).name, MaterialsText(cost)), true);
+        }
+    }
+    for (auto& in : cost) {
+        pool.materials[in.material] -= in.amount;
+    }
+    pool.rev++;
+    std::string from = GetPlaceableInfo(p->type).name;
+    uint16_t oldMax = GetPlaceableInfo(p->type).maxHp, newMax = GetPlaceableInfo(to).maxHp;
+    p->hp = (uint16_t)std::max<int>(1, oldMax > 0 ? (int)p->hp * newMax / oldMax : newMax);
+    p->type = (uint8_t)to;
+    sBase.rev++;
+    nlohmann::json delta;
+    delta["op"] = "replace";
+    delta["placeable"] = PlaceableToJson(*p);
+    BroadcastDelta(delta);
+    Net::BroadcastPool();
+    Placeable copy = *p;
+    Despawn(id);
+    if (SpawnsHere(copy)) {
+        SpawnPlaceableActor(copy);
+    }
+    tell(fmt::format("{} rebuilt as a {} for {}", from, GetPlaceableInfo(to).name, MaterialsText(cost)), false);
+}
+
 static void ProcessRepairRequest(const nlohmann::json& payload, uint32_t requester) {
     auto tell = [&](const std::string& msg, bool error) {
         if (requester == OwnId()) {
@@ -892,6 +989,16 @@ static void ApplyDelta(const nlohmann::json& d) {
         }
         std::erase_if(sBase.placeables, [id](const Placeable& q) { return q.id == id; });
         Despawn(id);
+    } else if (op == "replace" && d.contains("placeable")) {
+        // An upgrade: same id and place, new type. The actor caches its type: respawn it.
+        Placeable q = PlaceableFromJson(d["placeable"]);
+        if (Placeable* p = FindPlaceableMut(q.id)) {
+            *p = q;
+        }
+        Despawn(q.id);
+        if (SpawnsHere(q)) {
+            SpawnPlaceableActor(q);
+        }
     } else if (op == "hp") {
         Placeable* p = FindPlaceableMut(d.value("id", (uint16_t)0));
         if (p != nullptr) {
@@ -931,7 +1038,8 @@ void Net::CommitBase() {
 
 bool BaseOwnsPacket(const std::string& type) {
     return type == PLACE_REQUEST || type == PLACE_RESULT || type == PACK_REQUEST || type == BASE_DELTA ||
-           type == BASE_STATE || type == BASE_REQUEST || type == BASE_HP || type == REPAIR_REQUEST;
+           type == BASE_STATE || type == BASE_REQUEST || type == BASE_HP || type == REPAIR_REQUEST ||
+           type == UPGRADE_REQUEST;
 }
 
 void BaseHandlePacket(const std::string& type, const nlohmann::json& payload, uint32_t from) {
@@ -963,6 +1071,10 @@ void BaseHandlePacket(const std::string& type, const nlohmann::json& payload, ui
     } else if (type == REPAIR_REQUEST) {
         if (IsOwner()) {
             ProcessRepairRequest(payload, from);
+        }
+    } else if (type == UPGRADE_REQUEST) {
+        if (IsOwner()) {
+            ProcessUpgradeRequest(payload, from);
         }
     } else if (type == BASE_HP) {
         if (IsOwner()) {
@@ -1288,6 +1400,33 @@ std::string RepairCost(uint16_t id) {
     return MaterialsText(RepairInputs(*p, IsUnlocked(UNLOCK_HAMMER)));
 }
 
+int UpgradeTarget(uint16_t id) {
+    const Placeable* p = FindPlaceable(id);
+    if (p == nullptr || IsRuin(*p) || IsDecor(id)) {
+        return -1;
+    }
+    int to = UpgradeTargetOf(p->type);
+    return to >= 0 && IsUnlocked(UNLOCK_HAMMER) && IsUnlocked(UpgradeUnlock(to)) ? to : -1;
+}
+
+std::string UpgradeCost(uint16_t id) {
+    int to = UpgradeTarget(id);
+    return to < 0 ? "" : MaterialsText(UpgradeInputs(FindPlaceable(id)->type, (uint8_t)to));
+}
+
+void RequestUpgrade(uint16_t id) {
+    nlohmann::json payload;
+    payload["type"] = UPGRADE_REQUEST;
+    payload["id"] = id;
+    payload["hammer"] = IsUnlocked(UNLOCK_HAMMER);
+    payload["silver"] = IsUnlocked(UNLOCK_SILVER_GAUNTLETS);
+    if (IsOwner()) {
+        ProcessUpgradeRequest(payload, OwnId());
+    } else {
+        SendTo(ActingOwner(), payload);
+    }
+}
+
 void RequestPackUpBase(int era) {
     nlohmann::json payload;
     payload["type"] = PACK_REQUEST;
@@ -1493,6 +1632,20 @@ void sevendays_test_pack(int id) {
     if (BaseEnabled()) {
         RequestPackUp((uint16_t)id);
     }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sevendays_test_upgrade(int id) {
+    if (BaseEnabled()) {
+        RequestUpgrade((uint16_t)id);
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* sevendays_test_upgrade_cost(int id) {
+    static std::string out;
+    out = UpgradeCost((uint16_t)id);
+    return out.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE
