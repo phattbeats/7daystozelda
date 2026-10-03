@@ -633,6 +633,141 @@ static void RegisterCacheActor() {
     sCacheActorId = (int16_t)ActorDB::Instance->AddEntry(cache).entry.id;
 }
 
+// MARK: - PHA-3935: Hookshot-tier ledge bundles
+
+// A bundle of materials on a ledge out of reach. The Hookshot hooks it
+// (ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR + a hookable bumper) and drags it to Link, who
+// gets its materials through the ordinary GATHER path. Once per in-game day.
+struct BundleActor {
+    Actor actor;
+    ColliderCylinder collider;
+    uint16_t index;
+    bool hooked;
+};
+
+static int16_t sBundleActorId = -1;
+static std::unordered_map<uint16_t, Actor*> sBundles;      // bundle index -> actor in this scene
+static std::unordered_map<uint16_t, int32_t> sBundleTaken; // bundle index -> the day it was taken
+static int sBundlesPaid = 0;                                // tests
+
+static ColliderCylinderInit sBundleCylinderInit = {
+    { COLTYPE_NONE, AT_NONE, AC_ON | AC_TYPE_PLAYER, OC1_NONE, OC2_NONE, COLSHAPE_CYLINDER },
+    { ELEMTYPE_UNK0, { 0x00000000, 0x00, 0x00 }, { DMG_HOOKSHOT, 0x00, 0x00 }, TOUCH_NONE,
+      BUMP_ON | BUMP_HOOKABLE | BUMP_NO_DAMAGE | BUMP_NO_SWORD_SFX | BUMP_NO_HITMARK, OCELEM_NONE },
+    { 20, 30, 0, { 0, 0, 0 } },
+};
+
+static void Bundle_Init(Actor* thisx, PlayState* play) {
+    BundleActor* self = (BundleActor*)thisx;
+    self->index = (uint16_t)thisx->params;
+    self->hooked = false;
+    if (self->index >= GetLedgeBundles().size()) {
+        self->index = 0xFFFF;
+        Actor_Kill(thisx);
+        return;
+    }
+    thisx->room = -1;
+    Actor_SetScale(thisx, 1.0f);
+    Vec3f probe = { thisx->world.pos.x, thisx->world.pos.y + 60.0f, thisx->world.pos.z };
+    CollisionPoly* poly = nullptr;
+    s32 bgId = BGCHECK_SCENE;
+    f32 floorY = BgCheck_EntityRaycastFloor3(&play->colCtx, &poly, &bgId, &probe);
+    if (floorY > BGCHECK_Y_MIN && fabsf(floorY - thisx->world.pos.y) < 120.0f) {
+        thisx->world.pos.y = thisx->home.pos.y = floorY;
+    }
+    Collider_InitCylinder(play, &self->collider);
+    Collider_SetCylinder(play, &self->collider, thisx, &sBundleCylinderInit);
+    // Z-targetable from the ground below, so the Hookshot flies straight at it.
+    thisx->flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+    thisx->targetMode = 3;
+    Actor_SetFocus(thisx, 15.0f);
+    sBundles[self->index] = thisx;
+}
+
+static void Bundle_Destroy(Actor* thisx, PlayState* play) {
+    BundleActor* self = (BundleActor*)thisx;
+    if (self->index == 0xFFFF) {
+        return;
+    }
+    Collider_DestroyCylinder(play, &self->collider);
+    auto it = sBundles.find(self->index);
+    if (it != sBundles.end() && it->second == thisx) {
+        sBundles.erase(it);
+    }
+}
+
+static void Bundle_Update(Actor* thisx, PlayState* play) {
+    BundleActor* self = (BundleActor*)thisx;
+    Player* player = GET_PLAYER(play);
+    bool attached = (thisx->flags & ACTOR_FLAG_HOOKSHOT_ATTACHED) != 0;
+    self->hooked = self->hooked || attached;
+    // Pulled in (or, on a ledge Link climbed after all, walked into): it pays.
+    f32 d = Actor_WorldDistXYZToActor(thisx, &player->actor);
+    if ((self->hooked && !attached) || d < 40.0f) {
+        const LedgeBundle& b = GetLedgeBundles()[self->index];
+        uint64_t key = LootKey(LOOT_CACHE, 0x0F00000 | self->index) ^ ((uint64_t)gSaveContext.totalDays << 32);
+        SendGather(b.material, b.amount, key, 3600, true);
+        sBundleTaken[self->index] = gSaveContext.totalDays;
+        sBundlesPaid++;
+        Audio_PlayActorSound2(thisx, NA_SE_EV_WOODBOX_BREAK);
+        Actor_Kill(thisx);
+        return;
+    }
+    if (!attached) {
+        Collider_UpdateCylinder(thisx, &self->collider);
+        CollisionCheck_SetAC(play, &play->colChkCtx, &self->collider.base);
+    }
+}
+
+static void Bundle_Draw(Actor* thisx, PlayState* play) {
+    // A small crate tied with a strap, a sparkle now and then so it catches the eye up high.
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    Matrix_Push();
+    Matrix_Scale(0.12f, 0.12f, 0.12f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gSmallWoodenBoxDL);
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+    if ((play->gameplayFrames % 16) == 0) {
+        Vec3f pos = { thisx->world.pos.x + Rand_CenteredFloat(30.0f), thisx->world.pos.y + 30.0f,
+                      thisx->world.pos.z + Rand_CenteredFloat(30.0f) };
+        Vec3f vel = { 0.0f, 0.5f, 0.0f }, accel = { 0.0f, 0.0f, 0.0f };
+        Color_RGBA8 prim = { 255, 255, 220, 255 }, env = { 120, 200, 255, 0 };
+        EffectSsKiraKira_SpawnSmall(play, &pos, &vel, &accel, &prim, &env);
+    }
+}
+
+static void SpawnBundlesHere() {
+    if (gPlayState == nullptr || !LootEnabled() || !IsUnlocked(UNLOCK_HOOKSHOT)) {
+        return;
+    }
+    if (sBundleActorId < 0 && ActorDB::Instance != nullptr) {
+        ActorDBInit bundle;
+        bundle.name = "SevenDays_LedgeBundle";
+        bundle.desc = "7 Days to Zelda: materials on a ledge, pulled down with the Hookshot";
+        bundle.category = ACTORCAT_PROP;
+        bundle.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR;
+        bundle.objectId = OBJECT_GAMEPLAY_KEEP;
+        bundle.instanceSize = sizeof(BundleActor);
+        bundle.init = Bundle_Init;
+        bundle.destroy = Bundle_Destroy;
+        bundle.update = Bundle_Update;
+        bundle.draw = Bundle_Draw;
+        sBundleActorId = (int16_t)ActorDB::Instance->AddEntry(bundle).entry.id;
+    }
+    const auto& list = GetLedgeBundles();
+    for (uint16_t i = 0; i < list.size(); i++) {
+        const LedgeBundle& b = list[i];
+        auto taken = sBundleTaken.find(i);
+        if (b.scene != gPlayState->sceneNum || sBundles.contains(i) ||
+            (taken != sBundleTaken.end() && taken->second == gSaveContext.totalDays)) {
+            continue;
+        }
+        Actor_Spawn(&gPlayState->actorCtx, gPlayState, sBundleActorId, b.x, b.y, b.z, 0, 0, 0, (s16)i, false);
+    }
+}
+
 // Spawn this scene's caches for the rooms that are loaded (each belongs to its
 // room, so it unloads with it).
 static void SpawnCachesHere() {
@@ -910,7 +1045,11 @@ void MerchantsRegisterHooks(bool enabled) {
 }
 
 void LootRegisterHooks(bool enabled) {
-    COND_HOOK(OnSceneSpawnActors, enabled, []() { SpawnCachesHere(); });
+    COND_HOOK(OnSceneInit, enabled, [](int16_t sceneNum) { sBundles.clear(); });
+    COND_HOOK(OnSceneSpawnActors, enabled, []() {
+        SpawnCachesHere();
+        SpawnBundlesHere();
+    });
     COND_HOOK(OnActorKill, enabled, [](void* refActor) {
         Actor* actor = (Actor*)refActor;
         if (actor->id == ACTOR_OBJ_TSUBO || actor->id == ACTOR_OBJ_KIBAKO || actor->id == ACTOR_OBJ_KIBAKO2) {
@@ -1004,6 +1143,42 @@ const char* sevendays_test_loot_state() {
         j["activeMerchant"] = ActiveMerchant() != nullptr ? ActiveMerchant()->name : "";
         if (player != nullptr) {
             j["link"] = { (int)player->actor.world.pos.x, (int)player->actor.world.pos.y, (int)player->actor.world.pos.z };
+        }
+    }
+    out = j.dump();
+    return out.c_str();
+}
+
+// PHA-3935 tests: the floor under (x, z) from yTop down (BGCHECK_Y_MIN: none), and the
+// ledge bundles in this scene.
+EMSCRIPTEN_KEEPALIVE
+double sevendays_test_floor(double x, double z, double yTop) {
+    if (gPlayState == nullptr) {
+        return BGCHECK_Y_MIN;
+    }
+    Vec3f probe = { (f32)x, (f32)yTop, (f32)z };
+    CollisionPoly* poly = nullptr;
+    s32 bgId = BGCHECK_SCENE;
+    return BgCheck_EntityRaycastFloor3(&gPlayState->colCtx, &poly, &bgId, &probe);
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* sevendays_test_bundles() {
+    static std::string out;
+    nlohmann::json j;
+    j["paid"] = sBundlesPaid;
+    j["here"] = nlohmann::json::array();
+    for (auto& [i, a] : sBundles) {
+        BundleActor* b = (BundleActor*)a;
+        j["here"].push_back({ i, (int)a->world.pos.x, (int)a->world.pos.y, (int)a->world.pos.z,
+                              (a->flags & ACTOR_FLAG_HOOKSHOT_ATTACHED) != 0, b->collider.base.acFlags,
+                              (int)a->flags, (int)a->focus.pos.y });
+    }
+    if (gPlayState != nullptr) {
+        for (Actor* h = gPlayState->actorCtx.actorLists[ACTORCAT_ITEMACTION].head; h != nullptr; h = h->next) {
+            if (h->id == ACTOR_ARMS_HOOK) {
+                j["hook"] = { (int)h->world.pos.x, (int)h->world.pos.y, (int)h->world.pos.z };
+            }
         }
     }
     out = j.dump();

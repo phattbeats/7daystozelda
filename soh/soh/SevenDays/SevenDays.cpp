@@ -70,6 +70,9 @@ enum FirstLine : uint8_t {
 constexpr uint8_t GATHER_FIRST_BIT_NEW = 28;       // Ore 28, Iron 29
 constexpr uint16_t GATHER_TEXT_OFFSET_NEW = 0x17; // Ore 0x17, Iron 0x18
 static_assert(GATHER_FIRST_BIT_NEW + (MAT_COUNT - MAT_LEGACY_COUNT) <= 32, "firsts bitfield");
+// The first Hookshot ledge bundle has its own line (firsts bit 30, text 0x19).
+constexpr uint32_t LEDGE_FIRST_BIT = 1u << 30;
+constexpr uint16_t TEXT_LEDGE_FIRST = SEVEN_DAYS_TEXT_BASE + 0x19;
 
 static const char* sFirstLineText[FIRST_COUNT - MAT_LEGACY_COUNT] = {
     /* FIRST_CRAFT */ "You made it yourself, Link!&Kits wait in the pool until you build.",
@@ -357,6 +360,10 @@ static void RegisterMessages() {
             CUSTOM_MESSAGE_TABLE, GatherFirstText(m),
             CustomMessage(GetMaterialInfo(m).firstLine, TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     }
+    CustomMessageManager::Instance->CreateMessage(
+        CUSTOM_MESSAGE_TABLE, TEXT_LEDGE_FIRST,
+        CustomMessage("Got it! The Hookshot reaches things up on the ledges.^Look up, Link: there's more stashed up high!",
+                      TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     for (uint8_t f = FIRST_CRAFT; f < FIRST_COUNT; f++) {
         CustomMessageManager::Instance->CreateMessage(
             CUSTOM_MESSAGE_TABLE, SEVEN_DAYS_TEXT_BASE + f,
@@ -366,7 +373,7 @@ static void RegisterMessages() {
 
 // MARK: - Gathering
 
-static void OnCredited(uint8_t material, uint32_t amount, bool quiet = false) {
+static void OnCredited(uint8_t material, uint32_t amount, bool quiet = false, bool ledge = false) {
     if (material >= MAT_COUNT) {
         return;
     }
@@ -378,7 +385,12 @@ static void OnCredited(uint8_t material, uint32_t amount, bool quiet = false) {
         .mute = true,
     });
     Sfx_PlaySfxCentered(NA_SE_SY_GET_ITEM);
-    if (!quiet) {
+    if (ledge) {
+        if (!(sFirsts & LEDGE_FIRST_BIT)) {
+            sFirsts |= LEDGE_FIRST_BIT;
+            sPendingNavi.push_back(TEXT_LEDGE_FIRST);
+        }
+    } else if (!quiet) {
         QueueGatherNavi(material);
     } else {
         QueueLootNavi(LOOTLINE_POT); // quiet credits are pots and crates (Loot.cpp): their own line
@@ -413,9 +425,10 @@ static bool ApplyGather(const nlohmann::json& payload, uint32_t gatherer) {
     credit["material"] = material;
     credit["amount"] = amount;
     credit["quiet"] = payload.value("quiet", false);
+    credit["ledge"] = payload.value("ledge", false);
     BroadcastPool(credit);
     if (gatherer == OwnId()) {
-        OnCredited(material, amount, credit["quiet"].get<bool>());
+        OnCredited(material, amount, credit["quiet"].get<bool>(), credit["ledge"].get<bool>());
     }
     return true;
 }
@@ -438,12 +451,13 @@ uint64_t SourceKeyFor(Actor* actor, uint32_t salt) {
     return StaticSourceKey(actor, salt);
 }
 
-void SendGather(uint8_t material, uint32_t amount, uint64_t sourceKey, uint32_t dedupeSeconds) {
+void SendGather(uint8_t material, uint32_t amount, uint64_t sourceKey, uint32_t dedupeSeconds, bool ledge) {
     if (!CraftingEnabled() || material >= MAT_COUNT || amount == 0) {
         return;
     }
     nlohmann::json payload;
     payload["quiet"] = true; // no first-gather line ("Grass fiber!") for a pot
+    payload["ledge"] = ledge;
     payload["type"] = GATHER;
     payload["material"] = material;
     payload["amount"] = amount;
@@ -783,7 +797,7 @@ void HandlePacket(const nlohmann::json& payload) {
         PoolFromJson(payload["pool"]);
         if (payload.contains("credit") && payload["credit"].value("clientId", 0u) == OwnId()) {
             OnCredited(payload["credit"].value("material", (uint8_t)0xFF), payload["credit"].value("amount", 0u),
-                       payload["credit"].value("quiet", false));
+                       payload["credit"].value("quiet", false), payload["credit"].value("ledge", false));
         }
     } else if (type == MATERIALS_REQUEST) {
         if (!IsOwner()) {

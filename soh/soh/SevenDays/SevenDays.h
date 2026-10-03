@@ -365,6 +365,15 @@ struct CacheSpot {
     uint8_t tier;    // area tier (Unlock) for its rolls
 };
 const std::vector<CacheSpot>& GetCacheSpots();
+// PHA-3935: Hookshot tier, materials on ledges out of reach. A bundle sits on a ledge
+// you can't walk to; hook it and it is pulled to Link and pays. Once a day each.
+struct LedgeBundle {
+    int16_t scene;
+    int16_t x, y, z; // on the ledge (the floor is found by raycast when it spawns)
+    uint8_t material;
+    uint8_t amount;
+};
+const std::vector<LedgeBundle>& GetLedgeBundles();
 // Pot/crate/cache roll table for an area tier: weights per material.
 const uint8_t* LootWeights(uint8_t tier);
 uint8_t SceneTier(int16_t scene); // the area tier of a scene (dungeons by table, else the start tier)
@@ -408,7 +417,8 @@ void LootOnFrame();
 void LootRegisterHooks(bool enabled);
 void LootResetSession();
 // Pots and crates pay through the ordinary GATHER path (SevenDays.cpp).
-void SendGather(uint8_t material, uint32_t amount, uint64_t sourceKey, uint32_t dedupeSeconds);
+// ledge: a Hookshot ledge bundle (its own first-time Navi line instead of the pots').
+void SendGather(uint8_t material, uint32_t amount, uint64_t sourceKey, uint32_t dedupeSeconds, bool ledge = false);
 uint64_t SourceKeyFor(Actor* actor, uint32_t salt);
 
 // MARK: - M7: Majora-style nights (Nights.cpp)

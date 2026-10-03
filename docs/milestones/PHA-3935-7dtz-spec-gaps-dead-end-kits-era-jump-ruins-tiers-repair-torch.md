@@ -1,6 +1,6 @@
 # PHA-3935: 7DtZ spec gaps: dead-end kits, era-jump ruins, Hammer/Silver/Hookshot tiers, repair, torch, town hiding
 
-Status (2026-10-03): every item except 5 is shipped and checked in the game. Item 5 is in progress.
+Status (2026-10-03): all 12 items are shipped and checked in the game (local build). Nothing is deployed to zelda.phatt.vip yet.
 
 Gaps found in the 2026-10-03 review against the PHA-3870 spec and M9.
 
@@ -19,6 +19,7 @@ Gaps found in the 2026-10-03 review against the PHA-3870 spec and M9.
 
 3. **Megaton Hammer tier.** A new material, Ore (`MAT_ORE`). Bombable boulders also pay 1 Ore once you have the hammer, and the bronze boulders the hammer breaks (ObjHamishi) pay 3. Each material gets its own dedupe key, so one boulder can pay both. Walls upgrade in place, barricade to stone wall to iron wall (`UPGRADE_REQUEST`, a new "replace" BASE_DELTA op). An upgrade costs the difference between the two kits and keeps the piece's id, position and share of HP. Fast repair: hammer repairs cost half. Ore is for sale at Goron City (50 rupees for 2) and can be sold on the Trade tab.
 4. **Silver Gauntlets tier.** A new material, Iron (`MAT_IRON`), 2 from each silver rock thrown and broken (large EnIshi). New iron wall placeable: 400 HP, the blocks washed steel grey, and a kit of 4 Iron, 4 Stone and 2 Ore. Old saves load with Ore and Iron at 0, because SaveManager defaults the missing array entries. Navi's firsts keep their saved bit layout: the new first-gather lines use bits 28 and 29 and text ids 0x17 and 0x18. Ore and Iron only appear on the materials line once their tier is open. Navi's tier lines in Loot.cpp ("wood to stone to iron", "silver rocks will make iron walls") are now true.
+5. **Hookshot tier: materials on ledges.** `SevenDays_LedgeBundle` is a small strapped crate that sparkles. It is hookable (`ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR`, a `BUMP_HOOKABLE` bumper) and Z-targetable, sits on a ledge you can't walk to, and spawns once you have the Hookshot. When the Hookshot pulls it in, it pays through GATHER with its own first-time Navi line (firsts bit 30, text 0x19). Each bundle comes back once a day. There are three, found with an in-game floor scan (flat tops with a drop of 160+ on every side): Kokiri Forest's stone pillar (5 Wood), its high rupee ledge (4 Stone), and a Zora's River pillar by the heart piece (3 Bone). Each sits on the edge facing open ground, within the Hookshot's 260-unit reach.
 9. **Towns on raid nights.** On a raid night, Kakariko, Castle Town at night, the back alley and Lon Lon Ranch send their townsfolk indoors (EnHy, EnDaikuKakariko and EnNiwGirl; never a quest NPC or a guard), with a "has barred its doors until dawn" notice. Once the first raid is over, Kakariko's field gate is boarded on both sides with the path left open. These are town decoration pieces (ids from 0xF000) that are not in BaseState, so they are never packed up, damaged, counted or saved.
 10. **More lines.** Gerudo's Fortress gets the Training Ground guard (0x6070 and 0x6072). The castle gets its gate guard (0x7006). Impa (0x708E, DemoIm), Talon (0x2055 and 0x5015) and Anju (0x503D and 0x5047) get their own lines. Every replaced text was checked against the ROM's message table for control codes.
     - Three M9 lines replaced texts that chain to another message (0x07). 0x5066 chained to the clock soldier's graveyard-song hint, so it is dropped. 0x5079 and 0x6019 move to the plain texts they chain to (0x507A and 0x601A), so the vanilla first part plays again.
@@ -26,7 +27,7 @@ Gaps found in the 2026-10-03 review against the PHA-3870 spec and M9.
 
 New text placeholder `[[when]]` ("tonight", "tomorrow night", "in 3 days"). The three M9 lines that said "in [[next]]" (which read "in tonight") use it now.
 
-Test hooks: `sevendays_test_raid("tier:bomb|hookshot|hammer|silver")`, `("bp:<recipe>")`, `("age")`, `("bomb")`, `sevendays_test_upgrade`, `_upgrade_cost`, `rocks` in raid state, `sevendays_test_repair`, `_repair_cost`, `_open_window`, `_trap_blasts`, `_cup_state`, and `spawnLog` / `eveWarnedDay` in raid state.
+Test hooks: `sevendays_test_raid("tier:bomb|hookshot|hammer|silver")`, `("bp:<recipe>")`, `("age")`, `("bomb")`, `("equip:hookshot")`, `("aim:x,y,z")`, `sevendays_test_bundles`, `sevendays_test_floor`, `sevendays_test_upgrade`, `_upgrade_cost`, `rocks` in raid state, `sevendays_test_repair`, `_repair_cost`, `_open_window`, `_trap_blasts`, `_cup_state`, and `spawnLog` / `eveWarnedDay` in raid state.
 
 ## Checked in the game (GPU Chrome, solo, Kokiri Forest)
 
@@ -41,8 +42,7 @@ Test hooks: `sevendays_test_raid("tier:bomb|hookshot|hammer|silver")`, `("bp:<re
 - Towns: Kakariko on raid night 5. Three carpenters went indoors at dusk, the notice showed, and the boards stand at the field gate.
 - Ore: a bomb on a Death Mountain Trail boulder, with the hammer tier, paid +3 Stone and +1 Ore, and Navi's first-Ore line played.
 - Upgrades: the Kokiri bridge barricade became a stone wall from the Base page for 6 Stone (HP 100 to 200). With the Silver Gauntlets it became an iron wall for 4 Iron and 2 Ore (HP 400). The iron upgrade stays hidden until that tier.
+- Hookshot ledges: as adult Link with the Hookshot, a first-person shot pulled in all three bundles (hook attached for 10 frames each). Payouts: +4 Stone (Kokiri ledge), +5 Wood (Kokiri pillar), +3 Bone (Zora's River). Navi's first-ledge line played, and a taken bundle stayed gone for the rest of the day.
 - Lines: 0x507A, 0x2055, 0x5015, 0x503D, 0x5047 and 0x708E shown, plus 0x7006 at the castle, 0x601A in Gerudo Valley and 0x6070/0x6072 at the fortress. All showed the after-raids variants.
-
-## In progress
 
 - Item 5: Hookshot-tier materials on ledges.

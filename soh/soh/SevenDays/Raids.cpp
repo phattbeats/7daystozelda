@@ -1766,6 +1766,22 @@ void sevendays_test_raid(const char* cmdC) {
             Item_Give(gPlayState, ITEM_BRACELET);
             Item_Give(gPlayState, ITEM_GAUNTLETS_SILVER);
         }
+    } else if (cmd.rfind("aim:", 0) == 0) {
+        // PHA-3935 tests: point first-person aim at a world point ("aim:x,y,z").
+        float x = 0, y = 0, z = 0;
+        sscanf(cmd.c_str() + 4, "%f,%f,%f", &x, &y, &z);
+        Player* player = GET_PLAYER(gPlayState);
+        Vec3f eye = player->actor.world.pos;
+        eye.y += 50.0f;
+        Vec3f at = { x, y, z };
+        player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = player->actor.focus.rot.y =
+            Math_Vec3f_Yaw(&eye, &at);
+        player->actor.focus.rot.x = Math_Vec3f_Pitch(&eye, &at);
+    } else if (cmd == "equip:hookshot") {
+        // PHA-3935 tests: the Hookshot on C-Left.
+        gSaveContext.equips.buttonItems[1] = ITEM_HOOKSHOT;
+        gSaveContext.equips.cButtonSlots[0] = SLOT_HOOKSHOT;
+        Interface_LoadItemIcon1(gPlayState, 1);
     } else if (cmd == "bomb") {
         // PHA-3935 tests: a lit bomb 50 ahead of Link (boulders for Stone and Ore).
         Player* player = GET_PLAYER(gPlayState);

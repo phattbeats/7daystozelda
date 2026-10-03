@@ -188,6 +188,24 @@ static const std::vector<CacheSpot> sCacheSpots = {
 };
 // clang-format on
 
+// PHA-3935: Hookshot-tier bundles on ledges that walking doesn't reach (adult era:
+// the Hookshot is an adult item). Found with a floor scan in game (flat tops with a
+// drop of 160+ on every side), then checked with screenshots.
+// clang-format off
+static const std::vector<LedgeBundle> sLedgeBundles = {
+    // scene                      x,     y,     z        material   amt
+    // Each sits on the edge that faces open ground, within the Hookshot's reach (13
+    // frames at 20: about 260) of a spot below with a clear line to it.
+    { SCENE_KOKIRI_FOREST,        0,     180,   -45,     MAT_WOOD,  5 }, // the stone pillar on the green, south edge
+    { SCENE_KOKIRI_FOREST,        1245,  240,   -560,    MAT_STONE, 4 }, // the high ledge with the rupees, west edge
+    { SCENE_ZORAS_RIVER,          575,   360,   -1170,   MAT_BONE,  3 }, // a river pillar by the heart piece, west edge
+};
+// clang-format on
+
+const std::vector<LedgeBundle>& GetLedgeBundles() {
+    return sLedgeBundles;
+}
+
 const std::vector<CacheSpot>& GetCacheSpots() {
     return sCacheSpots;
 }
