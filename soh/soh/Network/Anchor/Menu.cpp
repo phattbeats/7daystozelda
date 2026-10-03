@@ -352,8 +352,7 @@ void SevenDaysMenu(WidgetInfo& info) {
                                 .DefaultValue(true)
                                 .Color(THEME_COLOR)
                                 .Tooltip("Gather Fiber, Stone, Wood, Bone and Rot into the room's shared pool and "
-                                         "craft on the pause menu's Workbench page (R from Equipment; Tab or the Craft button opens "
-                                         "it)."));
+                                         "craft on the pause menu's Workbench page (R from Equipment; Tab also opens it)."));
     UIWidgets::CVarCheckbox("Tunic in my lobby tunic color", CVAR_SEVEN_DAYS("TunicColors"),
                             UIWidgets::CheckboxOptions({ { .disabled = off } })
                                 .DefaultValue(true)

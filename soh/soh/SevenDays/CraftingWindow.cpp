@@ -29,8 +29,8 @@ extern std::shared_ptr<SevenDaysCraftingWindow> mSevenDaysCraftingWindow;
 /**
  * The Workbench lives on the pause menu as a fifth page (Craft, Trade and Base
  * tabs, the game's cursor, stick or D-pad and A), next to Equipment and Select
- * Item. The Tab key, the on-screen Craft button and a placed workbench open the
- * pause menu on it. The ImGui window below stays reachable from the Anchor menu.
+ * Item. The Tab key and a placed workbench open the pause menu on it. The
+ * ImGui window below stays reachable from the Anchor menu.
  */
 
 static constexpr float kButtonHeight = 48.0f;
@@ -303,27 +303,11 @@ void SevenDaysCraftingWindow::Draw() {
         OpenCraftingWindow(-1);
     }
 
-    auto vp = ImGui::GetMainViewport();
     if (!IsVisible()) {
-        if (paused) {
-            return;
-        }
-        // A thumb-sized button on the right edge for touch players.
-        ImGui::SetNextWindowViewport(vp->ID);
-        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 8.0f, vp->WorkPos.y + vp->WorkSize.y * 0.35f),
-                                ImGuiCond_Always, ImVec2(1.0f, 0.5f));
-        ImGui::SetNextWindowBgAlpha(0.35f);
-        ImGui::Begin("##SevenDaysCraftButton", nullptr,
-                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav |
-                         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoDocking |
-                         ImGuiWindowFlags_NoSavedSettings);
-        if (ImGui::Button(ICON_FA_WRENCH " Craft", ImVec2(0, kButtonHeight))) {
-            OpenCraftingWindow(-1);
-        }
-        ImGui::End();
         return;
     }
 
+    auto vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowViewport(vp->ID);
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f),
                             ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
