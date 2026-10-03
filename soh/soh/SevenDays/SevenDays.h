@@ -43,6 +43,8 @@
 struct Actor;
 struct PlayState;
 
+class CustomMessage;
+
 namespace SevenDays {
 
 enum Material : uint8_t {
@@ -239,6 +241,8 @@ Actor* SpawnPlaceableActor(const Placeable& p);
 void OnPlaceableInteract(uint8_t type); // workbench / chest A-press
 // Vanilla Kokiri lines replaced while the village is active (OTRGlobals glue).
 bool OverridesVanillaText(uint16_t textId);
+// M9: town, gossip stone and Navi lines that follow the nights (Placeables.cpp).
+bool WorldText(uint16_t textId, CustomMessage& out);
 constexpr uint16_t TEXT_SIGN_DAY = SEVEN_DAYS_TEXT_BASE + 0x20;
 constexpr uint16_t TEXT_WORKBENCH = SEVEN_DAYS_TEXT_BASE + 0x21;
 constexpr uint16_t TEXT_CHEST = SEVEN_DAYS_TEXT_BASE + 0x22;

@@ -1543,6 +1543,16 @@ void sevendays_test_raid(const char* cmdC) {
                 Actor_Kill(a);
             }
         }
+    } else if (cmd.rfind("say:", 0) == 0) {
+        // M9 tests: open a vanilla text id here, as an NPC would (the world lines replace it).
+        Message_StartTextbox(gPlayState, (u16)std::stoul(cmd.substr(4), nullptr, 16), nullptr);
+    } else if (cmd.rfind("warp:", 0) == 0) {
+        gPlayState->nextEntranceIndex = (s16)std::stoul(cmd.substr(5), nullptr, 16);
+        gPlayState->transitionTrigger = TRANS_TRIGGER_START;
+        gPlayState->transitionType = TRANS_TYPE_FADE_BLACK;
+        gSaveContext.nextCutsceneIndex = 0xFFEF; // no entrance cutscene
+    } else if (cmd.rfind("raids:", 0) == 0) {
+        const_cast<BaseState&>(GetBase()).hordeNightsSurvived = (uint32_t)std::stoul(cmd.substr(6));
     } else if (cmd == "heal") {
         gSaveContext.health = gSaveContext.healthCapacity; // a bottled fairy, for scripted fights
     } else if (cmd == "lost") {

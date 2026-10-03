@@ -2822,6 +2822,8 @@ extern "C" int CustomMessage_RetrieveIfExists(PlayState* play) {
     if (SevenDays::IsSevenDaysText(textId) || SevenDays::OverridesVanillaText(textId)) {
         messageEntry = CustomMessageManager::Instance->RetrieveMessage("SevenDays", textId, MF_AUTO_FORMAT);
         messageEntry.Replace("[[day]]", std::to_string(SevenDays::CurrentDay()));
+    } else if (CustomMessage worldLine; SevenDays::WorldText(textId, worldLine)) {
+        messageEntry = worldLine;
     }
     if (textId == TEXT_FISHERMAN_LEAVE && CVarGetInteger(CVAR_ENHANCEMENT("QuitFishingAtDoor"), 0)) {
         messageEntry =

@@ -732,6 +732,132 @@ void SevenDays::RegisterVillageMessages(const char* table) {
                       TEXTBOX_POS_BOTTOM));
 }
 
+// MARK: - M9: the world reacts (towns talk about the nights)
+
+// Idle lines elsewhere in Hyrule, replaced while the 7 Days base is on. Each has a
+// line for before the first raid is survived and one for after; [[raids]] ("2 raids"),
+// [[days]] ("5 days"), [[base]] and [[next]] are filled in when the line is shown.
+// Flavor only: every replaced vanilla text was checked in the ROM's message table
+// to have no choice, event, item, ocarina or clock code, and none carries a quest
+// hint, a direction or the time.
+struct WorldLine {
+    int16_t scene;  // -1: any scene
+    uint16_t textId;
+    const char* before; // no raid survived yet
+    const char* after;  // one or more raids survived
+};
+// clang-format off
+static const WorldLine sWorldLines[] = {
+    // Kakariko: the carpenters (EnDaikuKakariko) and the field-gate guard's night line and Impa's house guard (EnHeishi4)
+    { SCENE_KAKARIKO_VILLAGE, 0x5075, "Boss says we're building houses, but half my lumber went to boarding windows.^Folks say something comes out of the field at night.", "[[raids]] now, the field's come knocking. We nail the shutters at dusk and pray they hold." },
+    { SCENE_KAKARIKO_VILLAGE, 0x5076, "Hear that? Scratching, out past the gate, every night. Lady Impa says keep the lamps lit.", "Impa's got the watchtower manned every night now. If you see red in the sky, kid, get indoors." },
+    { SCENE_KAKARIKO_VILLAGE, 0x5074, "Lady Impa had us shore up the watchtower first. She says she can see the whole field from up there.", "The lookout on the watchtower counted torches out in the field last night. Not ours." },
+    { SCENE_KAKARIKO_VILLAGE, 0x506B, "Anju's been bringing her Cuccos in every evening. Says they won't stop squawking at the dark.", "Anju counts her Cuccos every dawn now. Lost two to the last bad night." },
+    { SCENE_KAKARIKO_VILLAGE, 0x506A, "We're out of nails. Every house in the village wants its doors barred.", "Barred every door twice. Still hear them on the roofs some nights." },
+    { SCENE_KAKARIKO_VILLAGE, 0x5066, "Hey, son, what are you doing out this late? Things have been crawling out of the field at night.^Go inside before they find you.", "Out after dark? After [[raids]] on the field? Son, get indoors.^The watchtower spots them coming. Next red night's in [[next]]." },
+    { SCENE_KAKARIKO_VILLAGE, 0x5079, "Lady Impa climbs the watchtower every night now. She says she's counting something out in the field.", "Lady Impa has the watchtower lit every night since the raids began. She says the forest is holding." },
+    // Hyrule Castle Town: townsfolk (EnHy) and the gate guards (EnHeishi4); night scenes share these
+    { SCENE_MARKET_DAY, 0x701E, "The guards say the castle is safe. The guards say a lot of things.", "The guards came back from the field with their spears snapped in half." },
+    { SCENE_MARKET_DAY, 0x7020, "Heard something howl from the field last night. That was no dog.", "Wolfos at the drawbridge, they say. Next red night they'll be at the market." },
+    { SCENE_MARKET_DAY, 0x7022, "Lock your door at night, dearie. Things come up out of the ground in that field.", "I don't sleep any more. Not since the sky went red that night." },
+    { SCENE_MARKET_DAY, 0x7015, "My cousin says the Kokiri boarded up their forest. Since when do the Kokiri need walls?", "They say the forest kids have held off [[raids]]. A whole village of children!" },
+    { SCENE_MARKET_DAY, 0x7055, "Loitering? I'm keeping watch, kid. Somebody has to, with what's out in that field.", "[[days]] of this. The King should send soldiers to that forest." },
+    { SCENE_MARKET_DAY, 0x700E, "It seems like it's taking forever for dawn to come... Every night feels longer lately.", "Dawn takes forever on the red nights. I count every minute of them." },
+    { SCENE_MARKET_ENTRANCE_DAY, 0x7002, "Welcome to Hyrule Castle Town. The drawbridge closes at dusk, and these days we mean it. The field isn't safe at night.", "Welcome to Hyrule Castle Town. The patrols report [[raids]] on the forest. We raise the bridge early now." },
+    { SCENE_MARKET_ENTRANCE_DAY, 0x7003, "Kids shouldn't be out at night! Something's been testing the drawbridge. Stay indoors until morning!", "Red sky, red moon... Kids shouldn't be out on nights like these. Stay indoors until morning!" },
+    { SCENE_HYRULE_CASTLE, 0x7002, "Welcome to Hyrule Castle. Rumor in the barracks says the night creatures are out in force.", "Welcome to Hyrule Castle. Rumor in the barracks: a forest base has held off [[raids]]." },
+    // Lon Lon Ranch and the castle: Malon (EnMa1, the Epona lines that carry no song or event)
+    { -1, 0x2048, "Epona's jumpy lately, fairy boy. Dad says we're going to barricade the ranch. Something's been scaring the horses at night!", "We put boards over the stable doors. Epona still stamps all night when the sky goes red." },
+    { -1, 0x204A, "Oh, Epona! She likes you, fairy boy. Mr. Ingo is nailing up the corral gates. He says the night things don't like fences.", "Oh, Epona! The fence held last raid night, and Mr. Ingo even smiled. A little." },
+    // Zora's Domain (EnZo)
+    { SCENE_ZORAS_DOMAIN, 0x400A, "We Zoras all serve the great King Zora. He says the surface's troubles are not ours. I'm not so sure.", "We Zoras all serve the great King Zora. Even he asked about the forest's walls. Word travels fast down the river." },
+    { SCENE_ZORAS_DOMAIN, 0x4011, "All of the water in Hyrule flows from Zora's Fountain... and lately, strange things wash down it after dark.", "The river runs strange on the red nights. We stay deep in the Domain until dawn." },
+    { SCENE_ZORAS_DOMAIN, 0x402D, "Oh, hi, @! Princess Ruto talks about you all the time. She says you're braver than the night things.", "Oh, hi, @! They say you've lasted [[days]] out there. Impressive, for a land-dweller." },
+    { SCENE_ZORAS_DOMAIN, 0x402E, "Oh, it's you, @! Thanks to you, Lord Jabu-Jabu is back to normal. Now if only the nights were quiet...", "Oh, it's you, @! Jabu-Jabu is well, and you've held off [[raids]]. Is there anything you can't do?" },
+    // Goron City and Death Mountain Trail (EnGo2)
+    { SCENE_GORON_CITY, 0x3015, "Sigh... I want to eat Dodongo's Cavern rocks... and now things crawl up the mountain at night too!", "We rolled boulders across the trail at night. Nothing gets into Goron City, goro!" },
+    { SCENE_GORON_CITY, 0x3027, "You are incredible, destroying the Dodongos! Now if only the nights were quiet, Big Brother...", "Big Brother, you saved our food and you keep beating back the nights! [[raids]], goro!" },
+    { SCENE_DEATH_MOUNTAIN_TRAIL, 0x3026, "The trail's dangerous at night, brother. Things come up from Kakariko.", "We stacked rocks at the trail's bend. Even Stalchildren can't climb those!" },
+    { SCENE_DEATH_MOUNTAIN_TRAIL, 0x3027, "The volcano smokes, and the field howls. What a time, goro!", "The night things never come this high. You should move your base up here, brother!" },
+    // Lake Hylia: the lab scientist (EnMk) and the Zora at the lake (EnZo)
+    { SCENE_LAKESIDE_LABORATORY, 0x4018, "Fascinating! The night creatures rise at the same hour every few days. A pattern! I must record it.", "My notes: [[raids]], [[days]]. The next red night should come in [[next]]. Science!" },
+    { SCENE_LAKE_HYLIA, 0x4021, "I am a Zora. Have you seen anything strange in the lake? Things wash up here after dark now.", "I am a Zora. On the red nights the lake glows strange. I stay under the water until dawn." },
+    // Gerudo Valley and Fortress (EnGe1: the gate guard to a kid, the valley floor, the fortress greeting)
+    { SCENE_GERUDO_VALLEY, 0x6069, "The Gerudo's Fortress is beyond this gate. A kid like you has no business there, night creatures or not.", "The Gerudo's Fortress is beyond this gate. We cut the bridge on red nights and fix it at dawn. A kid like you has no business there." },
+    { SCENE_GERUDO_VALLEY, 0x6019, "Why did you come all the way down here? The night things don't climb these cliffs, at least.", "Why did you come all the way down here? Hiding from the red nights too? Smart." },
+    { SCENE_GERUDOS_FORTRESS, 0x6001, "Hey, newcomer! Hylian creatures at night? Ha! Let them try our walls.", "Hey, newcomer! Even we post double guards on red nights now. Don't tell anyone." },
+    // Gossip stones (EnGs, the plain talk without the Mask of Truth)
+    { -1, 0x2053, "This statue's one-eyed gaze pierces into your mind...^They say the night things come back every few days... and they always come for the base.", "This statue's one-eyed gaze pierces into your mind...^They say the next raid comes in [[next]]. They say [[base]]." },
+};
+// clang-format on
+
+// Castle Town's night scenes share their day scene's lines.
+static int16_t TownScene(int16_t scene) {
+    switch (scene) {
+        case SCENE_MARKET_NIGHT:
+            return SCENE_MARKET_DAY;
+        case SCENE_MARKET_ENTRANCE_NIGHT:
+            return SCENE_MARKET_ENTRANCE_DAY;
+        default:
+            return scene;
+    }
+}
+
+static const WorldLine* FindWorldLine(uint16_t textId) {
+    // Rando hints and the like go through their own text: leave them alone.
+    if (!BaseEnabled() || gPlayState == nullptr || IS_RANDO) {
+        return nullptr;
+    }
+    int16_t scene = TownScene(gPlayState->sceneNum);
+    for (auto& line : sWorldLines) {
+        if (line.textId == textId && (line.scene < 0 || line.scene == scene)) {
+            return &line;
+        }
+    }
+    return nullptr;
+}
+
+static std::string NextRaidText() {
+    uint32_t n = NightsUntilRaid();
+    if (n == UINT32_MAX) {
+        return "a few days";
+    }
+    if (n == 0) {
+        return "tonight";
+    }
+    return n == 1 ? "one day" : fmt::format("{} days", n);
+}
+
+static uint16_t sLastTextId = 0; // tests: the last vanilla text id asked for
+
+bool SevenDays::WorldText(uint16_t textId, CustomMessage& out) {
+    sLastTextId = textId;
+    const char* text = nullptr;
+    TextBoxType box = TEXTBOX_TYPE_BLACK;
+    const BaseState& b = GetBase();
+    if (const WorldLine* line = FindWorldLine(textId)) {
+        text = b.hordeNightsSurvived > 0 ? line->after : line->before;
+    } else {
+        return false;
+    }
+    std::string s = text;
+    const BaseCenter& c = b.center[CurrentEraNow()];
+    const char* home = c.valid ? OutdoorSceneName(c.scene) : nullptr;
+    auto replace = [&s](const std::string& key, const std::string& value) {
+        for (size_t at; (at = s.find(key)) != std::string::npos;) {
+            s.replace(at, key.size(), value);
+        }
+    };
+    auto count = [](uint32_t n, const char* one, const char* many) { return fmt::format("{} {}", n, n == 1 ? one : many); };
+    replace("[[raids]]", count(b.hordeNightsSurvived, "raid", "raids"));
+    replace("[[days]]", count(b.daysSurvived, "day", "days"));
+    replace("[[next]]", NextRaidText());
+    replace("[[base]]", home != nullptr ? fmt::format("someone built walls in {}", home) : "nobody has built walls yet");
+    out = CustomMessage(s, box, TEXTBOX_POS_BOTTOM);
+    out.AutoFormat();
+    return true;
+}
+
 bool SevenDays::OverridesVanillaText(uint16_t textId) {
     if (!BaseEnabled() || gPlayState == nullptr || gPlayState->sceneNum != SCENE_KOKIRI_FOREST || !LINK_IS_CHILD) {
         return false;
@@ -744,3 +870,13 @@ bool SevenDays::OverridesVanillaText(uint16_t textId) {
     return false;
 }
 
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+extern "C" {
+EMSCRIPTEN_KEEPALIVE
+int sevendays_test_last_text() {
+    return sLastTextId;
+}
+}
+#endif
