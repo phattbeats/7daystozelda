@@ -50,6 +50,8 @@ static const std::vector<Recipe> sRecipes = {
     { "torch",          "Torch",            RECIPE_KIT,        { { MAT_WOOD, 2 }, { MAT_FIBER, 1 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
     { "spikes",         "Spike strip",      RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_BONE, 3 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE, true },
     { "chest",          "Storage chest",    RECIPE_KIT,        { { MAT_WOOD, 8 } },                          1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
+    { "scarecrow",      "Scarecrow decoy",  RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_FIBER, 4 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "guardbaba",      "Guard Baba",       RECIPE_KIT,        { { MAT_ROT, 3 }, { MAT_FIBER, 2 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
     { "stonewall",      "Stone wall",       RECIPE_KIT,        { { MAT_STONE, 6 }, { MAT_WOOD, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG, true },
     { "bombtrap",       "Bomb-flower trap", RECIPE_KIT,        { { MAT_STONE, 4 }, { MAT_ROT, 2 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG, true },
     { "gate",           "Player gate",      RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_STONE, 4 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_HOOKSHOT, true },

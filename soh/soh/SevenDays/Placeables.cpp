@@ -16,6 +16,8 @@ extern "C" {
 #include "objects/gameplay_dangeon_keep/gameplay_dangeon_keep.h"
 #include "objects/object_kibako2/object_kibako2.h"
 #include "objects/object_trap/object_trap.h"
+#include "objects/object_dekubaba/object_dekubaba.h"
+#include "objects/object_ka/object_ka.h"
 extern PlayState* gPlayState;
 }
 
@@ -49,7 +51,21 @@ struct PlaceableActor {
     int16_t atCooldown;
     int16_t hitFlash;
     int16_t shake; // M6: frames left of the "took a hit" shake
+    // M10: the scarecrow and the Guard Baba are skeletons from the ROM's own objects.
+    SkelAnime skel;
+    ColliderCylinder biteCollider;
+    bool hasSkel;
+    uint8_t babaState; // BABA_*
+    int16_t babaTimer;
+    int16_t babaYaw;   // where its head points
+    f32 babaLunge;     // 0 upright .. 1 fully extended
+    f32 babaAim;       // direction of the lunge, world units from the stalk's base
+    bool babaBit;      // this lunge already landed
 };
+
+enum { BABA_IDLE, BABA_WINDUP, BABA_LUNGE, BABA_RECOVER };
+constexpr f32 BABA_SIZE = 1.3f;
+constexpr f32 BABA_SENSE = 120.0f; // starts a bite on a raider this close to the stalk
 
 static int16_t sPlaceableId = -1;
 static int16_t sGhostId = -1;
@@ -335,8 +351,45 @@ static void DrawDL(PlayState* play, Gfx* dl, float tx, float ty, float tz, float
 }
 
 // The model of each type, in the actor's local space (origin on the floor).
-static void DrawModel(PlayState* play, uint8_t type, float hpFrac) {
+static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw);
+
+static const s16 kBabaUp[3] = { -0x5555, -0x4000, -0x4000 };
+static const s16 kBabaOut[3] = { -0xAAA, -0x1555, -0xE38 };
+
+static void BabaAngles(f32 lunge, s16 out[3]) {
+    for (int i = 0; i < 3; i++) {
+        out[i] = (s16)(kBabaUp[i] + (kBabaOut[i] - kBabaUp[i]) * lunge);
+    }
+}
+
+// Where the head sits relative to the stalk's base: up, and forward along its yaw.
+// EnDekubaba draws its sections from the head down, so the sines come out negative.
+static void BabaHead(f32 lunge, f32* y, f32* z) {
+    s16 ang[3];
+    BabaAngles(lunge, ang);
+    *y = *z = 0.0f;
+    for (int i = 0; i < 3; i++) {
+        *y -= 20.0f * BABA_SIZE * Math_SinS(ang[i]);
+        *z += 20.0f * BABA_SIZE * Math_CosS(ang[i]);
+    }
+}
+
+static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActor* self = nullptr) {
     switch (type) {
+        case PLACEABLE_SCARECROW:
+            if (self != nullptr && self->hasSkel) {
+                OPEN_DISPS(play->state.gfxCtx);
+                Matrix_Push();
+                Matrix_Scale(0.01f, 0.01f, 0.01f, MTXMODE_APPLY);
+                SkelAnime_DrawSkeletonOpa(play, &self->skel, nullptr, nullptr, &self->actor);
+                Matrix_Pop();
+                CLOSE_DISPS(play->state.gfxCtx);
+            }
+            break;
+        case PLACEABLE_GUARDBABA:
+            DrawBaba(play, self, self != nullptr ? self->babaLunge : 0.0f,
+                     self != nullptr ? (s16)(self->babaYaw - self->actor.shape.rot.y) : 0);
+            break;
         case PLACEABLE_BARRICADE:
             // Two large crates side by side. Below half HP one is knocked askew:
             // the village's "broken fence" is a barricade that already took a beating.
@@ -363,6 +416,58 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac) {
             DrawDL(play, (Gfx*)gSignRectangularDL, 0.0f, 0.0f, 0.0f, 0.01f, 0.01f, 0.01f);
             break;
     }
+}
+
+// The Deku Baba's stalk and head drawn from home outward, head in front (+z in
+// the frame yawed by `yaw`). Without an actor (the placement ghost) it is just the
+// stalk and leaves.
+static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw) {
+    const f32 size = BABA_SIZE, sc = 0.01f * size;
+    s16 ang[3];
+    BabaAngles(lunge, ang);
+    f32 headY, headZ;
+    BabaHead(lunge, &headY, &headZ);
+    OPEN_DISPS(play->state.gfxCtx);
+    // Tamed: a warm gold-green wash over the usual jungle green.
+    if (self != nullptr) {
+        gDPSetGrayscaleColor(POLY_OPA_DISP++, 255, 230, 90, 70);
+        gSPGrayscale(POLY_OPA_DISP++, true);
+    }
+    Matrix_Push();
+    Matrix_RotateY(yaw * (M_PI / 0x8000), MTXMODE_APPLY);
+
+    Matrix_Push();
+    Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gDekuBabaBaseLeavesDL);
+    Matrix_Pop();
+
+    static Gfx* stemDLists[] = { (Gfx*)gDekuBabaStemTopDL, (Gfx*)gDekuBabaStemMiddleDL,
+                                 (Gfx*)gDekuBabaStemBaseDL };
+    f32 y = headY, z = headZ;
+    for (int i = 0; i < 3; i++) {
+        y += 20.0f * size * Math_SinS(ang[i]);
+        z -= 20.0f * size * Math_CosS(ang[i]);
+        Matrix_Push();
+        Matrix_Translate(0.0f, y, z, MTXMODE_APPLY);
+        Matrix_RotateX(ang[i] * (M_PI / 0x8000), MTXMODE_APPLY);
+        Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, stemDLists[i]);
+        Matrix_Pop();
+    }
+    if (self != nullptr && self->hasSkel) {
+        Matrix_Push();
+        Matrix_Translate(0.0f, headY, headZ, MTXMODE_APPLY);
+        Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
+        SkelAnime_DrawSkeletonOpa(play, &self->skel, nullptr, nullptr, &self->actor);
+        Matrix_Pop();
+    }
+    Matrix_Pop();
+    if (self != nullptr) {
+        gSPGrayscale(POLY_OPA_DISP++, false);
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
 }
 
 // A unit box (x/z in -1..1, y in 0..1) for the ghost's translucent volume.
@@ -432,6 +537,26 @@ static ColliderCylinderInit sSpikeCylinderInit = {
     { 45, 18, 0, { 0, 0, 0 } },
 };
 
+static ColliderCylinderInit sBiteCylinderInit = {
+    {
+        COLTYPE_NONE,
+        AT_ON | AT_TYPE_PLAYER, // bites raiders, never players
+        AC_NONE,
+        OC1_NONE,
+        OC2_NONE,
+        COLSHAPE_CYLINDER,
+    },
+    {
+        ELEMTYPE_UNK2,
+        { DMG_SLASH_KOKIRI, 0x00, 0x01 }, // half a heart's worth, like the spikes
+        { 0x00000000, 0x00, 0x00 },
+        TOUCH_ON | TOUCH_SFX_NONE,
+        BUMP_NONE,
+        OCELEM_NONE,
+    },
+    { 32, 40, -20, { 0, 0, 0 } },
+};
+
 static uint16_t TextFor(uint8_t type) {
     switch (type) {
         case PLACEABLE_SIGN:
@@ -483,6 +608,25 @@ static void Placeable_Init(Actor* thisx, PlayState* play) {
         Collider_InitCylinder(play, &self->spikeCollider);
         Collider_SetCylinder(play, &self->spikeCollider, thisx, &sSpikeCylinderInit);
     }
+    self->hasSkel = false;
+    self->babaState = BABA_IDLE;
+    self->babaTimer = 0;
+    self->babaYaw = p->rot;
+    self->babaLunge = 0.0f;
+    self->babaBit = false;
+    if (self->type == PLACEABLE_SCARECROW) {
+        SkelAnime_InitFlex(play, &self->skel, (FlexSkeletonHeader*)object_ka_Skel_0065B0,
+                           (AnimationHeader*)object_ka_Anim_000214, nullptr, nullptr, 0);
+        self->skel.playSpeed = 0.0f;
+        self->hasSkel = true;
+    } else if (self->type == PLACEABLE_GUARDBABA) {
+        SkelAnime_Init(play, &self->skel, (SkeletonHeader*)gDekuBabaSkel, (AnimationHeader*)gDekuBabaPauseChompAnim,
+                       nullptr, nullptr, 0);
+        self->skel.playSpeed = 0.0f;
+        self->hasSkel = true;
+        Collider_InitCylinder(play, &self->biteCollider);
+        Collider_SetCylinder(play, &self->biteCollider, thisx, &sBiteCylinderInit);
+    }
     Actor_SetFocus(thisx, (f32)GetPlaceableInfo(self->type).height);
     OnPlaceableSpawned(self->id, thisx);
 }
@@ -496,7 +640,101 @@ static void Placeable_Destroy(Actor* thisx, PlayState* play) {
     if (self->type == PLACEABLE_SPIKES) {
         Collider_DestroyCylinder(play, &self->spikeCollider);
     }
+    if (self->type == PLACEABLE_GUARDBABA) {
+        Collider_DestroyCylinder(play, &self->biteCollider);
+    }
+    if (self->hasSkel) {
+        SkelAnime_Free(&self->skel, play);
+        self->hasSkel = false;
+    }
     OnPlaceableDestroyed(self->id, thisx);
+}
+
+// The nearest living enemy within `range` of the stalk's base, or null.
+static Actor* NearestEnemyTo(PlayState* play, const Vec3f& at, f32 range) {
+    Actor* best = nullptr;
+    f32 bestD = range;
+    for (Actor* a = play->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
+        if (a->update == nullptr || a->colChkInfo.health == 0 || a->id == sPlaceableId) {
+            continue;
+        }
+        f32 d = Math_Vec3f_DistXZ(const_cast<Vec3f*>(&at), &a->world.pos);
+        if (d < bestD && fabsf(a->world.pos.y - at.y) < 100.0f) {
+            best = a;
+            bestD = d;
+        }
+    }
+    return best;
+}
+
+// Guard Baba: rooted; turns to the nearest raider, winds up, lunges and bites once
+// (half a heart), then recovers. Every client animates it from the enemies it sees;
+// only the scene's enemy authority puts the bite's collider out, like the spikes.
+static void BabaUpdate(PlaceableActor* self, PlayState* play) {
+    Actor* thisx = &self->actor;
+    bool authority = Anchor::Instance == nullptr || !Anchor::Instance->isConnected || EnemySync::IsLocalAuthority();
+    SkelAnime_Update(&self->skel);
+    if (self->hitFlash > 0) {
+        self->hitFlash--;
+    }
+    switch (self->babaState) {
+        case BABA_IDLE: {
+            Math_StepToF(&self->babaLunge, 0.0f, 0.1f);
+            Actor* t = NearestEnemyTo(play, thisx->world.pos, BABA_SENSE);
+            if (t == nullptr) {
+                Math_ApproachS(&self->babaYaw, thisx->shape.rot.y + (s16)(Math_SinS(play->gameplayFrames * 0x180) * 0x1400),
+                               6, 0x300);
+                break;
+            }
+            s16 want = Math_Vec3f_Yaw(&thisx->world.pos, &t->world.pos);
+            Math_ApproachS(&self->babaYaw, want, 2, 0xE38);
+            if (ABS((s16)(want - self->babaYaw)) < 0x1000) {
+                self->babaState = BABA_WINDUP;
+                self->babaTimer = 8;
+                self->babaBit = false;
+            }
+            break;
+        }
+        case BABA_WINDUP:
+            Math_StepToF(&self->babaLunge, -0.15f, 0.05f); // rears back
+            if (--self->babaTimer <= 0) {
+                self->babaState = BABA_LUNGE;
+                self->babaTimer = 0;
+                Animation_PlayOnce(&self->skel, (AnimationHeader*)gDekuBabaPauseChompAnim);
+                self->skel.playSpeed = 1.5f;
+                Audio_PlayActorSound2(thisx, NA_SE_EN_DEKU_JR_ATTACK);
+            }
+            break;
+        case BABA_LUNGE:
+            Math_StepToF(&self->babaLunge, 1.0f, 0.3f);
+            if (self->babaLunge > 0.5f && !self->babaBit && authority) {
+                if (self->biteCollider.base.atFlags & AT_HIT) {
+                    self->biteCollider.base.atFlags &= ~AT_HIT;
+                    self->babaBit = true;
+                    self->hitFlash = 6;
+                    Audio_PlayActorSound2(thisx, NA_SE_EN_DEKU_ATTACK);
+                } else {
+                    Collider_UpdateCylinder(thisx, &self->biteCollider);
+                    f32 hy, hz;
+                    BabaHead(self->babaLunge, &hy, &hz);
+                    self->biteCollider.dim.pos.x = (s16)(thisx->world.pos.x + Math_SinS(self->babaYaw) * hz);
+                    self->biteCollider.dim.pos.y = (s16)(thisx->world.pos.y + hy);
+                    self->biteCollider.dim.pos.z = (s16)(thisx->world.pos.z + Math_CosS(self->babaYaw) * hz);
+                    CollisionCheck_SetAT(play, &play->colChkCtx, &self->biteCollider.base);
+                }
+            }
+            if (++self->babaTimer > 9) {
+                self->babaState = BABA_RECOVER;
+                self->babaTimer = 25; // one bite per lunge, then a breather
+            }
+            break;
+        case BABA_RECOVER:
+            Math_StepToF(&self->babaLunge, 0.0f, 0.08f);
+            if (--self->babaTimer <= 0) {
+                self->babaState = BABA_IDLE;
+            }
+            break;
+    }
 }
 
 static void Placeable_Update(Actor* thisx, PlayState* play) {
@@ -520,6 +758,12 @@ static void Placeable_Update(Actor* thisx, PlayState* play) {
 
     if (self->shake > 0) {
         self->shake--;
+    }
+
+    if (self->type == PLACEABLE_SCARECROW && self->hasSkel) {
+        SkelAnime_Update(&self->skel); // playSpeed 0: holds the first frame
+    } else if (self->type == PLACEABLE_GUARDBABA) {
+        BabaUpdate(self, play);
     }
 
     if (self->type == PLACEABLE_SPIKES) {
@@ -564,10 +808,10 @@ static void Placeable_Draw(Actor* thisx, PlayState* play) {
         // Took a hit: a short sideways judder, on every client (BASE_DELTA hp).
         Matrix_Push();
         Matrix_Translate(Math_SinS(self->shake * 0x3000) * self->shake * 0.6f, 0.0f, 0.0f, MTXMODE_APPLY);
-        DrawModel(play, self->type, hpFrac);
+        DrawModel(play, self->type, hpFrac, self);
         Matrix_Pop();
     } else {
-        DrawModel(play, self->type, hpFrac);
+        DrawModel(play, self->type, hpFrac, self);
     }
 
     OPEN_DISPS(play->state.gfxCtx);
@@ -624,7 +868,7 @@ void SevenDays::RegisterPlaceableActors() {
     }
     ActorDBInit placeable;
     placeable.name = "SevenDays_Placeable";
-    placeable.desc = "7 Days to Zelda placeable (barricade, spike strip, workbench, storage chest, sign)";
+    placeable.desc = "7 Days to Zelda placeable (barricade, spike strip, workbench, storage chest, sign, scarecrow, Guard Baba)";
     placeable.category = ACTORCAT_BG;
     placeable.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED;
     placeable.objectId = OBJECT_GAMEPLAY_KEEP;

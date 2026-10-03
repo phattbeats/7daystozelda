@@ -79,6 +79,8 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     /* PLACEABLE_WORKBENCH */ { "workbench", "Workbench",      30,   24,   48,    0   },
     /* PLACEABLE_CHEST     */ { "chest",     "Storage chest",  20,   20,   40,    0   },
     /* PLACEABLE_SIGN      */ { "",          "Sign",           20,   5,    60,    0   },
+    /* PLACEABLE_SCARECROW */ { "scarecrow", "Scarecrow decoy", 18,   18,   75,    80  },
+    /* PLACEABLE_GUARDBABA */ { "guardbaba", "Guard Baba",     18,   18,   50,    60  },
 };
 // clang-format on
 

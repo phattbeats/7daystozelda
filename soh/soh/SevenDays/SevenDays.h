@@ -161,6 +161,8 @@ enum PlaceableType : uint8_t {
     PLACEABLE_WORKBENCH,
     PLACEABLE_CHEST,
     PLACEABLE_SIGN, // seeded only (the village's "Day 1" sign), no kit
+    PLACEABLE_SCARECROW, // M10: decoy, raiders within 400 go for it first
+    PLACEABLE_GUARDBABA, // M10: tamed Deku Baba that bites raiders within reach
     PLACEABLE_COUNT,
 };
 

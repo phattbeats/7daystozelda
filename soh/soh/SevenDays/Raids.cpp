@@ -487,6 +487,26 @@ static bool PickSpawnPoint(Vec3f* out, const Vec3f* avoid) {
     return false;
 }
 
+// M10: the nearest scarecrow within 400 of a raider draws it away from the workbench
+// and the players. Broken scarecrows leave the piece list, so routing reverts then.
+static constexpr f32 DECOY_RANGE = 400.0f;
+static Actor* NearestDecoy(Actor* a) {
+    Actor* best = nullptr;
+    f32 bestD = DECOY_RANGE;
+    for (auto& [id, actor] : SpawnedPlaceables()) {
+        const Placeable* p = FindPlaceable(id);
+        if (p == nullptr || p->type != PLACEABLE_SCARECROW || actor == nullptr || actor->update == nullptr) {
+            continue;
+        }
+        f32 d = Math_Vec3f_DistXZ(&a->world.pos, &actor->world.pos);
+        if (d < bestD) {
+            best = actor;
+            bestD = d;
+        }
+    }
+    return best;
+}
+
 // A player within 300 on (about) the same level: the raider fights them instead.
 // One on a ledge above or below can't be reached by walking straight at them.
 static Actor* EngagedPlayer(Actor* a) {
@@ -765,7 +785,10 @@ static void DrainBarricades() {
             // Into the piece's local frame.
             f32 c = Math_CosS(actor->shape.rot.y), s = Math_SinS(actor->shape.rot.y);
             f32 lx = dx * c - dz * s, lz = dx * s + dz * c;
-            const f32 r = 32.0f; // body radius + the wall push-out margin
+            // Body radius + the wall push-out margin. Raiders crowd a scarecrow about 60 out
+            // (its collider plus theirs) instead of pressing in like at a wall, so it needs
+            // a longer reach or a Stalchild-only crowd stands there forever (PHA-3915).
+            const f32 r = infoPtr == &GetPlaceableInfo(PLACEABLE_SCARECROW) ? 64.0f : 32.0f;
             if (fabsf(lx) < info.halfX + r && fabsf(lz) < info.halfZ + r) {
                 f32& owed = sPendingDrain[id];
                 owed += DrainFor(a) * drainScale * dt;
@@ -805,9 +828,10 @@ static void RouteRaiders() {
         if (!IsRaiderType(a->id) || a->colChkInfo.health == 0 || a->update == nullptr) {
             continue;
         }
-        Actor* engagedWith = EngagedPlayer(a);
+        Actor* decoy = NearestDecoy(a);
+        Actor* engagedWith = decoy == nullptr ? EngagedPlayer(a) : nullptr;
         bool engaged = engagedWith != nullptr;
-        Vec3f goal = engaged ? engagedWith->world.pos : GoalFor(a);
+        Vec3f goal = decoy != nullptr ? decoy->world.pos : engaged ? engagedWith->world.pos : GoalFor(a);
 
         if (a->id == ACTOR_EN_RD) {
             HordeNight::ShambleToward(a, goal, HordeNight::HORDE_SHAMBLE_SPEED);
@@ -865,10 +889,11 @@ static void OnRaiderPerception(void* actorRef, bool* should) {
         // travels with its quarry so it never gives up.
         a->home.pos = nearest->world.pos;
     }
-    if (!sDir.baseHere || EngagedPlayer(a) != nullptr) {
+    Actor* decoy = NearestDecoy(a);
+    if (decoy == nullptr && (!sDir.baseHere || EngagedPlayer(a) != nullptr)) {
         return; // a player is close (or there's no base here): the players are the target
     }
-    Vec3f goal = sDir.center;
+    Vec3f goal = decoy != nullptr ? decoy->world.pos : sDir.center;
     f32 xz = Actor_WorldDistXZToPoint(a, &goal);
     if (a->id == ACTOR_EN_WF) {
         xz = std::min(xz, 200.0f); // close enough to come out of the ground and run at it

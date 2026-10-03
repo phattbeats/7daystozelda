@@ -402,7 +402,8 @@ const char* RecipeIcon(const Recipe& recipe) {
         { "barricade", gItemIconShieldDekuTex },  { "torch", gItemIconDinsFireTex },
         { "spikes", gItemIconMaskSkullTex },      { "chest", gItemIconBombBag20Tex },
         { "stonewall", gItemIconShieldHylianTex }, { "bombtrap", gItemIconBombchuTex },
-        { "gate", gItemIconHookshotTex },
+        { "gate", gItemIconHookshotTex },         { "scarecrow", gItemIconSlingshotTex },
+        { "guardbaba", gItemIconDekuNutTex },
     };
     auto it = sIcons.find(recipe.id);
     return it != sIcons.end() ? it->second : nullptr;
