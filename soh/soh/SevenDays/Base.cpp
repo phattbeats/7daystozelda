@@ -318,6 +318,7 @@ nlohmann::json BaseToJson() {
                       { "story", sBase.story },
                       { "nightsFailed", sBase.nightsFailed },
                       { "raidInterval", sBase.raidInterval },
+                      { "seedRev", sBase.seedRev },
                       { "night",
                         { { "day", sBase.nightDay },
                           { "fought", sBase.nightFought },
@@ -350,6 +351,7 @@ void BaseFromJson(const nlohmann::json& j) {
     b.story = counters.value("story", 0u);
     b.nightsFailed = counters.value("nightsFailed", 0u);
     b.raidInterval = counters.value("raidInterval", 0u);
+    b.seedRev = counters.value("seedRev", 0u);
     auto night = counters.value("night", nlohmann::json::object());
     b.nightDay = night.value("day", 0u);
     b.nightFought = night.value("fought", false);
@@ -383,25 +385,94 @@ static const Seed sVillageSeeds[] = {
     { PLACEABLE_BARRICADE, -150.0f, 380.0f, -1180.0f, 0x0000, 100 }, // Lost Woods ledge path, east side
     { PLACEABLE_BARRICADE,  300.0f,   0.0f,  500.0f, 0x1C72, 35  }, // the broken fence on the village green
 };
+// PHA-3904 (Brandon, 2026-10-04): palisade walls around the village. They carry the
+// barricade lines at both Lost Woods exits out toward the cliffs (the gaps stay open,
+// so the story route does too), and fence the north ramp and east edge of the dip by
+// Link's house, leaving a way in. 96 tall, so Link can't climb them; raiders break through.
+static const Seed sPalisadeSeeds[] = {
+    { PLACEABLE_PALISADE, -1240.0f, -80.0f, -502.0f, 0x4000, 100 }, // Lost Woods bridge path, north of the barricades
+    { PLACEABLE_PALISADE, -1240.0f, -80.0f, -626.0f, 0x4000, 100 },
+    { PLACEABLE_PALISADE, -1240.0f, -80.0f,  -78.0f, 0x4000, 100 }, // ...south of them
+    { PLACEABLE_PALISADE,  -472.0f, 380.0f, -1180.0f, 0x0000, 100 }, // Lost Woods ledge path, west of the barricades
+    { PLACEABLE_PALISADE,  -596.0f, 380.0f, -1180.0f, 0x0000, 100 },
+    { PLACEABLE_PALISADE,   -28.0f, 380.0f, -1180.0f, 0x0000, 100 }, // ...east of them
+    { PLACEABLE_PALISADE,  -188.0f, -60.0f,  640.0f, 0x0000, 100 }, // the yard's north ramp, west side
+    { PLACEABLE_PALISADE,   108.0f, -60.0f,  640.0f, 0x0000, 100 }, // ...east side
+    { PLACEABLE_PALISADE,   170.0f, -80.0f,  800.0f, 0x4000, 100 }, // the yard's east edge
+    { PLACEABLE_PALISADE,   170.0f, -80.0f,  924.0f, 0x4000, 100 },
+    { PLACEABLE_PALISADE,   170.0f, -80.0f, 1048.0f, 0x4000, 100 },
+};
 // clang-format on
+
+// Bump when the village gains pieces, so saves made before get them (SeedVillageUpgrade).
+constexpr uint32_t SEED_REV = 1;
+
+static void AddSeed(const Seed& s) {
+    Placeable p;
+    p.id = sBase.nextId++;
+    p.type = s.type;
+    p.era = ERA_CHILD;
+    p.scene = SCENE_KOKIRI_FOREST;
+    p.pos[0] = s.x;
+    p.pos[1] = s.y;
+    p.pos[2] = s.z;
+    p.rot = s.rot;
+    uint16_t maxHp = GetPlaceableInfo(s.type).maxHp;
+    p.hp = (uint16_t)(maxHp * s.hpPercent / 100);
+    sBase.placeables.push_back(p);
+}
 
 void SeedVillage() {
     sBase = {};
     for (auto& s : sVillageSeeds) {
-        Placeable p;
-        p.id = sBase.nextId++;
-        p.type = s.type;
-        p.era = ERA_CHILD;
-        p.scene = SCENE_KOKIRI_FOREST;
-        p.pos[0] = s.x;
-        p.pos[1] = s.y;
-        p.pos[2] = s.z;
-        p.rot = s.rot;
-        uint16_t maxHp = GetPlaceableInfo(s.type).maxHp;
-        p.hp = (uint16_t)(maxHp * s.hpPercent / 100);
-        sBase.placeables.push_back(p);
+        AddSeed(s);
         if (s.type == PLACEABLE_WORKBENCH && !sBase.center[ERA_CHILD].valid) {
             sBase.center[ERA_CHILD] = { true, SCENE_KOKIRI_FOREST, { s.x, s.y, s.z } };
+        }
+    }
+    for (auto& s : sPalisadeSeeds) {
+        AddSeed(s);
+    }
+    sBase.seedRev = SEED_REV;
+}
+
+// A save from before the palisades: add the ones with room, while the base is still
+// the child-era one in Kokiri Forest. Anything the players built stays; a palisade
+// that would overlap a piece is left out.
+void SeedVillageUpgrade() {
+    if (sBase.seedRev >= SEED_REV) {
+        return;
+    }
+    sBase.seedRev = SEED_REV;
+    const BaseCenter& c = sBase.center[ERA_CHILD];
+    if (!c.valid || c.scene != SCENE_KOKIRI_FOREST) {
+        return;
+    }
+    for (auto& p : sBase.placeables) {
+        if (p.era == ERA_RUINS) {
+            return;
+        }
+    }
+    for (auto& s : sPalisadeSeeds) {
+        if (CountEra(ERA_CHILD) >= BASE_CAP) {
+            break;
+        }
+        const PlaceableInfo& info = GetPlaceableInfo(s.type);
+        bool clear = true;
+        for (auto& p : sBase.placeables) {
+            if (p.scene != SCENE_KOKIRI_FOREST) {
+                continue;
+            }
+            const PlaceableInfo& other = GetPlaceableInfo(p.type);
+            float r = (float)(info.halfX + std::max(other.halfX, other.halfZ));
+            float dx = p.pos[0] - s.x, dz = p.pos[2] - s.z;
+            if (dx * dx + dz * dz < r * r && fabsf(p.pos[1] - s.y) < 150.0f) {
+                clear = false;
+                break;
+            }
+        }
+        if (clear) {
+            AddSeed(s);
         }
     }
 }

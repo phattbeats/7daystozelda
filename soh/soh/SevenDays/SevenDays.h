@@ -240,6 +240,7 @@ struct BaseState {
     uint32_t story = 0;
     uint32_t nightsFailed = 0;
     uint32_t raidInterval = 0; // days between raids, picked on a new save (0: not picked yet)
+    uint32_t seedRev = 0;      // PHA-3904: which village seeding the save has had (SEED_REV)
     std::vector<uint32_t> lootOpened;    // M7: opened caches, paid Skulltula tens, paid bosses (LootKey)
     std::vector<std::string> blueprints; // M7: recipe ids the room has the blueprint for
     // PHA-3935: tonight's raid record, kept here (saved and synced, in "counters") so an
@@ -254,6 +255,7 @@ const BaseState& GetBase();
 nlohmann::json BaseToJson();
 void BaseFromJson(const nlohmann::json& j);
 void SeedVillage(); // the boarded-up Kokiri village of a new save
+void SeedVillageUpgrade(); // ...and its later pieces, for a save made before them
 bool BaseOwnsPacket(const std::string& type);
 void BaseHandlePacket(const std::string& type, const nlohmann::json& payload, uint32_t from);
 void BaseOnFrame();

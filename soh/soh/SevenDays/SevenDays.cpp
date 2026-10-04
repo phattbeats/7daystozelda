@@ -949,6 +949,7 @@ static void LoadSectionV2() {
     SaveManager::Instance->LoadData("base", base);
     if (base.is_object()) {
         BaseFromJson(base);
+        SeedVillageUpgrade();
     }
     RaidsResetSession();
     LootResetSession();
