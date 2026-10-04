@@ -62,6 +62,19 @@ static const std::vector<Recipe> sRecipes = {
     { "bombtrap",       "Bomb-flower trap", RECIPE_KIT,        { { MAT_STONE, 4 }, { MAT_ROT, 2 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG, true },
     { "gate",           "Player gate",      RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_STONE, 4 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_HOOKSHOT, true },
     { "ironwall",       "Iron wall",        RECIPE_KIT,        { { MAT_IRON, 4 }, { MAT_STONE, 4 }, { MAT_ORE, 2 } }, 3, ITEM_NONE, ITEM_NONE,   1,  UNLOCK_SILVER_GAUNTLETS },
+    // PHA-3945: floors, stairs and doors (Majora's Mask models). Floors and stairs need no
+    // tier: a second storey is part of building from the start. The doors climb the tiers
+    // like the player gate they re-skin, without its blueprint.
+    { "floorplank",     "Plank floor",      RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_FIBER, 1 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "floorranch",     "Ranch floor",      RECIPE_KIT,        { { MAT_WOOD, 3 } },                          1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "floorstone",     "Stone platform",   RECIPE_KIT,        { { MAT_STONE, 5 }, { MAT_WOOD, 1 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "deck",           "Festival deck",    RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_FIBER, 4 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "step",           "Wooden step",      RECIPE_KIT,        { { MAT_WOOD, 3 } },                          1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "ladder",         "Ladder",           RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_FIBER, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "stairs",         "Inn staircase",    RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_STONE, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "doorswamp",      "Swamp door",       RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_FIBER, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
+    { "doormusic",      "Music Box House door", RECIPE_KIT,    { { MAT_WOOD, 8 }, { MAT_STONE, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG },
+    { "doorpirate",     "Pirates' Fortress door", RECIPE_KIT,  { { MAT_WOOD, 6 }, { MAT_STONE, 4 }, { MAT_BONE, 2 } }, 3, ITEM_NONE, ITEM_NONE,   1,  UNLOCK_HOOKSHOT },
 
     { "trade_fiber",    "Sell Fiber",       RECIPE_TRADE,      { { MAT_FIBER, 5 } },                         1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },
     { "trade_wood",     "Sell Wood",        RECIPE_TRADE,      { { MAT_WOOD, 3 } },                          1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },

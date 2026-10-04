@@ -1,0 +1,7 @@
+exec(open('/tmp/vq/h.py').read())
+cv('gSevenDays.Enabled',1)
+key('space'); time.sleep(3); key('space'); time.sleep(3); shot('/tmp/vq/ev/f0.png')
+key('x'); time.sleep(2); shot('/tmp/vq/ev/f1.png')
+key('w'); time.sleep(0.4); key('x'); time.sleep(0.6); key('space'); time.sleep(0.6); key('x'); time.sleep(3); shot('/tmp/vq/ev/f2.png')
+key('x'); time.sleep(2); key('x'); time.sleep(6); shot('/tmp/vq/ev/f3.png')
+print('done')

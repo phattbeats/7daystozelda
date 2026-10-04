@@ -8,6 +8,17 @@ o2r resources under objects/7dtz_mm/, the paths Placeables.cpp draws:
   objects/7dtz_mm/kgy/gMMSmithyBladeDL     workbench: a red-hot sword blank
   objects/7dtz_mm/gMMInnDeskDL             workbench: the Stock Pot Inn's desk (room geometry)
 
+PHA-3945, floors, stairs and doors:
+  objects/7dtz_mm/taru/gMMPiratePanelDL       plank floor, wooden step: Pirates' Fortress breakable panel
+  objects/7dtz_mm/gMMRanchPlankDL             ranch floor: a plank from the Romani Ranch house (room geometry)
+  objects/7dtz_mm/raillift/gMMStonePlatformDL stone platform: a Woodfall Temple moving platform
+  objects/7dtz_mm/tokei_turret/gMMFestivalDeckDL festival deck: the top of the Clock Town carnival tower
+  objects/7dtz_mm/ladder/gMMLadderDL          ladder: the 12-rung wooden ladder; calls segment 0x0C
+  objects/7dtz_mm/gMMInnStairsDL              staircase: the Stock Pot Inn's lobby stairs (room geometry)
+  objects/7dtz_mm/dor03/gMMSwampDoorDL        doors: the Southern Swamp door,
+  objects/7dtz_mm/kaizoku_obj/gMMPirateDoorDL   the Pirates' Fortress door
+  objects/7dtz_mm/wdor05/gMMMusicBoxDoorDL      and the Music Box House door
+
 The output is Nintendo data: never commit it or attach it to a public release. It
 ships only inside the server's soh.o2r (--o2r appends it there).
 
@@ -124,8 +135,9 @@ def main():
             segs[6] = files[tex.group(1)]
         return z64dl.Ctx(segs)
 
-    def export_room_box(scene, room, lo, hi, outname):
-        """Every triangle of the room inside the box lo..hi (room coordinates)."""
+    def export_room_box(scene, room, lo, hi, outname, only=None):
+        """Every triangle of the room inside the box lo..hi (room coordinates), from the
+        room's display lists in `only` when it is given."""
         ctx = scene_ctx(scene, room)
         base = "objects/7dtz_mm/%s%d" % (scene[3:].lower(), room)
         folders = {2: base + "/scene", 3: base + "/room"}
@@ -133,6 +145,8 @@ def main():
             folders[6] = base + "/scenetex"
         tops, keep, kept = [], set(), []
         for d in room_dls(ctx.segs[3]):
+            if only is not None and d & 0xFFFFFF not in only:
+                continue
             inside = [t for t in z64dl.walk(ctx, d)
                       if all(lo[i] <= v[i] <= hi[i] for v in t["v"] for i in range(3))]
             if inside:
@@ -149,6 +163,20 @@ def main():
     export_object("object_kgy", 0x0600A1C0, "gMMSmithyHammerDL")  # En_Kgy's hammer limb
     export_object("object_kgy", 0x0600E8F0, "gMMSmithyBladeDL")   # the red-hot blade; calls segs 8/9
     export_room_box("Z2_YADOYA", 3, (-435, 210, 360), (-391, 239, 389), "gMMInnDeskDL")
+    # PHA-3945: floors, stairs and doors.
+    export_object("object_taru", object_dl("object_taru", "gObjTaruBreakablePiratePanelDL"), "gMMPiratePanelDL")
+    export_room_box("Z2_OMOYA", 1, (600, 57, -100), (640, 63, 64), "gMMRanchPlankDL")
+    export_object("object_raillift", 0x06001E40, "gMMStonePlatformDL")
+    export_object("object_tokei_turret", object_dl("object_tokei_turret", "gClockTownTurretPlatformTopDL"),
+                  "gMMFestivalDeckDL")
+    export_object("object_ladder", object_dl("object_ladder", "gWoodenLadder12RungDL"), "gMMLadderDL")
+    # The lobby stairs: the tread ramp, the side panel under it and the banister, not the
+    # counter that stands in the same box.
+    export_room_box("Z2_YADOYA", 0, (-30, 0, -150), (215, 249, -23), "gMMInnStairsDL",
+                    only={0x000BE8, 0x008BD8, 0x00A948})
+    export_object("object_dor03", object_dl("object_dor03", "gSwampDoorDL"), "gMMSwampDoorDL")
+    export_object("object_kaizoku_obj", object_dl("object_kaizoku_obj", "gPiratesFortressDoorDL"), "gMMPirateDoorDL")
+    export_object("object_wdor05", object_dl("object_wdor05", "gMusicBoxHouseDoorDL"), "gMMMusicBoxDoorDL")
 
     for path, data in out.items():
         fp = os.path.join(a.out, path)

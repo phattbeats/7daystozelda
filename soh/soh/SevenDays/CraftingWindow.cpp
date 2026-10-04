@@ -425,6 +425,12 @@ const char* RecipeIcon(const Recipe& recipe) {
         { "gate", gItemIconHookshotTex },         { "scarecrow", gItemIconSlingshotTex },
         { "guardbaba", gItemIconDekuNutTex },     { "ironwall", gItemIconSilverGauntletsTex },
         { "palisade", gItemIconHammerTex },
+        // PHA-3945
+        { "floorplank", gItemIconBootsKokiriTex },  { "floorranch", gItemIconBottleMilkFullTex },
+        { "floorstone", gItemIconGoronsBraceletTex }, { "deck", gItemIconMaskKeatonTex },
+        { "step", gItemIconBootsHoverTex },          { "ladder", gItemIconLongshotTex },
+        { "stairs", gItemIconBootsIronTex },         { "doorswamp", gItemIconMagicBeanTex },
+        { "doormusic", gItemIconOcarinaFairyTex },   { "doorpirate", gItemIconMaskGerudoTex },
     };
     auto it = sIcons.find(recipe.id);
     return it != sIcons.end() ? it->second : nullptr;

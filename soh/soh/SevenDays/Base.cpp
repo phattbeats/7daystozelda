@@ -91,11 +91,35 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     /* PLACEABLE_GATE      */ { "gate",      "Player gate",    60,   8,    90,    150 },
     /* PLACEABLE_IRONWALL  */ { "ironwall",  "Iron wall",      60,   30,   60,    400 },
     /* PLACEABLE_PALISADE  */ { "palisade",  "Palisade wall",  62,   16,   96,    150 },
+    // PHA-3945: floors tile on a 120 grid; the deck, ladder and stairs are a storey (104) tall.
+    /* PLACEABLE_FLOOR_PLANK */ { "floorplank", "Plank floor",  60,   60,   8,     100 },
+    /* PLACEABLE_FLOOR_RANCH */ { "floorranch", "Ranch floor",  60,   60,   6,     80  },
+    /* PLACEABLE_FLOOR_STONE */ { "floorstone", "Stone platform", 60, 60,   24,    200 },
+    /* PLACEABLE_DECK        */ { "deck",       "Festival deck", 60,  60,   STOREY_HEIGHT, 150 },
+    /* PLACEABLE_STEP        */ { "step",       "Wooden step",  30,   30,   52,    80  },
+    /* PLACEABLE_LADDER      */ { "ladder",     "Ladder",       15,   4,    STOREY_HEIGHT, 60 },
+    /* PLACEABLE_STAIRS      */ { "stairs",     "Inn staircase", 32,  60,   STOREY_HEIGHT, 120 },
+    /* PLACEABLE_DOOR_SWAMP  */ { "doorswamp",  "Swamp door",   60,   8,    100,   120 },
+    /* PLACEABLE_DOOR_MUSIC  */ { "doormusic",  "Music Box House door", 60, 8, 100, 150 },
+    /* PLACEABLE_DOOR_PIRATE */ { "doorpirate", "Pirates' Fortress door", 60, 8, 100, 200 },
 };
 // clang-format on
 
 const PlaceableInfo& GetPlaceableInfo(uint8_t type) {
     return sPlaceables[type < PLACEABLE_COUNT ? type : 0];
+}
+
+bool IsFloorType(uint8_t type) {
+    return type == PLACEABLE_FLOOR_PLANK || type == PLACEABLE_FLOOR_RANCH || type == PLACEABLE_FLOOR_STONE;
+}
+
+bool IsWalkOverType(uint8_t type) {
+    return type == PLACEABLE_SPIKES || IsFloorType(type);
+}
+
+bool IsDoorType(uint8_t type) {
+    return type == PLACEABLE_GATE || type == PLACEABLE_DOOR_SWAMP || type == PLACEABLE_DOOR_MUSIC ||
+           type == PLACEABLE_DOOR_PIRATE;
 }
 
 int FindPlaceableTypeForKit(const std::string& kit) {
@@ -229,10 +253,14 @@ uint32_t CurrentDay() {
 // MARK: - JSON (packets, save section and team state share one format)
 
 static nlohmann::json PlaceableToJson(const Placeable& p) {
-    return { { "id", p.id },     { "type", p.type },
-             { "era", p.era },   { "scene", p.scene },
-             { "pos", { p.pos[0], p.pos[1], p.pos[2] } },
-             { "rot", p.rot },   { "hp", p.hp } };
+    nlohmann::json j = { { "id", p.id },     { "type", p.type },
+                         { "era", p.era },   { "scene", p.scene },
+                         { "pos", { p.pos[0], p.pos[1], p.pos[2] } },
+                         { "rot", p.rot },   { "hp", p.hp } };
+    if (p.stacked) {
+        j["stk"] = true;
+    }
+    return j;
 }
 
 static Placeable PlaceableFromJson(const nlohmann::json& j) {
@@ -247,6 +275,7 @@ static Placeable PlaceableFromJson(const nlohmann::json& j) {
     }
     p.rot = j.value("rot", (int16_t)0);
     p.hp = j.value("hp", (uint16_t)0);
+    p.stacked = j.value("stk", false);
     if (p.type >= PLACEABLE_COUNT) {
         p.type = PLACEABLE_BARRICADE;
     }
@@ -574,6 +603,7 @@ static void ProcessPlaceRequest(const nlohmann::json& payload, uint32_t requeste
     std::copy(pos, pos + 3, p.pos);
     p.rot = payload.value("rot", (int16_t)0);
     p.hp = info.maxHp;
+    p.stacked = payload.value("stk", false);
     sBase.placeables.push_back(p);
     if (setsCenter) {
         center = { true, scene, { pos[0], pos[1], pos[2] } };
@@ -882,6 +912,8 @@ static void ProcessRepairRequest(const nlohmann::json& payload, uint32_t request
 }
 
 // Owner: sequence an HP change (from itself or a scene's enemy authority).
+static void DropPiecesOn(const Placeable& gone);
+
 static void ApplyHp(uint16_t id, int hp) {
     Placeable* p = FindPlaceableMut(id);
     if (p == nullptr) {
@@ -895,11 +927,19 @@ static void ApplyHp(uint16_t id, int hp) {
     nlohmann::json delta;
     if (hp == 0) {
         // Broken: the piece is gone (its kit is not refunded).
+        Placeable gone = *p;
+        auto spawned = sSpawned.find(id);
+        if (spawned != sSpawned.end() && spawned->second != nullptr) {
+            gone.pos[1] = spawned->second->world.pos.y; // where it stood, after any re-snap
+        }
         std::erase_if(sBase.placeables, [id](const Placeable& q) { return q.id == id; });
         delta["op"] = "remove";
         delta["id"] = id;
         delta["broken"] = true;
         Despawn(id);
+        BroadcastDelta(delta);
+        DropPiecesOn(gone); // PHA-3945: what stood on it falls with it
+        return;
     } else {
         if (hp < p->hp) {
             auto it = sSpawned.find(id);
@@ -1121,6 +1161,8 @@ struct PlacementState {
     bool valid = false;
     std::string reason;
     int16_t room = -1;
+    bool stacked = false; // PHA-3945: on top of another piece
+    int16_t finalRot = 0; // PHA-3945: rot, or the angle a snap turned it to
 };
 static PlacementState sPlace;
 
@@ -1215,6 +1257,241 @@ static bool NearExitOrDoor(PlayState* play, const Vec3f& at, f32 floorY) {
     return false;
 }
 
+// MARK: - PHA-3945: stacking and snapping
+
+constexpr float TILE = 120.0f; // floors and the deck are 120 x 120
+
+static bool IsTileType(uint8_t type) {
+    return IsFloorType(type) || type == PLACEABLE_DECK;
+}
+
+// A piece's box: footprint centre, half extents and yaw, and the heights it spans.
+struct PieceBox {
+    float x, z, y0, y1, hx, hz;
+    int16_t rot;
+};
+
+static PieceBox BoxAt(uint8_t type, float x, float y, float z, int16_t rot) {
+    const PlaceableInfo& info = GetPlaceableInfo(type);
+    return { x, z, y, y + info.height, (float)info.halfX, (float)info.halfZ, rot };
+}
+
+// The spawned actor's y when there is one: Placeable_Init re-snaps ground pieces.
+static PieceBox BoxOf(const Placeable& p) {
+    auto it = sSpawned.find(p.id);
+    float y = it != sSpawned.end() && it->second != nullptr ? it->second->world.pos.y : p.pos[1];
+    return BoxAt(p.type, p.pos[0], y, p.pos[2], p.rot);
+}
+
+// World offset (dx, dz) in a piece's frame. Its local +z is ahead of Link when he placed it.
+static void ToLocal(int16_t rot, float dx, float dz, float* lx, float* lz) {
+    float c = Math_CosS(rot), s = Math_SinS(rot);
+    *lx = dx * c - dz * s;
+    *lz = dx * s + dz * c;
+}
+
+static void ToWorld(int16_t rot, float lx, float lz, float* dx, float* dz) {
+    float c = Math_CosS(rot), s = Math_SinS(rot);
+    *dx = lx * c + lz * s;
+    *dz = -lx * s + lz * c;
+}
+
+// Separating axes: do two footprints overlap by more than `slack`?
+static bool FootprintsOverlap(const PieceBox& a, const PieceBox& b, float slack) {
+    const PieceBox* boxes[2] = { &a, &b };
+    float dx = b.x - a.x, dz = b.z - a.z;
+    for (const PieceBox* axisBox : boxes) {
+        float c = Math_CosS(axisBox->rot), s = Math_SinS(axisBox->rot);
+        float axes[2][2] = { { c, -s }, { s, c } }; // the box's local x and z, in the world
+        for (auto& u : axes) {
+            float dist = fabsf(dx * u[0] + dz * u[1]);
+            float r = 0.0f;
+            for (const PieceBox* q : boxes) {
+                float qc = Math_CosS(q->rot), qs = Math_SinS(q->rot);
+                r += q->hx * fabsf(u[0] * qc - u[1] * qs) + q->hz * fabsf(u[0] * qs + u[1] * qc);
+            }
+            if (dist >= r - slack) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static bool FootprintContains(const PieceBox& b, float x, float z, float margin) {
+    float lx, lz;
+    ToLocal(b.rot, x - b.x, z - b.z, &lx, &lz);
+    return fabsf(lx) <= b.hx + margin && fabsf(lz) <= b.hz + margin;
+}
+
+// The piece Link is standing on (a floor, a wall top, the stairs), or null.
+static const Placeable* PieceUnderLink(Player* player) {
+    if (player->actor.floorBgId == BGCHECK_SCENE || !(player->actor.bgCheckFlags & 1)) {
+        return nullptr;
+    }
+    const Placeable* best = nullptr;
+    float bestTop = -1e9f;
+    float y = player->actor.world.pos.y;
+    for (auto& p : sBase.placeables) {
+        if (!SpawnsHere(p) || IsRuin(p)) {
+            continue;
+        }
+        PieceBox b = BoxOf(p);
+        if (!FootprintContains(b, player->actor.world.pos.x, player->actor.world.pos.z, 4.0f)) {
+            continue;
+        }
+        // Anywhere on the stairs counts as their top: the floor goes where they lead.
+        bool on = p.type == PLACEABLE_STAIRS ? (y > b.y0 - 2.0f && y < b.y1 + 6.0f) : fabsf(y - b.y1) < 12.0f;
+        if (on && b.y1 > bestTop) {
+            best = &p;
+            bestTop = b.y1;
+        }
+    }
+    return best;
+}
+
+// The piece whose top is at y under (x, z): what a stacked piece stands on.
+static const Placeable* PieceWithTopAt(float x, float z, float y) {
+    for (auto& p : sBase.placeables) {
+        if (SpawnsHere(p) && !IsRuin(p)) {
+            PieceBox b = BoxOf(p);
+            if (fabsf(b.y1 - y) < 3.0f && FootprintContains(b, x, z, 2.0f)) {
+                return &p;
+            }
+        }
+    }
+    return nullptr;
+}
+
+// Floors and decks line up with the tile they are next to, turned the same way.
+static void SnapToTile(const PieceBox& ref, float* x, float* z, int16_t* rot) {
+    float lx, lz, dx, dz;
+    ToLocal(ref.rot, *x - ref.x, *z - ref.z, &lx, &lz);
+    ToWorld(ref.rot, roundf(lx / TILE) * TILE, roundf(lz / TILE) * TILE, &dx, &dz);
+    *x = ref.x + dx;
+    *z = ref.z + dz;
+    *rot = ref.rot;
+}
+
+static const Placeable* NearestTileAtLevel(float x, float z, float y) {
+    const Placeable* best = nullptr;
+    float bestD = 200.0f * 200.0f;
+    for (auto& p : sBase.placeables) {
+        if (!SpawnsHere(p) || IsRuin(p) || !IsTileType(p.type)) {
+            continue;
+        }
+        PieceBox b = BoxOf(p);
+        float dx = b.x - x, dz = b.z - z;
+        if (fabsf(b.y0 - y) < 20.0f && dx * dx + dz * dz < bestD) {
+            best = &p;
+            bestD = dx * dx + dz * dz;
+        }
+    }
+    return best;
+}
+
+// Ladders and stairs pointed at the edge of something about a storey up (a floor on the
+// walls, the deck) snap flush against that edge, facing it, so they lead onto it.
+static bool SnapToLanding(uint8_t type, float* x, float* z, float groundY, int16_t* rot) {
+    const PlaceableInfo& info = GetPlaceableInfo(type);
+    const Placeable* best = nullptr;
+    float bestD = 60.0f;
+    for (auto& p : sBase.placeables) {
+        if (!SpawnsHere(p) || IsRuin(p) || p.type == PLACEABLE_LADDER || p.type == PLACEABLE_STAIRS) {
+            continue;
+        }
+        PieceBox b = BoxOf(p);
+        float rise = b.y1 - groundY;
+        if (rise < 40.0f || rise > 140.0f) {
+            continue;
+        }
+        float lx, lz;
+        ToLocal(b.rot, *x - b.x, *z - b.z, &lx, &lz);
+        float d = sqrtf(SQ(std::max(0.0f, fabsf(lx) - b.hx)) + SQ(std::max(0.0f, fabsf(lz) - b.hz)));
+        if (d < bestD) {
+            best = &p;
+            bestD = d;
+        }
+    }
+    if (best == nullptr) {
+        return false;
+    }
+    PieceBox b = BoxOf(*best);
+    float lx, lz;
+    ToLocal(b.rot, *x - b.x, *z - b.z, &lx, &lz);
+    // The edge the target is past (or nearest to), and where along it.
+    float cx, cz, outX, outZ;
+    if (fabsf(lx) - b.hx > fabsf(lz) - b.hz) {
+        float side = lx < 0.0f ? -1.0f : 1.0f;
+        float along = std::clamp(lz, -std::max(0.0f, b.hz - info.halfX), std::max(0.0f, b.hz - info.halfX));
+        cx = side * (b.hx + info.halfZ), cz = along, outX = side, outZ = 0.0f;
+    } else {
+        float side = lz < 0.0f ? -1.0f : 1.0f;
+        float along = std::clamp(lx, -std::max(0.0f, b.hx - info.halfX), std::max(0.0f, b.hx - info.halfX));
+        cx = along, cz = side * (b.hz + info.halfZ), outX = 0.0f, outZ = side;
+    }
+    float dx, dz, ox, oz;
+    ToWorld(b.rot, cx, cz, &dx, &dz);
+    ToWorld(b.rot, outX, outZ, &ox, &oz);
+    *x = b.x + dx;
+    *z = b.z + dz;
+    // The piece's +z (the stairs' high end) points back at the landing.
+    *rot = Math_Atan2S(-oz, -ox);
+    // Out past whatever stands under the landing's edge (the wall it rests on).
+    PieceBox me = BoxAt(type, *x, groundY, *z, *rot);
+    for (int step = 0; step < 16; step++) {
+        bool clear = true;
+        for (auto& p : sBase.placeables) {
+            if (SpawnsHere(p) && !IsRuin(p)) {
+                PieceBox o = BoxOf(p);
+                if (me.y0 < o.y1 - 1.0f && o.y0 < me.y1 - 1.0f && FootprintsOverlap(me, o, 1.0f)) {
+                    clear = false;
+                    break;
+                }
+            }
+        }
+        if (clear) {
+            break;
+        }
+        me.x = *x += ox * 3.0f;
+        me.z = *z += oz * 3.0f;
+    }
+    return true;
+}
+
+// PHA-3945: when a piece breaks, whatever stood on it with nothing else under it falls
+// and breaks too (and in turn what stood on that). Floors that only reach out from the
+// level beside them stand on nothing, so they stay.
+static void DropPiecesOn(const Placeable& gone) {
+    PieceBox below = BoxAt(gone.type, gone.pos[0], gone.pos[1], gone.pos[2], gone.rot);
+    std::vector<uint16_t> falling;
+    for (auto& p : sBase.placeables) {
+        if (!p.stacked || p.era != gone.era || p.scene != gone.scene) {
+            continue;
+        }
+        PieceBox b = BoxOf(p);
+        if (fabsf(b.y0 - below.y1) > 3.0f || !FootprintsOverlap(b, below, 1.0f)) {
+            continue;
+        }
+        bool held = false;
+        for (auto& q : sBase.placeables) {
+            if (q.id != p.id && q.era == p.era && q.scene == p.scene) {
+                PieceBox o = BoxOf(q);
+                if (fabsf(o.y1 - b.y0) <= 3.0f && FootprintsOverlap(b, o, 1.0f)) {
+                    held = true;
+                    break;
+                }
+            }
+        }
+        if (!held) {
+            falling.push_back(p.id);
+        }
+    }
+    for (uint16_t id : falling) {
+        ApplyHp(id, 0);
+    }
+}
+
 static void Validate(PlayState* play, Player* player) {
     const PlaceableInfo& info = GetPlaceableInfo(sPlace.type);
     s16 yaw = player->actor.shape.rot.y;
@@ -1224,41 +1501,87 @@ static void Validate(PlayState* play, Player* player) {
     float z = player->actor.world.pos.z + Math_CosS(yaw) * dist;
     x = roundf(x / 30.0f) * 30.0f; // 30-unit grid
     z = roundf(z / 30.0f) * 30.0f;
+    int16_t rot = sPlace.rot;
 
-    Vec3f at = { x, player->actor.world.pos.y + 100.0f, z };
-    CollisionPoly* poly = nullptr;
-    s32 bgId = BGCHECK_SCENE;
-    f32 floorY = BgCheck_EntityRaycastFloor4(&play->colCtx, &poly, &bgId, &player->actor, &at);
-
+    sPlace.valid = false;
+    sPlace.stacked = false;
+    sPlace.finalRot = rot;
     sPlace.pos[0] = x;
     sPlace.pos[2] = z;
-    sPlace.pos[1] = floorY > BGCHECK_Y_MIN ? floorY : player->actor.world.pos.y;
-    sPlace.valid = false;
+    sPlace.pos[1] = player->actor.world.pos.y;
 
-    if (floorY <= BGCHECK_Y_MIN || poly == nullptr) {
-        sPlace.reason = "No ground here";
-        return;
+    float y;
+    const Placeable* under = IsFloorType(sPlace.type) ? PieceUnderLink(player) : nullptr;
+    if (under != nullptr) {
+        // PHA-3945: a floor placed from up on the base goes in at the level Link stands
+        // on, next to the tile he is on: that is how a second storey grows out.
+        PieceBox b = BoxOf(*under);
+        if (IsTileType(under->type)) {
+            SnapToTile(b, &x, &z, &rot);
+        }
+        y = b.y1 - info.height;
+        sPlace.stacked = true;
+    } else {
+        Vec3f at = { x, player->actor.world.pos.y + 100.0f, z };
+        CollisionPoly* poly = nullptr;
+        s32 bgId = BGCHECK_SCENE;
+        f32 floorY = BgCheck_EntityRaycastFloor4(&play->colCtx, &poly, &bgId, &player->actor, &at);
+        sPlace.pos[1] = floorY > BGCHECK_Y_MIN ? floorY : player->actor.world.pos.y;
+        if (floorY <= BGCHECK_Y_MIN || poly == nullptr) {
+            sPlace.reason = "No ground here";
+            return;
+        }
+        if (bgId != BGCHECK_SCENE) {
+            // On top of another piece: a floor, the deck, a wall.
+            if (PieceWithTopAt(x, z, floorY) == nullptr) {
+                sPlace.reason = "Build on solid ground";
+                return;
+            }
+            sPlace.stacked = true;
+        }
+        if (fabsf(floorY - player->actor.world.pos.y) > 100.0f) {
+            sPlace.reason = "Too big a drop";
+            return;
+        }
+        if (COLPOLY_GET_NORMAL(poly->normal.y) < cosf(30.0f * (float)M_PI / 180.0f)) {
+            sPlace.reason = "Too steep (over 30 degrees)";
+            return;
+        }
+        f32 waterY;
+        WaterBox* waterBox;
+        if (!sPlace.stacked && WaterBox_GetSurface1(play, &play->colCtx, x, z, &waterY, &waterBox) &&
+            waterY > floorY - 5.0f) {
+            sPlace.reason = "Not on water";
+            return;
+        }
+        y = floorY;
+        if (IsTileType(sPlace.type)) {
+            if (const Placeable* n = NearestTileAtLevel(x, z, y)) {
+                PieceBox b = BoxOf(*n);
+                SnapToTile(b, &x, &z, &rot);
+                y = b.y0; // flush with it, whatever the ground does
+                sPlace.stacked = sPlace.stacked || n->stacked;
+            }
+        } else if ((sPlace.type == PLACEABLE_LADDER || sPlace.type == PLACEABLE_STAIRS) &&
+                   SnapToLanding(sPlace.type, &x, &z, y, &rot)) {
+            // The foot of it: the ground (or the piece) under where it snapped to.
+            Vec3f foot = { x, y + 60.0f, z };
+            CollisionPoly* footPoly = nullptr;
+            s32 footBg = BGCHECK_SCENE;
+            f32 footY = BgCheck_EntityRaycastFloor3(&play->colCtx, &footPoly, &footBg, &foot);
+            if (footY > BGCHECK_Y_MIN && fabsf(footY - y) < 40.0f) {
+                y = footY;
+                sPlace.stacked = footBg != BGCHECK_SCENE;
+            }
+        }
     }
-    if (bgId != BGCHECK_SCENE) {
-        sPlace.reason = "Build on solid ground";
-        return;
-    }
-    if (fabsf(floorY - player->actor.world.pos.y) > 100.0f) {
-        sPlace.reason = "Too big a drop";
-        return;
-    }
-    if (COLPOLY_GET_NORMAL(poly->normal.y) < cosf(30.0f * (float)M_PI / 180.0f)) {
-        sPlace.reason = "Too steep (over 30 degrees)";
-        return;
-    }
-    f32 waterY;
-    WaterBox* waterBox;
-    if (WaterBox_GetSurface1(play, &play->colCtx, x, z, &waterY, &waterBox) && waterY > floorY - 5.0f) {
-        sPlace.reason = "Not on water";
-        return;
-    }
-    Vec3f ground = { x, floorY, z };
-    if (NearExitOrDoor(play, ground, floorY)) {
+    sPlace.pos[0] = x;
+    sPlace.pos[1] = y;
+    sPlace.pos[2] = z;
+    sPlace.finalRot = rot;
+
+    Vec3f ground = { x, y, z };
+    if (NearExitOrDoor(play, ground, y)) {
         sPlace.reason = "Too close to a door or exit";
         return;
     }
@@ -1266,15 +1589,15 @@ static void Validate(PlayState* play, Player* player) {
         sPlace.reason = "Bases go outdoors, where the nights come";
         return;
     }
+    // PHA-3945: boxes that overlap in the footprint and in height are refused; touching
+    // ones are fine, and a piece on top of another (or under a floor) is too.
+    PieceBox me = BoxAt(sPlace.type, x, y, z, rot);
     for (auto& p : sBase.placeables) {
         if (!SpawnsHere(p)) {
             continue;
         }
-        // Footprints as circles: overlapping boxes are refused, touching ones are fine.
-        const PlaceableInfo& other = GetPlaceableInfo(p.type);
-        float r = (float)(std::min(info.halfX, info.halfZ) + std::min(other.halfX, other.halfZ));
-        float dx = p.pos[0] - x, dz = p.pos[2] - z;
-        if (dx * dx + dz * dz < r * r) {
+        PieceBox other = BoxOf(p);
+        if (me.y0 < other.y1 - 1.0f && other.y0 < me.y1 - 1.0f && FootprintsOverlap(me, other, 1.0f)) {
             sPlace.reason = "Something is already there";
             return;
         }
@@ -1308,8 +1631,11 @@ static void SendPlaceRequest() {
     payload["scene"] = gPlayState->sceneNum;
     payload["room"] = -1;
     payload["pos"] = { sPlace.pos[0], sPlace.pos[1], sPlace.pos[2] };
-    payload["rot"] = sPlace.rot;
+    payload["rot"] = sPlace.finalRot;
     payload["era"] = CurrentEra();
+    if (sPlace.stacked) {
+        payload["stk"] = true;
+    }
     if (IsOwner()) {
         ProcessPlaceRequest(payload, OwnId());
     } else {
@@ -1342,7 +1668,7 @@ void PlacementUpdate(Actor* ghost, PlayState* play) {
 
     Validate(play, player);
     ghost->world.pos = { sPlace.pos[0], sPlace.pos[1], sPlace.pos[2] };
-    ghost->shape.rot.y = ghost->world.rot.y = sPlace.rot;
+    ghost->shape.rot.y = ghost->world.rot.y = sPlace.finalRot;
 
     if (pressed & BTN_B) {
         Sfx_PlaySfxCentered(NA_SE_SY_CANCEL);
@@ -1452,7 +1778,11 @@ uint16_t NearestPlaceable(float maxDist) {
             continue;
         }
         float dx = p.pos[0] - player->actor.world.pos.x, dz = p.pos[2] - player->actor.world.pos.z;
-        float d = dx * dx + dz * dz;
+        // PHA-3945: with floors stacked over walls, the piece at Link's height wins.
+        PieceBox b = BoxOf(p);
+        float y = player->actor.world.pos.y;
+        float above = std::max(0.0f, std::max(b.y0 - (y + 40.0f), y - b.y1));
+        float d = dx * dx + dz * dz + above * above * 4.0f;
         if (d < bestD) {
             bestD = d;
             best = p.id;
@@ -1580,7 +1910,8 @@ int sevendays_test_place(int type, double x, double y, double z, int rot) {
     sPlace.pos[0] = (float)x;
     sPlace.pos[1] = (float)y;
     sPlace.pos[2] = (float)z;
-    sPlace.rot = (int16_t)rot;
+    sPlace.rot = sPlace.finalRot = (int16_t)rot;
+    sPlace.stacked = false;
     SendPlaceRequest();
     return (int)sPlaceInFlight.reqId;
 }

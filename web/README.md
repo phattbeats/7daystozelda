@@ -22,7 +22,7 @@ Ocarina of Time co-op (shared enemies, nearest-player targeting, enemy sounds an
 
 ### Majora's Mask models in soh.o2r
 
-Since PHA-3904 the live `soh.o2r` also carries a few Majora's Mask models (the palisade wall's logs, the workbench's desk, hammer and blade), cut from an MM (USA) ROM by `art/mm-pack/build_mm_pack.py --o2r public/soh.o2r`. They are Nintendo data: they live only in the deployed image and the private Nextcloud folder, never in this repo or a public release. Any deploy that replaces `soh.o2r` must re-append them, or the game falls back to OoT models (the palisade becomes a tall horse fence, the workbench the shop shelves). Re-gzip `soh.o2r.gz` afterwards: `server.js` serves the `.gz` sibling.
+Since PHA-3904 the live `soh.o2r` also carries a few Majora's Mask models (the palisade wall's logs, the workbench's desk, hammer and blade; since PHA-3945 also the floors, deck, step, ladder, staircase and doors), cut from an MM (USA) ROM by `art/mm-pack/build_mm_pack.py --o2r public/soh.o2r`. They are Nintendo data: they live only in the deployed image and the private Nextcloud folder, never in this repo or a public release. Any deploy that replaces `soh.o2r` must re-append them, or the game falls back to OoT models (the palisade becomes a tall horse fence, the workbench the shop shelves). Re-gzip `soh.o2r.gz` afterwards: `server.js` serves the `.gz` sibling.
 
 Rename the subdomain by changing `server_name zelda.*;` and the CNAME. The container name `soh-web` must stay lowercase; SWAG resolves it literally.
 

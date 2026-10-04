@@ -836,8 +836,9 @@ static void DrainBarricades() {
     std::vector<DrainPiece> pieces;
     for (auto& [id, actor] : SpawnedPlaceables()) {
         const Placeable* p = FindPlaceable(id);
-        if (p != nullptr && GetPlaceableInfo(p->type).maxHp != 0 && p->type != PLACEABLE_SPIKES && !IsRuin(*p)) {
-            pieces.push_back({ id, actor, &GetPlaceableInfo(p->type) }); // spikes are walked over (and bite back)
+        // Spikes and low floors are walked over (spikes bite back); PHA-3945.
+        if (p != nullptr && GetPlaceableInfo(p->type).maxHp != 0 && !IsWalkOverType(p->type) && !IsRuin(*p)) {
+            pieces.push_back({ id, actor, &GetPlaceableInfo(p->type) });
         }
     }
     if (pieces.empty()) {
@@ -885,7 +886,12 @@ static bool TouchingBarricade(Actor* a) {
             continue;
         }
         const Placeable* p = FindPlaceable(id);
-        if (p == nullptr || GetPlaceableInfo(p->type).maxHp == 0 || IsRuin(*p)) {
+        if (p == nullptr || GetPlaceableInfo(p->type).maxHp == 0 || IsRuin(*p) || IsFloorType(p->type)) {
+            continue;
+        }
+        // PHA-3945: a floor up on the walls is out of reach.
+        f32 dy = a->world.pos.y - actor->world.pos.y;
+        if (dy < -30.0f || dy > GetPlaceableInfo(p->type).height + 60.0f) {
             continue;
         }
         if (d < GetPlaceableInfo(p->type).halfX + 45.0f) {

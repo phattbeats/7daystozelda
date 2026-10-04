@@ -7,6 +7,7 @@
 #include "soh/Network/Anchor/EnemySync.h"
 #include "soh/Network/Anchor/HordeNight.h"
 
+#include <array>
 #include <cmath>
 
 extern "C" {
@@ -48,6 +49,31 @@ static bool MMPackLoaded() {
     return sLoaded == 1;
 }
 
+// PHA-3945: floors, stairs and doors, from the same pack (a newer build of it).
+static const ALIGN_ASSET(2) char gMMPiratePanelDL[] = "__OTR__objects/7dtz_mm/taru/gMMPiratePanelDL";
+static const ALIGN_ASSET(2) char gMMRanchPlankDL[] = "__OTR__objects/7dtz_mm/gMMRanchPlankDL";
+static const ALIGN_ASSET(2) char gMMStonePlatformDL[] = "__OTR__objects/7dtz_mm/raillift/gMMStonePlatformDL";
+static const ALIGN_ASSET(2) char gMMFestivalDeckDL[] = "__OTR__objects/7dtz_mm/tokei_turret/gMMFestivalDeckDL";
+static const ALIGN_ASSET(2) char gMMLadderDL[] = "__OTR__objects/7dtz_mm/ladder/gMMLadderDL";
+static const ALIGN_ASSET(2) char gMMInnStairsDL[] = "__OTR__objects/7dtz_mm/gMMInnStairsDL";
+static const ALIGN_ASSET(2) char gMMSwampDoorDL[] = "__OTR__objects/7dtz_mm/dor03/gMMSwampDoorDL";
+static const ALIGN_ASSET(2) char gMMMusicBoxDoorDL[] = "__OTR__objects/7dtz_mm/wdor05/gMMMusicBoxDoorDL";
+static const ALIGN_ASSET(2) char gMMPirateDoorDL[] = "__OTR__objects/7dtz_mm/kaizoku_obj/gMMPirateDoorDL";
+
+static bool MMBuildPackLoaded() {
+    static int8_t sLoaded = -1;
+    if (sLoaded < 0) {
+        static const char* const kAll[] = { gMMPiratePanelDL, gMMRanchPlankDL,   gMMStonePlatformDL,
+                                            gMMFestivalDeckDL, gMMLadderDL,      gMMInnStairsDL,
+                                            gMMSwampDoorDL,   gMMMusicBoxDoorDL, gMMPirateDoorDL };
+        sLoaded = 1;
+        for (const char* res : kAll) {
+            sLoaded = sLoaded && ResourceMgr_FileExists(res);
+        }
+    }
+    return sLoaded == 1;
+}
+
 /**
  * M5 placeable actors, registered through ActorDB::AddEntry (no vanilla actor
  * table changes):
@@ -61,7 +87,8 @@ static bool MMPackLoaded() {
  *                        hammer). It has no collision of its own: see
  *                        SevenDays_BaseCollision.
  *   SevenDays_BaseCollision  PHA-3916: the pieces' boxes (8 vertices, 12 triangles
- *                        each), merged into one CollisionHeader per 640-unit
+ *                        each; PHA-3945: a ramp for the stairs, a slab on posts for
+ *                        the deck), merged into one CollisionHeader per 640-unit
  *                        chunk of the base and registered with DynaPoly_SetBgActor,
  *                        so Link and enemies collide with them like scenery. A base
  *                        takes a handful of the scene's 50 dyna slots however many
@@ -125,71 +152,112 @@ int16_t SevenDays::GhostActorId() {
     return sGhostId;
 }
 
-// MARK: - Collision: one box header per type, built once
+// MARK: - Collision: one shape per type, built once
 
-struct BoxCollision {
-    Vec3s verts[8];
-    CollisionPoly polys[12];
-    SurfaceType surface[1];
-    CollisionHeader header;
+// Surface 0: wood-ish floor sound, normal walls. Surface 1 (PHA-3945): the same with
+// wall type 2, a ladder (wall flags 1 | 2): Link climbs it when he walks into it.
+static SurfaceType sSurfaces[2];
+
+struct ShapeCollision {
+    std::vector<Vec3s> verts;
+    std::vector<CollisionPoly> polys;
 };
-static BoxCollision sBoxes[PLACEABLE_COUNT];
+static ShapeCollision sShapes[PLACEABLE_COUNT];
+static CollisionHeader sHeaderTemplate;
 
-static void BuildBox(BoxCollision& box, const PlaceableInfo& info) {
-    s16 hx = info.halfX, hz = info.halfZ, h = info.height;
-    Vec3s v[8] = { { (s16)-hx, 0, (s16)-hz }, { hx, 0, (s16)-hz }, { hx, 0, hz }, { (s16)-hx, 0, hz },
-                   { (s16)-hx, h, (s16)-hz }, { hx, h, (s16)-hz }, { hx, h, hz }, { (s16)-hx, h, hz } };
-    memcpy(box.verts, v, sizeof(v));
-    // Each face as two triangles, with the outward normal it must have.
-    struct Tri {
-        u16 a, b, c;
-        float nx, ny, nz;
-    };
-    static const Tri tris[12] = {
-        { 0, 1, 2, 0, -1, 0 }, { 0, 2, 3, 0, -1, 0 }, // bottom
-        { 4, 7, 6, 0, 1, 0 },  { 4, 6, 5, 0, 1, 0 },  // top
-        { 0, 4, 5, 0, 0, -1 }, { 0, 5, 1, 0, 0, -1 }, // -z
-        { 3, 2, 6, 0, 0, 1 },  { 3, 6, 7, 0, 0, 1 },  // +z
-        { 0, 3, 7, -1, 0, 0 }, { 0, 7, 4, -1, 0, 0 }, // -x
-        { 1, 5, 6, 1, 0, 0 },  { 1, 6, 2, 1, 0, 0 },  // +x
-    };
-    for (int i = 0; i < 12; i++) {
-        Tri t = tris[i];
-        // DynaPoly recomputes normals as (B-A)x(C-A): wind each triangle so that
-        // points outward.
-        Vec3f A = { (f32)v[t.a].x, (f32)v[t.a].y, (f32)v[t.a].z };
-        Vec3f B = { (f32)v[t.b].x, (f32)v[t.b].y, (f32)v[t.b].z };
-        Vec3f C = { (f32)v[t.c].x, (f32)v[t.c].y, (f32)v[t.c].z };
+// A convex solid from its corners and triangles. Each triangle is wound so that its
+// normal, (B-A)x(C-A) as DynaPoly recomputes it, points away from the solid's centre.
+static void AddConvex(ShapeCollision& shape, const std::vector<Vec3s>& v, const std::vector<std::array<u16, 3>>& tris,
+                      uint16_t ladderFaces = 0) {
+    u16 base = (u16)shape.verts.size();
+    Vec3f mid = { 0, 0, 0 };
+    for (const Vec3s& p : v) {
+        mid.x += p.x / (f32)v.size(), mid.y += p.y / (f32)v.size(), mid.z += p.z / (f32)v.size();
+    }
+    shape.verts.insert(shape.verts.end(), v.begin(), v.end());
+    for (size_t i = 0; i < tris.size(); i++) {
+        u16 a = tris[i][0], b = tris[i][1], c = tris[i][2];
+        Vec3f A = { (f32)v[a].x, (f32)v[a].y, (f32)v[a].z };
+        Vec3f B = { (f32)v[b].x, (f32)v[b].y, (f32)v[b].z };
+        Vec3f C = { (f32)v[c].x, (f32)v[c].y, (f32)v[c].z };
         Vec3f ab = { B.x - A.x, B.y - A.y, B.z - A.z }, ac = { C.x - A.x, C.y - A.y, C.z - A.z };
         Vec3f n = { ab.y * ac.z - ab.z * ac.y, ab.z * ac.x - ab.x * ac.z, ab.x * ac.y - ab.y * ac.x };
-        if (n.x * t.nx + n.y * t.ny + n.z * t.nz < 0) {
-            u16 tmp = t.b;
-            t.b = t.c;
-            t.c = tmp;
+        if (n.x * (A.x - mid.x) + n.y * (A.y - mid.y) + n.z * (A.z - mid.z) < 0) {
+            std::swap(b, c);
+            n = { -n.x, -n.y, -n.z };
         }
-        CollisionPoly& p = box.polys[i];
+        f32 len = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
+        CollisionPoly p;
         memset(&p, 0, sizeof(p));
-        p.type = 0;
-        p.flags_vIA = t.a;
-        p.flags_vIB = t.b;
-        p.vIC = t.c;
-        p.normal.x = (s16)(t.nx * 0x7FFF);
-        p.normal.y = (s16)(t.ny * 0x7FFF);
-        p.normal.z = (s16)(t.nz * 0x7FFF);
-        Vec3s& a = v[t.a];
-        p.dist = (s16)(-(t.nx * a.x + t.ny * a.y + t.nz * a.z));
+        p.type = (ladderFaces >> i) & 1; // the surface index
+        p.flags_vIA = base + a;
+        p.flags_vIB = base + b;
+        p.vIC = base + c;
+        p.normal.x = (s16)(n.x / len * 0x7FFF);
+        p.normal.y = (s16)(n.y / len * 0x7FFF);
+        p.normal.z = (s16)(n.z / len * 0x7FFF);
+        p.dist = (s16)(-(n.x * A.x + n.y * A.y + n.z * A.z) / len);
+        shape.polys.push_back(p);
     }
-    box.surface[0].data[0] = 0x00000000;
-    box.surface[0].data[1] = 0x000007C0; // wood-ish floor sound, normal walls
-    CollisionHeader& hdr = box.header;
+}
+
+// A box; ladderFaces bit 0 marks its -z face, bit 1 its +z face as climbable.
+static void AddBox(ShapeCollision& shape, s16 x0, s16 x1, s16 y0, s16 y1, s16 z0, s16 z1, int ladderFaces = 0) {
+    std::vector<Vec3s> v = { { x0, y0, z0 }, { x1, y0, z0 }, { x1, y0, z1 }, { x0, y0, z1 },
+                             { x0, y1, z0 }, { x1, y1, z0 }, { x1, y1, z1 }, { x0, y1, z1 } };
+    std::vector<std::array<u16, 3>> tris = {
+        { 0, 4, 5 }, { 0, 5, 1 }, // -z
+        { 3, 2, 6 }, { 3, 6, 7 }, // +z
+        { 0, 1, 2 }, { 0, 2, 3 }, // bottom
+        { 4, 7, 6 }, { 4, 6, 5 }, // top
+        { 0, 3, 7 }, { 0, 7, 4 }, // -x
+        { 1, 5, 6 }, { 1, 6, 2 }, // +x
+    };
+    AddConvex(shape, v, tris, (ladderFaces & 1 ? 0x3 : 0) | (ladderFaces & 2 ? 0xC : 0));
+}
+
+static void BuildShape(ShapeCollision& shape, uint8_t type) {
+    const PlaceableInfo& info = GetPlaceableInfo(type);
+    s16 hx = info.halfX, hz = info.halfZ, h = info.height;
+    switch (type) {
+        case PLACEABLE_DECK: {
+            // The planks on top and the four corner posts: Link walks under it.
+            const s16 slab = 8, post = 5, at = hx - post;
+            AddBox(shape, -hx, hx, h - slab, h, -hz, hz);
+            for (int i = 0; i < 4; i++) {
+                s16 px = (i & 1) ? at : -at, pz = (i & 2) ? at : -at;
+                AddBox(shape, px - post, px + post, 0, h - slab, pz - post, pz + post);
+            }
+            break;
+        }
+        case PLACEABLE_STAIRS: {
+            // A ramp rising towards +z (away from Link as he places it).
+            std::vector<Vec3s> v = { { (s16)-hx, 0, (s16)-hz }, { hx, 0, (s16)-hz }, { hx, 0, hz },
+                                     { (s16)-hx, 0, hz },       { hx, h, hz },       { (s16)-hx, h, hz } };
+            AddConvex(shape, v,
+                      { { 0, 1, 2 }, { 0, 2, 3 },   // bottom
+                        { 0, 1, 4 }, { 0, 4, 5 },   // the slope
+                        { 3, 2, 4 }, { 3, 4, 5 },   // the back, under the top step
+                        { 1, 2, 4 }, { 0, 3, 5 } }); // the sides
+            break;
+        }
+        case PLACEABLE_LADDER:
+            AddBox(shape, -hx, hx, 0, h, -hz, hz, 0x3); // both faces climb
+            break;
+        default:
+            AddBox(shape, -hx, hx, 0, h, -hz, hz);
+            break;
+    }
+}
+
+static void BuildSurfaces() {
+    sSurfaces[0].data[0] = 0x00000000;
+    sSurfaces[0].data[1] = 0x000007C0; // wood-ish floor sound, normal walls
+    sSurfaces[1].data[0] = 2 << 21;    // wall type 2: a ladder
+    sSurfaces[1].data[1] = 0x000007C0;
+    CollisionHeader& hdr = sHeaderTemplate;
     memset(&hdr, 0, sizeof(hdr));
-    hdr.minBounds = { (s16)-hx, 0, (s16)-hz };
-    hdr.maxBounds = { hx, h, hz };
-    hdr.numVertices = 8;
-    hdr.vtxList = box.verts;
-    hdr.numPolygons = 12;
-    hdr.polyList = box.polys;
-    hdr.surfaceTypeList = box.surface;
+    hdr.surfaceTypeList = sSurfaces;
     hdr.cameraDataList = nullptr;
     hdr.numWaterBoxes = 0;
     hdr.waterBoxes = nullptr;
@@ -219,7 +287,7 @@ static void FillChunk(CollisionChunk& ch, const std::vector<Actor*>& pieces) {
     Vec3f origin = ch.actor->world.pos;
     s16 minX = 0x7FFF, minY = 0x7FFF, minZ = 0x7FFF, maxX = -0x7FFF, maxY = -0x7FFF, maxZ = -0x7FFF;
     for (Actor* a : pieces) {
-        const BoxCollision& box = sBoxes[((PlaceableActor*)a)->type];
+        const ShapeCollision& box = sShapes[((PlaceableActor*)a)->type];
         // The same transform DynaPoly_ExpandSRT applied to a piece's own header.
         MtxF mtx;
         SkinMatrix_SetTranslateRotateYXZScale(&mtx, 1.0f, 1.0f, 1.0f, 0, a->shape.rot.y, 0, a->world.pos.x - origin.x,
@@ -244,14 +312,14 @@ static void FillChunk(CollisionChunk& ch, const std::vector<Actor*>& pieces) {
         }
     }
     CollisionHeader& hdr = ch.header;
-    hdr = sBoxes[0].header;
+    hdr = sHeaderTemplate;
     hdr.minBounds = { minX, minY, minZ };
     hdr.maxBounds = { maxX, maxY, maxZ };
     hdr.numVertices = (u16)ch.verts.size();
     hdr.vtxList = ch.verts.data();
     hdr.numPolygons = (u16)ch.polys.size();
     hdr.polyList = ch.polys.data();
-    hdr.surfaceTypeList = sBoxes[0].surface;
+    hdr.surfaceTypeList = sSurfaces;
 }
 
 static bool ChunkAlive(const CollisionChunk& ch) {
@@ -507,6 +575,130 @@ static void DrawWorkbench(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// MARK: - PHA-3945: floors, stairs and doors
+
+// Without the pack: OoT's push block (8000 units square at scale 1) stretched over the box.
+static void DrawFallbackBox(PlayState* play, uint8_t type) {
+    const PlaceableInfo& info = GetPlaceableInfo(type);
+    DrawDL(play, (Gfx*)gBlockSmallDL, 0.0f, 0.0f, 0.0f, info.halfX / 4000.0f, info.height / 8000.0f,
+           info.halfZ / 4000.0f);
+}
+
+// The Pirates' Fortress panel is grey, weathered wood: washed a little warmer, unless the
+// piece is already tinted (damaged, a ruin, the ghost).
+static void WoodWash(PlayState* play, bool on) {
+    OPEN_DISPS(play->state.gfxCtx);
+    if (on) {
+        gDPSetGrayscaleColor(POLY_OPA_DISP++, 205, 160, 110, 150);
+    }
+    gSPGrayscale(POLY_OPA_DISP++, on);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// The panel (1200 square and 80 thick at scale 1, standing up from y = 0) as a w x d x t
+// slab: flat (d along z, t thick) or upright (d tall, t along z), its bottom at y.
+static void DrawPanel(PlayState* play, f32 x, f32 y, f32 z, s16 yaw, f32 w, f32 d, f32 t, bool flat) {
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+    Matrix_Translate(x, flat ? y + t / 2 : y, z, MTXMODE_APPLY);
+    Matrix_RotateY(BINANG_TO_RAD(yaw), MTXMODE_APPLY);
+    if (flat) {
+        Matrix_RotateX(M_PI / 2, MTXMODE_APPLY);
+        Matrix_Scale(w / 1200.0f, d / 1200.0f, t / 80.0f, MTXMODE_APPLY);
+        Matrix_Translate(0.0f, -600.0f, 0.0f, MTXMODE_APPLY);
+    } else {
+        Matrix_Scale(w / 1200.0f, d / 1200.0f, t / 80.0f, MTXMODE_APPLY);
+    }
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gMMPiratePanelDL);
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Wooden step: a 60 x 52 x 60 box of panels, low enough for Link to hop onto; a
+// palisade with a floor on it is one more hop up. (Majora's Mask's own "wooden step"
+// turned out to be a bent walkway plank, so it is built from the planks instead.)
+static void DrawStep(PlayState* play, bool wash) {
+    WoodWash(play, wash);
+    for (int i = 0; i < 4; i++) {
+        s16 yaw = (s16)(i * 0x4000);
+        f32 sx = Math_SinS(yaw) * 28.0f, sz = Math_CosS(yaw) * 28.0f;
+        DrawPanel(play, sx, 0.0f, sz, yaw, 60.0f, 48.0f, 4.0f, false);
+    }
+    DrawPanel(play, 0.0f, 48.0f, 0.0f, 0, 60.0f, 60.0f, 4.0f, true);
+    WoodWash(play, false);
+}
+
+// Ranch floor: three planks from the Romani Ranch house (40 x 6 x 164 in the room, at
+// 600..640, 57..63, -100..64), side by side and cut to 120 long.
+static void DrawRanchFloor(PlayState* play) {
+    OPEN_DISPS(play->state.gfxCtx);
+    for (int i = -1; i <= 1; i++) {
+        Matrix_Push();
+        Matrix_Translate(i * 40.0f, 0.0f, 0.0f, MTXMODE_APPLY);
+        Matrix_Scale(1.0f, 1.0f, 120.0f / 164.0f, MTXMODE_APPLY);
+        Matrix_Translate(-620.0f, -57.0f, 18.0f, MTXMODE_APPLY);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gMMRanchPlankDL);
+        Matrix_Pop();
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// The Stock Pot Inn's lobby stairs (240 run x 210 rise x 127 wide in the room, rising
+// towards -x, at -30..210, 0..210, -150..-23), turned to rise towards +z and scaled to a
+// storey. Drawn a second time mirrored across the middle: that closes the open side,
+// puts a banister on both sides and gives the ramp an underside.
+static void DrawStairs(PlayState* play) {
+    OPEN_DISPS(play->state.gfxCtx);
+    for (int mirror = 0; mirror < 2; mirror++) {
+        Matrix_Push();
+        Matrix_RotateY(M_PI / 2, MTXMODE_APPLY);
+        Matrix_Scale(0.5f, (f32)STOREY_HEIGHT / 210.0f, 0.5f, MTXMODE_APPLY);
+        if (mirror) {
+            Matrix_Scale(1.0f, 1.0f, -1.0f, MTXMODE_APPLY);
+        }
+        Matrix_Translate(-90.0f, 0.0f, 86.5f, MTXMODE_APPLY);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gMMInnStairsDL);
+        Matrix_Pop();
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// The 12-rung ladder (300 wide, 1950 tall, 40 deep at scale 1) cut down to a storey.
+static void DrawLadder(PlayState* play) {
+    OPEN_DISPS(play->state.gfxCtx);
+    // Segment 0x0C is Bg_Ladder's render-mode hook (called at +0x10): empty lists keep
+    // the opaque mode.
+    Gfx* empty = (Gfx*)Graph_Alloc(play->state.gfxCtx, 3 * sizeof(Gfx));
+    for (int i = 0; i < 3; i++) {
+        gSPEndDisplayList(&empty[i]);
+    }
+    gSPSegment(POLY_OPA_DISP++, 0x0C, (uintptr_t)empty);
+    CLOSE_DISPS(play->state.gfxCtx);
+    DrawDL(play, (Gfx*)gMMLadderDL, 0.0f, 0.0f, -2.0f, 0.1f, (f32)STOREY_HEIGHT / 1950.0f, 0.1f);
+}
+
+// Doors: two leaves of a Majora's Mask door (one 6000 x 10000 leaf at scale 1, hinged
+// at x = 0 and lying down, its height along +z), 60 wide and 100 tall each, hinged at
+// the wall's ends like the player gate; they swing out to 90 degrees.
+static void DrawDoor(PlayState* play, Gfx* leaf, f32 open) {
+    s16 swing = (s16)(open * 0x4000);
+    OPEN_DISPS(play->state.gfxCtx);
+    for (int side = 0; side < 2; side++) {
+        Matrix_Push();
+        Matrix_Translate(side == 0 ? -60.0f : 60.0f, 0.0f, 0.0f, MTXMODE_APPLY);
+        Matrix_RotateY((side == 0 ? -swing : (s16)(0x8000 + swing)) * (M_PI / 0x8000), MTXMODE_APPLY);
+        Matrix_RotateX(-M_PI / 2, MTXMODE_APPLY); // stand it up
+        Matrix_Scale(0.01f, 0.01f, 0.01f, MTXMODE_APPLY);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_OPA_DISP++, leaf);
+        Matrix_Pop();
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 // The model of each type, in the actor's local space (origin on the floor).
 static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw);
 
@@ -613,6 +805,52 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActo
         case PLACEABLE_SIGN:
             DrawDL(play, (Gfx*)gSignRectangularDL, 0.0f, 0.0f, 0.0f, 0.01f, 0.01f, 0.01f);
             break;
+        case PLACEABLE_FLOOR_PLANK:
+        case PLACEABLE_FLOOR_RANCH:
+        case PLACEABLE_FLOOR_STONE:
+        case PLACEABLE_DECK:
+        case PLACEABLE_STEP:
+        case PLACEABLE_LADDER:
+        case PLACEABLE_STAIRS:
+            if (!MMBuildPackLoaded()) {
+                DrawFallbackBox(play, type);
+            } else if (type == PLACEABLE_FLOOR_PLANK) {
+                // Only wash pieces that aren't tinted already (damaged, ruins, the ghost).
+                WoodWash(play, self != nullptr && hpFrac >= 0.5f);
+                DrawPanel(play, 0.0f, 0.0f, 0.0f, 0, 120.0f, 120.0f, 8.0f, true);
+                WoodWash(play, false);
+            } else if (type == PLACEABLE_FLOOR_RANCH) {
+                DrawRanchFloor(play);
+            } else if (type == PLACEABLE_FLOOR_STONE) {
+                // A Woodfall Temple platform (1000 square, 200 thick, its top at y = 0).
+                DrawDL(play, (Gfx*)gMMStonePlatformDL, 0.0f, 24.0f, 0.0f, 0.12f, 0.12f, 0.12f);
+            } else if (type == PLACEABLE_DECK) {
+                // The top of the Clock Town carnival tower (1360 square, 800 tall): planks on four posts.
+                DrawDL(play, (Gfx*)gMMFestivalDeckDL, 0.0f, 0.0f, 0.0f, 120.0f / 1360.0f,
+                       (f32)STOREY_HEIGHT / 800.0f, 120.0f / 1360.0f);
+            } else if (type == PLACEABLE_STEP) {
+                DrawStep(play, self != nullptr && hpFrac >= 0.5f);
+            } else if (type == PLACEABLE_LADDER) {
+                DrawLadder(play);
+            } else {
+                DrawStairs(play);
+            }
+            break;
+        case PLACEABLE_DOOR_SWAMP:
+        case PLACEABLE_DOOR_MUSIC:
+        case PLACEABLE_DOOR_PIRATE: {
+            f32 open = self != nullptr ? self->gateOpen : 0.0f;
+            if (!MMBuildPackLoaded()) {
+                DrawGate(play, open);
+            } else {
+                DrawDoor(play,
+                         (Gfx*)(type == PLACEABLE_DOOR_SWAMP   ? gMMSwampDoorDL
+                                : type == PLACEABLE_DOOR_MUSIC ? gMMMusicBoxDoorDL
+                                                               : gMMPirateDoorDL),
+                         open);
+            }
+            break;
+        }
     }
 }
 
@@ -888,11 +1126,12 @@ static void Placeable_Init(Actor* thisx, PlayState* play) {
     Actor_SetScale(thisx, 1.0f);
     thisx->shape.rot = thisx->world.rot = { 0, p->rot, 0 };
 
-    // Re-snap to the floor under it (seeded pieces carry an approximate y).
+    // Re-snap to the floor under it (seeded pieces carry an approximate y). PHA-3945:
+    // not a piece stacked on another, whose collision may not be built yet.
     Vec3f probe = { p->pos[0], p->pos[1] + 80.0f, p->pos[2] };
     CollisionPoly* poly = nullptr;
     s32 bgId = BGCHECK_SCENE;
-    f32 floorY = BgCheck_EntityRaycastFloor3(&play->colCtx, &poly, &bgId, &probe);
+    f32 floorY = p->stacked ? BGCHECK_Y_MIN : BgCheck_EntityRaycastFloor3(&play->colCtx, &poly, &bgId, &probe);
     if (floorY > BGCHECK_Y_MIN && bgId == BGCHECK_SCENE && fabsf(floorY - p->pos[1]) < 200.0f) {
         thisx->world.pos.y = thisx->home.pos.y = floorY;
     }
@@ -1137,11 +1376,12 @@ static void TrapUpdate(PlaceableActor* self, PlayState* play) {
     }
 }
 
-// Player gate: swings open while a player stands in front of or behind it, and its
-// box leaves the base collision so they walk through. Raiders have to break it.
+// Player gate (and PHA-3945's doors): swings open while a player stands in front of or
+// behind it, and its box leaves the base collision so they walk through. Raiders have to
+// break it.
 static void GateUpdate(PlaceableActor* self, PlayState* play) {
     Actor* thisx = &self->actor;
-    const PlaceableInfo& info = GetPlaceableInfo(PLACEABLE_GATE);
+    const PlaceableInfo& info = GetPlaceableInfo(self->type);
     f32 c = Math_CosS(thisx->shape.rot.y), s = Math_SinS(thisx->shape.rot.y);
     bool near = false;
     for (Actor* p : HordeNight::LivingPlayers()) {
@@ -1198,7 +1438,7 @@ static void Placeable_Update(Actor* thisx, PlayState* play) {
         TorchUpdate(self, play);
     } else if (self->type == PLACEABLE_BOMBTRAP) {
         TrapUpdate(self, play);
-    } else if (self->type == PLACEABLE_GATE) {
+    } else if (IsDoorType(self->type)) {
         GateUpdate(self, play);
     }
 
@@ -1316,13 +1556,15 @@ void SevenDays::RegisterPlaceableActors() {
     if (sPlaceableId >= 0 || ActorDB::Instance == nullptr) {
         return;
     }
+    BuildSurfaces();
     for (int t = 0; t < PLACEABLE_COUNT; t++) {
-        BuildBox(sBoxes[t], GetPlaceableInfo((uint8_t)t));
+        BuildShape(sShapes[t], (uint8_t)t);
     }
     ActorDBInit placeable;
     placeable.name = "SevenDays_Placeable";
     placeable.desc = "7 Days to Zelda placeable (barricade, spike strip, workbench, storage chest, sign, scarecrow, Guard Baba, "
-                       "torch, stone wall, bomb-flower trap, player gate, iron wall)";
+                       "torch, stone wall, bomb-flower trap, player gate, iron wall, palisade, floors, deck, step, ladder, "
+                       "stairs, doors)";
     placeable.category = ACTORCAT_BG;
     placeable.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED;
     placeable.objectId = OBJECT_GAMEPLAY_KEEP;

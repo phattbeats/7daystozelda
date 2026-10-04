@@ -174,6 +174,18 @@ enum PlaceableType : uint8_t {
     PLACEABLE_GATE,      // PHA-3935: a wall raiders must break, that swings open for players
     PLACEABLE_IRONWALL,  // PHA-3935: Silver Gauntlets tier, twice a stone wall's HP
     PLACEABLE_PALISADE,  // PHA-3904: a tall wall of upright logs (Majora's Mask practice logs)
+    // PHA-3945: floors, stairs and doors from Majora's Mask. Floors and stairs can be stood
+    // on, and other pieces stack on them, so a base can have a second storey.
+    PLACEABLE_FLOOR_PLANK,  // plank floor (the Pirates' Fortress panel laid flat)
+    PLACEABLE_FLOOR_RANCH,  // ranch floor (three Romani Ranch planks)
+    PLACEABLE_FLOOR_STONE,  // stone platform (a low, solid block)
+    PLACEABLE_DECK,         // festival deck: a floor on four posts, a storey up
+    PLACEABLE_STEP,         // wooden step: a block Link can hop onto, half a storey
+    PLACEABLE_LADDER,       // a ladder Link climbs, a storey tall
+    PLACEABLE_STAIRS,       // the Stock Pot Inn's staircase, a storey tall
+    PLACEABLE_DOOR_SWAMP,   // doors: the player gate's behaviour in Majora's Mask doors
+    PLACEABLE_DOOR_MUSIC,
+    PLACEABLE_DOOR_PIRATE,
     PLACEABLE_COUNT,
 };
 
@@ -185,6 +197,11 @@ struct PlaceableInfo {
 };
 const PlaceableInfo& GetPlaceableInfo(uint8_t type);
 int FindPlaceableTypeForKit(const std::string& kit); // -1 if none
+// PHA-3945
+constexpr int16_t STOREY_HEIGHT = 104; // a palisade (96) with a plank floor (8) on top
+bool IsFloorType(uint8_t type);    // a flat floor: tiles on a 120 grid, extends at the level Link stands on
+bool IsWalkOverType(uint8_t type); // low enough that raiders walk over it instead of breaking it
+bool IsDoorType(uint8_t type);     // swings open for players: the player gate and the doors
 
 constexpr int ERA_ADULT = 0; // == gSaveContext.linkAge
 constexpr int ERA_CHILD = 1;
@@ -201,6 +218,7 @@ struct Placeable {
     float pos[3] = {};
     int16_t rot = 0;
     uint16_t hp = 0;
+    bool stacked = false; // PHA-3945: stands on another piece, so it is never re-snapped to the ground
 };
 
 struct BaseCenter {
