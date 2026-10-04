@@ -559,7 +559,8 @@ std::string CraftBlocker(const Recipe& recipe) {
             return "You can't carry any more";
         }
     }
-    if (recipe.kind == RECIPE_TRADE && gSaveContext.rupees + recipe.outputCount > CUR_CAPACITY(UPG_WALLET)) {
+    if (recipe.kind == RECIPE_TRADE &&
+        gSaveContext.rupees + gSaveContext.rupeeAccumulator + recipe.outputCount > CUR_CAPACITY(UPG_WALLET)) {
         return "Your wallet is full";
     }
     // Rupees_ChangeBy counts down over a few frames: include what is still owed.

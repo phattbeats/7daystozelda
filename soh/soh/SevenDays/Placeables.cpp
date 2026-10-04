@@ -1235,17 +1235,18 @@ static Actor* NearestEnemyTo(PlayState* play, const Vec3f& at, f32 range) {
 // another player's Link in PvP, grass, bushes, signs, Cuccos. Hold the hit while any
 // of those is within reach of it, so it only ever lands on raiders.
 static bool BystanderInReach(PlayState* play, const ColliderCylinder& c) {
-    static const uint8_t kCategories[] = { ACTORCAT_PLAYER, ACTORCAT_PROP, ACTORCAT_NPC };
-    Player* self = GET_PLAYER(play);
+    // Our own Link (ACTORCAT_PLAYER) never takes it. Remote players are DummyPlayers,
+    // which Anchor moves into the NPC list.
+    static const uint8_t kCategories[] = { ACTORCAT_PROP, ACTORCAT_NPC };
     Vec3f at = { (f32)c.dim.pos.x, (f32)c.dim.pos.y, (f32)c.dim.pos.z };
     for (uint8_t cat : kCategories) {
         for (Actor* a = play->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
-            if (a == &self->actor || a->update == nullptr) {
+            if (a->update == nullptr) {
                 continue;
             }
             // Remote players only take hits with PvP on against their team: DummyPlayer
             // clears this flag exactly then.
-            if (cat == ACTORCAT_PLAYER && (a->flags & ACTOR_FLAG_LOCK_ON_DISABLED)) {
+            if (a->update == DummyPlayer_Update && (a->flags & ACTOR_FLAG_LOCK_ON_DISABLED)) {
                 continue;
             }
             f32 dy = a->world.pos.y - at.y;
