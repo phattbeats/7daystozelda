@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <unordered_map>
 
 extern "C" {
@@ -984,6 +985,25 @@ static void OnRaiderPerception(void* actorRef, bool* should) {
     a->xyzDistToPlayerSq = SQ(a->xzDistToPlayer) + SQ(a->yDistToPlayer);
 }
 
+// A raider thrown out of the scene (a bomb trap's blast can launch a dying Stalchild
+// tens of thousands of units off) never lands to finish dying and stays listed forever.
+static void ClearStrayRaiders() {
+    const CollisionContext& col = gPlayState->colCtx;
+    const f32 margin = 500.0f;
+    for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
+        if (!IsRaiderType(a->id) || a->update == nullptr) {
+            continue;
+        }
+        const Vec3f& p = a->world.pos;
+        if (p.x < col.minBounds.x - margin || p.x > col.maxBounds.x + margin || p.z < col.minBounds.z - margin ||
+            p.z > col.maxBounds.z + margin || p.y < col.minBounds.y - margin) {
+            ESYNC_LOG("[Raids] stray actor {} out of the scene at ({:.0f},{:.0f},{:.0f}) hp {}: removed", a->id, p.x,
+                      p.y, p.z, a->colChkInfo.health);
+            Actor_Kill(a);
+        }
+    }
+}
+
 static void WaveTick() {
     bool sceneOk = IsOutdoorScene(gPlayState->sceneNum);
     uint8_t want = KIND_NONE;
@@ -1216,23 +1236,28 @@ static std::string SettleEmptyBase(int32_t gamestage, std::vector<uint8_t>& navi
         f32 dx = x->pos[0] - c.pos[0], dz = x->pos[2] - c.pos[2], ex = y->pos[0] - c.pos[0], ez = y->pos[2] - c.pos[2];
         return dx * dx + dz * dz > ex * ex + ez * ez;
     });
-    int lost = 0;
     int32_t left = damage;
     std::vector<uint16_t> broken;
     for (size_t i = 0; i < pieces.size() && left > 0 && i < 4; i++) {
         // Spread: each of the outer pieces takes an even share, the rest rolls inward.
         int32_t share = std::max<int32_t>(left / (int32_t)std::max<size_t>(1, std::min<size_t>(4, pieces.size()) - i), 1);
         int32_t take = std::min<int32_t>(share, pieces[i]->hp);
-        pieces[i]->hp -= (uint16_t)take;
         left -= take;
-        if (pieces[i]->hp == 0) {
-            broken.push_back(pieces[i]->id);
+        if (take >= pieces[i]->hp) {
+            broken.push_back(pieces[i]->id); // broken below, with what stood on it
+        } else {
+            pieces[i]->hp -= (uint16_t)take;
+        }
+    }
+    pieces.clear(); // breaking pieces moves the rest of the list around
+    std::map<std::string, int> lostByName;
+    int lost = 0;
+    for (uint16_t id : broken) {
+        for (uint8_t type : BreakPiece(id)) {
+            lostByName[GetPlaceableInfo(type).name]++;
             lost++;
         }
     }
-    std::erase_if(b.placeables, [&](const Placeable& p) {
-        return std::find(broken.begin(), broken.end(), p.id) != broken.end();
-    });
     // The pool takes a cut: 2% per 10 damage, at most a quarter.
     uint32_t cutPct = (uint32_t)std::min(25, damage / 5);
     PoolState& pool = Net::MutablePool();
@@ -1246,8 +1271,15 @@ static std::string SettleEmptyBase(int32_t gamestage, std::vector<uint8_t>& navi
     if (damage == 0) {
         return "The base was raided while you were away. It held.";
     }
-    return fmt::format("The base was raided: {} barricade{} lost, {}% of the stores taken.", lost, lost == 1 ? "" : "s",
-                       cutPct);
+    std::string names;
+    for (auto& [name, n] : lostByName) {
+        names += fmt::format("{}{}{}", names.empty() ? "" : ", ", name, n > 1 ? fmt::format(" x{}", n) : "");
+    }
+    if (lost == 0) {
+        return fmt::format("The base was raided: the walls took a beating, {}% of the stores taken.", cutPct);
+    }
+    return fmt::format("The base was raided: {} piece{} lost ({}), {}% of the stores taken.", lost, lost == 1 ? "" : "s",
+                       names, cutPct);
 }
 
 static void OwnerDawn() {
@@ -1534,6 +1566,9 @@ void RaidsOnFrame() {
     }
     TownsHide();
 
+    if (RaidAuthority()) {
+        ClearStrayRaiders();
+    }
     WaveTick();
     ClockTick();
 
@@ -1747,6 +1782,15 @@ void sevendays_test_raid(const char* cmdC) {
         for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
             if (IsRaiderType(a->id)) {
                 Actor_Kill(a);
+            }
+        }
+    } else if (cmd == "fling") {
+        // PHA-3969 tests: what a bomb blast did to a dying Stalchild, thrown out of the world.
+        for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
+            if (IsRaiderType(a->id) && a->update != nullptr) {
+                a->world.pos = a->prevPos = { 62000.0f, -25030.0f, a->world.pos.z };
+                a->colChkInfo.health = 0;
+                break;
             }
         }
     } else if (cmd.rfind("say:", 0) == 0) {

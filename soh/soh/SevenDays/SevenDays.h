@@ -312,6 +312,7 @@ void PlacementUpdate(Actor* ghost, PlayState* play);
 bool PlacementGhostValid();
 uint8_t PlacementGhostType();
 void DamagePlaceable(uint16_t id, int amount); // owner applies; others report to the owner
+std::vector<uint8_t> BreakPiece(uint16_t id);  // owner: break it and what stood on it; their types
 bool BaseAdoptIfNewer(const nlohmann::json& j, bool force);
 bool IsOutdoorScene(int16_t scene); // a scene a base can stand in (the raid clock's scenes)
 const char* OutdoorSceneName(int16_t scene);

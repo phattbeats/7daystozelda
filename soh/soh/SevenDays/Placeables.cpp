@@ -129,6 +129,7 @@ struct PlaceableActor {
     f32 gateOpen;        // 0 shut .. 1 swung open
     bool gatePassable;   // left out of the base collision while a player walks through
     bool ruin;           // the child base after the seven-year jump: drawn broken, does nothing
+    bool ghost;          // the placement preview (SevenDays_Ghost), which only draws
 };
 
 enum { BABA_IDLE, BABA_WINDUP, BABA_LUNGE, BABA_RECOVER };
@@ -864,8 +865,9 @@ static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw) 
     f32 headY, headZ;
     BabaHead(lunge, &headY, &headZ);
     OPEN_DISPS(play->state.gfxCtx);
-    // Tamed: a warm gold-green wash over the usual jungle green.
-    if (self != nullptr) {
+    // Tamed: a warm gold-green wash over the usual jungle green (the ghost keeps its tint).
+    bool tamed = self != nullptr && !self->ghost;
+    if (tamed) {
         gDPSetGrayscaleColor(POLY_OPA_DISP++, 255, 230, 90, 70);
         gSPGrayscale(POLY_OPA_DISP++, true);
     }
@@ -900,7 +902,7 @@ static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw) 
         Matrix_Pop();
     }
     Matrix_Pop();
-    if (self != nullptr) {
+    if (tamed) {
         gSPGrayscale(POLY_OPA_DISP++, false);
     }
     CLOSE_DISPS(play->state.gfxCtx);
@@ -1078,7 +1080,7 @@ static ColliderCylinderInit sBiteCylinderInit = {
 static ColliderCylinderInit sBlastCylinderInit = {
     {
         COLTYPE_NONE,
-        AT_ON | AT_TYPE_PLAYER, // blows up raiders, never players
+        AT_ON | AT_TYPE_PLAYER, // blows up raiders, never players (see BystanderInReach)
         AC_NONE,
         OC1_NONE,
         OC2_NONE,
@@ -1345,8 +1347,12 @@ static void TrapUpdate(PlaceableActor* self, PlayState* play) {
     if (self->blastFrames > 0) {
         self->blastFrames--;
         if (authority) {
+            // Like the spikes and the Baba: a player-type hit, so it holds off while another
+            // player (PvP), grass or an NPC is in the blast.
             Collider_UpdateCylinder(thisx, &self->blastCollider);
-            CollisionCheck_SetAT(play, &play->colChkCtx, &self->blastCollider.base);
+            if (!BystanderInReach(play, self->blastCollider)) {
+                CollisionCheck_SetAT(play, &play->colChkCtx, &self->blastCollider.base);
+            }
         }
     }
     if (self->trapRegrow > 0) {
@@ -1516,17 +1522,45 @@ static void Placeable_Draw(Actor* thisx, PlayState* play) {
 
 // MARK: - SevenDays_Ghost (placement mode)
 
+// The ghost is a PlaceableActor too, so the pieces whose look lives on the actor (the
+// scarecrow's and the Baba's skeletons, the torch's flame) preview whole.
 static void Ghost_Init(Actor* thisx, PlayState* play) {
+    PlaceableActor* self = (PlaceableActor*)thisx;
     thisx->room = -1;
     Actor_SetScale(thisx, 1.0f);
+    self->type = (uint8_t)thisx->params;
+    self->ghost = true;
+    self->hasSkel = false;
+    if (self->type == PLACEABLE_SCARECROW) {
+        SkelAnime_InitFlex(play, &self->skel, (FlexSkeletonHeader*)object_ka_Skel_0065B0,
+                           (AnimationHeader*)object_ka_Anim_000214, nullptr, nullptr, 0);
+        self->hasSkel = true;
+    } else if (self->type == PLACEABLE_GUARDBABA) {
+        SkelAnime_Init(play, &self->skel, (SkeletonHeader*)gDekuBabaSkel, (AnimationHeader*)gDekuBabaPauseChompAnim,
+                       nullptr, nullptr, 0);
+        self->hasSkel = true;
+    }
+    if (self->hasSkel) {
+        self->skel.playSpeed = 0.0f;
+    }
 }
 
 static void Ghost_Destroy(Actor* thisx, PlayState* play) {
+    PlaceableActor* self = (PlaceableActor*)thisx;
+    if (self->hasSkel) {
+        SkelAnime_Free(&self->skel, play);
+        self->hasSkel = false;
+    }
     OnGhostDestroyed(thisx);
 }
 
 static void Ghost_Update(Actor* thisx, PlayState* play) {
+    PlaceableActor* self = (PlaceableActor*)thisx;
     PlacementUpdate(thisx, play);
+    self->babaYaw = thisx->shape.rot.y; // the head points the way the piece faces
+    if (self->hasSkel) {
+        SkelAnime_Update(&self->skel); // playSpeed 0: holds the first frame
+    }
 }
 
 static void Ghost_Draw(Actor* thisx, PlayState* play) {
@@ -1542,7 +1576,9 @@ static void Ghost_Draw(Actor* thisx, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
     // Flicker the solid model so the ghost reads as see-through.
     if ((play->gameplayFrames & 1) == 0) {
-        DrawModel(play, type, 1.0f);
+        PlaceableActor* self = (PlaceableActor*)thisx;
+        bool onActor = type == PLACEABLE_SCARECROW || type == PLACEABLE_GUARDBABA || type == PLACEABLE_TORCH;
+        DrawModel(play, type, 1.0f, onActor ? self : nullptr);
     }
     OPEN_DISPS(play->state.gfxCtx);
     gSPGrayscale(POLY_OPA_DISP++, false);
@@ -1581,7 +1617,7 @@ void SevenDays::RegisterPlaceableActors() {
     ghost.category = ACTORCAT_SWITCH; // updates before Link (ACTORCAT_PLAYER)
     ghost.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED;
     ghost.objectId = OBJECT_GAMEPLAY_KEEP;
-    ghost.instanceSize = sizeof(Actor);
+    ghost.instanceSize = sizeof(PlaceableActor);
     ghost.init = Ghost_Init;
     ghost.destroy = Ghost_Destroy;
     ghost.update = Ghost_Update;

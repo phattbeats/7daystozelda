@@ -657,7 +657,9 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
     PageRow all;
     all.name = sPage.confirmPackAll ? "Really pack it all?" : "Pack up the whole base";
     all.icon = gItemIconHammerTex;
-    all.enabled = !GetBase().placeables.empty();
+    // Seeded pieces with no kit (the "Day 1" sign) stay when the base is packed up.
+    all.enabled = std::any_of(GetBase().placeables.begin(), GetBase().placeables.end(),
+                              [](const Placeable& q) { return GetPlaceableInfo(q.type).kit[0] != '\0'; });
     all.hint = sPage.confirmPackAll ? "Again: every kit comes back" : BaseCountsLine();
     all.action = []() {
         if (!sPage.confirmPackAll) {
@@ -968,8 +970,13 @@ extern "C" void SevenDaysKaleido_DrawPage(PlayState* play, s32 current) {
         s16 top = kRowTop - (i - sPage.top) * kRowHeight + dy;
         DrawIcon(play, row.icon, row.rupee, -106, top - 1, !row.enabled, alpha);
         Color_RGB8 nameColor = row.enabled ? Color_RGB8{ 255, 255, 255 } : Color_RGB8{ 130, 130, 130 };
-        DrawShadowText(play, row.name, -86, top - 2, 0.75f, nameColor, alpha);
         float rw = TextWidth(row.right, 0.6f);
+        // A long name shrinks to clear the right-hand column instead of running into it.
+        float room = 108.0f - rw - 6.0f - -86.0f;
+        float nameW = TextWidth(row.name, 1.0f);
+        float nameScale = nameW > 0.0f ? std::clamp(room / nameW, 0.55f, 0.75f) : 0.75f;
+        DrawShadowText(play, row.name, -86, top - 2 - (0.75f - nameScale) * FONT_CHAR_TEX_HEIGHT / 2, nameScale,
+                       nameColor, alpha);
         Color_RGB8 rightColor = row.enabled ? Color_RGB8{ 230, 210, 150 } : Color_RGB8{ 130, 120, 100 };
         DrawShadowText(play, row.right, 108 - rw, top - 4, 0.6f, rightColor, alpha);
     }

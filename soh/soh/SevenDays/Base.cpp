@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <unordered_map>
 
 extern "C" {
@@ -100,8 +101,8 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     /* PLACEABLE_LADDER      */ { "ladder",     "Ladder",       15,   4,    STOREY_HEIGHT, 60 },
     /* PLACEABLE_STAIRS      */ { "stairs",     "Inn staircase", 32,  60,   STOREY_HEIGHT, 120 },
     /* PLACEABLE_DOOR_SWAMP  */ { "doorswamp",  "Swamp door",   60,   8,    100,   120 },
-    /* PLACEABLE_DOOR_MUSIC  */ { "doormusic",  "Music Box House door", 60, 8, 100, 150 },
-    /* PLACEABLE_DOOR_PIRATE */ { "doorpirate", "Pirates' Fortress door", 60, 8, 100, 200 },
+    /* PLACEABLE_DOOR_MUSIC  */ { "doormusic",  "Music Box door", 60, 8,    100,   150 },
+    /* PLACEABLE_DOOR_PIRATE */ { "doorpirate", "Pirate door",  60,   8,    100,   200 },
 };
 // clang-format on
 
@@ -763,6 +764,17 @@ static std::vector<RecipeInput> RefundKit(const Placeable& p, PoolState& pool, b
 }
 
 static void ApplyHp(uint16_t id, int hp);
+static void DropPiecesOn(const Placeable& gone);
+
+// Where a piece stood, for DropPiecesOn: its spawned actor's y after any re-snap.
+static Placeable AsItStood(const Placeable& p) {
+    Placeable gone = p;
+    auto spawned = sSpawned.find(p.id);
+    if (spawned != sSpawned.end() && spawned->second != nullptr) {
+        gone.pos[1] = spawned->second->world.pos.y;
+    }
+    return gone;
+}
 
 static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester) {
     PoolState& pool = Net::MutablePool();
@@ -783,7 +795,8 @@ static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester
         int era = payload.value("era", ERA_CHILD) == ERA_ADULT ? ERA_ADULT : ERA_CHILD;
         int refunded = 0, salvaged = 0;
         std::erase_if(sBase.placeables, [&](const Placeable& p) {
-            if (p.era != era) {
+            // Seeded pieces with no kit (the village's "Day 1" sign) aren't the base's to pack.
+            if (p.era != era || GetPlaceableInfo(p.type).kit[0] == '\0') {
                 return false;
             }
             bool asKit = false;
@@ -815,12 +828,16 @@ static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester
     if (isCenter && CountEra(p->era) > 1) {
         return tell("The workbench holds the base together. Pack up the whole base to move it", true);
     }
+    if (GetPlaceableInfo(p->type).kit[0] == '\0' && !IsRuin(*p)) {
+        return tell(fmt::format("The {} stays: there's no kit to pack it into", GetPlaceableInfo(p->type).name), true);
+    }
     int era = p->era;
     bool ruin = IsRuin(*p);
     bool asKit = false;
     auto salvage = RefundKit(*p, pool, &asKit);
     std::string name = GetPlaceableInfo(p->type).name;
-    std::erase_if(sBase.placeables, [id](const Placeable& q) { return q.id == id; });
+    Placeable gone = AsItStood(*p);
+    std::erase_if(sBase.placeables, [id](const Placeable& q) { return q.id == id; }); // p dangles from here
     if (isCenter) {
         sBase.center[era] = {};
     }
@@ -836,13 +853,18 @@ static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester
     BroadcastDelta(delta);
     Net::BroadcastPool();
     Despawn(id);
+    // Whatever stood on it with nothing else under it falls and breaks, as when it breaks.
+    size_t before = sBase.placeables.size();
+    DropPiecesOn(gone);
+    size_t fell = before - sBase.placeables.size();
+    std::string fallen = fell == 0 ? "" : fmt::format(". {} piece{} on it fell", fell, fell == 1 ? "" : "s");
     if (ruin) {
-        tell(fmt::format("Cleared the ruined {}", name), false);
-    } else if (asKit || GetPlaceableInfo(p->type).kit[0] == '\0') {
-        tell(fmt::format("{} packed back into a kit", name), false);
+        tell(fmt::format("Cleared the ruined {}{}", name, fallen), false);
+    } else if (asKit) {
+        tell(fmt::format("{} packed back into a kit{}", name, fallen), false);
     } else {
-        tell(fmt::format("{} was damaged: salvaged {}. Repair it first to get the kit back", name,
-                         MaterialsText(salvage)),
+        tell(fmt::format("{} was damaged: salvaged {}. Repair it first to get the kit back{}", name,
+                         MaterialsText(salvage), fallen),
              false);
     }
 }
@@ -884,6 +906,8 @@ static std::vector<RecipeInput> UpgradeInputs(uint8_t from, uint8_t to) {
     return out;
 }
 
+static const Placeable* UpgradeBlocker(const Placeable& p, uint8_t to);
+
 static void ProcessUpgradeRequest(const nlohmann::json& payload, uint32_t requester) {
     auto tell = [&](const std::string& msg, bool error) {
         if (requester == OwnId()) {
@@ -911,6 +935,11 @@ static void ProcessUpgradeRequest(const nlohmann::json& payload, uint32_t reques
     }
     if (to == PLACEABLE_IRONWALL && !payload.value("silver", false)) {
         return tell("Iron walls take the Silver Gauntlets' iron", true);
+    }
+    if (const Placeable* in = UpgradeBlocker(*p, (uint8_t)to)) {
+        return tell(fmt::format("No room for a {} there: the {} is in the way", GetPlaceableInfo(to).name,
+                                GetPlaceableInfo(in->type).name),
+                    true);
     }
     auto cost = UpgradeInputs(p->type, (uint8_t)to);
     PoolState& pool = Net::MutablePool();
@@ -983,8 +1012,6 @@ static void ProcessRepairRequest(const nlohmann::json& payload, uint32_t request
 }
 
 // Owner: sequence an HP change (from itself or a scene's enemy authority).
-static void DropPiecesOn(const Placeable& gone);
-
 static void ApplyHp(uint16_t id, int hp) {
     Placeable* p = FindPlaceableMut(id);
     if (p == nullptr) {
@@ -998,11 +1025,7 @@ static void ApplyHp(uint16_t id, int hp) {
     nlohmann::json delta;
     if (hp == 0) {
         // Broken: the piece is gone (its kit is not refunded).
-        Placeable gone = *p;
-        auto spawned = sSpawned.find(id);
-        if (spawned != sSpawned.end() && spawned->second != nullptr) {
-            gone.pos[1] = spawned->second->world.pos.y; // where it stood, after any re-snap
-        }
+        Placeable gone = AsItStood(*p);
         std::erase_if(sBase.placeables, [id](const Placeable& q) { return q.id == id; });
         delta["op"] = "remove";
         delta["id"] = id;
@@ -1234,6 +1257,7 @@ struct PlacementState {
     int16_t room = -1;
     bool stacked = false; // PHA-3945: on top of another piece
     int16_t finalRot = 0; // PHA-3945: rot, or the angle a snap turned it to
+    bool armed = false;   // A has been up since placement began: a held A doesn't place
 };
 static PlacementState sPlace;
 
@@ -1530,6 +1554,27 @@ static bool SnapToLanding(uint8_t type, float* x, float* z, float groundY, int16
     return true;
 }
 
+// The piece that stops `p` being rebuilt as `to` in place (the new wall is thicker and
+// taller), or null: one it would cut into, or one standing on its top that the new top
+// would swallow or leave in mid-air.
+static const Placeable* UpgradeBlocker(const Placeable& p, uint8_t to) {
+    PieceBox now = BoxOf(p);
+    PieceBox next = BoxAt(to, now.x, now.y0, now.z, now.rot);
+    for (auto& q : sBase.placeables) {
+        bool here = q.scene == p.scene && (q.era == p.era || (IsRuin(q) && p.era == ERA_ADULT));
+        if (q.id == p.id || !here) {
+            continue;
+        }
+        PieceBox o = BoxOf(q);
+        bool cuts = next.y0 < o.y1 - 1.0f && o.y0 < next.y1 - 1.0f && FootprintsOverlap(next, o, 1.0f);
+        bool onTop = fabsf(o.y0 - now.y1) <= 3.0f && fabsf(next.y1 - now.y1) > 3.0f && FootprintsOverlap(now, o, 1.0f);
+        if (cuts || onTop) {
+            return &q;
+        }
+    }
+    return nullptr;
+}
+
 // PHA-3945: when a piece breaks, whatever stood on it with nothing else under it falls
 // and breaks too (and in turn what stood on that). Floors that only reach out from the
 // level beside them stand on nothing, so they stay.
@@ -1561,6 +1606,30 @@ static void DropPiecesOn(const Placeable& gone) {
     for (uint16_t id : falling) {
         ApplyHp(id, 0);
     }
+}
+
+// Owner: break a piece wherever it stands (an empty-base raid, away from its scene); what
+// stood on it falls too. The types of every piece that went, itself first.
+std::vector<uint8_t> BreakPiece(uint16_t id) {
+    std::vector<uint8_t> gone;
+    if (!IsOwner() || FindPlaceable(id) == nullptr) {
+        return gone;
+    }
+    std::map<uint16_t, uint8_t> before;
+    for (auto& p : sBase.placeables) {
+        before[p.id] = p.type;
+    }
+    gone.push_back(before[id]);
+    ApplyHp(id, 0);
+    for (auto& p : sBase.placeables) {
+        before.erase(p.id);
+    }
+    for (auto& [other, type] : before) {
+        if (other != id) {
+            gone.push_back(type);
+        }
+    }
+    return gone;
 }
 
 static void Validate(PlayState* play, Player* player) {
@@ -1724,6 +1793,12 @@ void PlacementUpdate(Actor* ghost, PlayState* play) {
     Player* player = GET_PLAYER(play);
     Input* input = &play->state.input[0];
     u16 pressed = input->press.button;
+    // The ghost's first frame has no check behind it yet, and the A that picked the kit
+    // may still be down: A only places once it has been up since placement began.
+    bool armed = sPlace.armed;
+    if (!(input->cur.button & BTN_A)) {
+        sPlace.armed = true;
+    }
     const u16 consumed = BTN_A | BTN_B | BTN_CLEFT | BTN_CRIGHT;
     input->press.button &= ~consumed;
     input->cur.button &= ~consumed;
@@ -1746,9 +1821,10 @@ void PlacementUpdate(Actor* ghost, PlayState* play) {
         EndPlacement();
         return;
     }
-    if (pressed & BTN_A) {
+    if ((pressed & BTN_A) && armed) {
         if (!sPlace.valid) {
-            Toast(GetPlaceableInfo(sPlace.type).name, sPlace.reason, true);
+            Toast(GetPlaceableInfo(sPlace.type).name, sPlace.reason.empty() ? "Can't build here" : sPlace.reason,
+                  true);
             return;
         }
         Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);

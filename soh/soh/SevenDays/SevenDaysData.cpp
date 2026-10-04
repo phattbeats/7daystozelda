@@ -73,8 +73,8 @@ static const std::vector<Recipe> sRecipes = {
     { "ladder",         "Ladder",           RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_FIBER, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
     { "stairs",         "Inn staircase",    RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_STONE, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
     { "doorswamp",      "Swamp door",       RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_FIBER, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
-    { "doormusic",      "Music Box House door", RECIPE_KIT,    { { MAT_WOOD, 8 }, { MAT_STONE, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG },
-    { "doorpirate",     "Pirates' Fortress door", RECIPE_KIT,  { { MAT_WOOD, 6 }, { MAT_STONE, 4 }, { MAT_BONE, 2 } }, 3, ITEM_NONE, ITEM_NONE,   1,  UNLOCK_HOOKSHOT },
+    { "doormusic",      "Music Box door", RECIPE_KIT,          { { MAT_WOOD, 8 }, { MAT_STONE, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG },
+    { "doorpirate",     "Pirate door",      RECIPE_KIT,        { { MAT_WOOD, 6 }, { MAT_STONE, 4 }, { MAT_BONE, 2 } }, 3, ITEM_NONE, ITEM_NONE,   1,  UNLOCK_HOOKSHOT },
 
     { "trade_fiber",    "Sell Fiber",       RECIPE_TRADE,      { { MAT_FIBER, 5 } },                         1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },
     { "trade_wood",     "Sell Wood",        RECIPE_TRADE,      { { MAT_WOOD, 3 } },                          1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },
