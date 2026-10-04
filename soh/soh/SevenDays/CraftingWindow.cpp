@@ -22,6 +22,7 @@ extern "C" {
 #include "textures/parameter_static/parameter_static.h"
 extern PlayState* gPlayState;
 void KaleidoScope_MoveCursorToSpecialPos(PlayState* play, u16 specialPos);
+uint8_t ResourceMgr_FileExists(const char* resName);
 void FrameInterpolation_RecordOpenChild(const void* a, int b);
 void FrameInterpolation_RecordCloseChild(void);
 }
@@ -414,7 +415,67 @@ constexpr s16 kRowHeight = 18;
 Color_RGB8 kPageDark = { 58, 36, 16 };
 Color_RGB8 kPageLight = { 128, 88, 44 };
 
+// PHA-3969: each kit's icon is its own piece, rendered in-game from the model it is built
+// with (tools/harness/pha3969) and packed into soh.o2r under objects/7dtz_icons. Without
+// the pack the rows keep the vanilla item icons below.
+#define ICON(name) const ALIGN_ASSET(2) char gIcon_##name[] = "__OTR__objects/7dtz_icons/" #name
+ICON(workbench);
+ICON(barricade);
+ICON(spikes);
+ICON(chest);
+ICON(scarecrow);
+ICON(guardbaba);
+ICON(torch);
+ICON(stonewall);
+ICON(bombtrap);
+ICON(gate);
+ICON(ironwall);
+ICON(palisade);
+ICON(floorplank);
+ICON(floorranch);
+ICON(floorstone);
+ICON(deck);
+ICON(step);
+ICON(ladder);
+ICON(stairs);
+ICON(doorswamp);
+ICON(doormusic);
+ICON(doorpirate);
+ICON(packup);
+ICON(packall);
+#undef ICON
+
+bool IconPackLoaded() {
+    static int8_t sLoaded = -1;
+    if (sLoaded < 0) {
+        sLoaded = ResourceMgr_FileExists(gIcon_workbench) && ResourceMgr_FileExists(gIcon_packall) ? 1 : 0;
+    }
+    return sLoaded == 1;
+}
+
+// The piece's own icon for a kit id, or null.
+const char* KitIcon(const std::string& kit) {
+    static const std::map<std::string, const char*> sKits = {
+        { "workbench", gIcon_workbench },   { "barricade", gIcon_barricade },   { "spikes", gIcon_spikes },
+        { "chest", gIcon_chest },           { "scarecrow", gIcon_scarecrow },   { "guardbaba", gIcon_guardbaba },
+        { "torch", gIcon_torch },           { "stonewall", gIcon_stonewall },   { "bombtrap", gIcon_bombtrap },
+        { "gate", gIcon_gate },             { "ironwall", gIcon_ironwall },     { "palisade", gIcon_palisade },
+        { "floorplank", gIcon_floorplank }, { "floorranch", gIcon_floorranch }, { "floorstone", gIcon_floorstone },
+        { "deck", gIcon_deck },             { "step", gIcon_step },             { "ladder", gIcon_ladder },
+        { "stairs", gIcon_stairs },         { "doorswamp", gIcon_doorswamp },   { "doormusic", gIcon_doormusic },
+        { "doorpirate", gIcon_doorpirate },
+    };
+    if (!IconPackLoaded()) {
+        return nullptr;
+    }
+    auto it = sKits.find(kit);
+    return it != sKits.end() ? it->second : nullptr;
+}
+
 const char* RecipeIcon(const Recipe& recipe) {
+    if (const char* own = KitIcon(recipe.id)) {
+        return own;
+    }
     static const std::map<std::string, const char*> sIcons = {
         { "sticks", gItemIconDekuStickTex },      { "nuts", gItemIconDekuNutTex },
         { "seeds", gItemIconDekuSeedsTex },       { "arrows", gItemIconBowTex },
@@ -614,7 +675,7 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
     const Placeable* p = nearest ? FindPlaceable(nearest) : nullptr;
     PageRow pack;
     pack.name = p ? fmt::format("Pack up {}", GetPlaceableInfo(p->type).name) : std::string("Pack up nearby piece");
-    pack.icon = gItemIconHammerTex;
+    pack.icon = IconPackLoaded() ? gIcon_packup : gItemIconHammerTex; // a crate: back into a kit
     pack.enabled = p != nullptr && p->type != PLACEABLE_SIGN;
     pack.hint = pack.enabled ? "Back into a kit" : "Stand next to a piece";
     pack.action = [nearest]() {
@@ -644,7 +705,8 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
     if (upTo >= 0) {
         PageRow up;
         up.name = fmt::format("Upgrade to {}", GetPlaceableInfo((uint8_t)upTo).name);
-        up.icon = gItemIconHammerTex;
+        const char* target = KitIcon(GetPlaceableInfo((uint8_t)upTo).kit); // what it becomes
+        up.icon = target != nullptr ? target : gItemIconHammerTex;
         up.enabled = true;
         up.hint = UpgradeCost(nearest);
         up.action = [nearest]() {
@@ -656,7 +718,7 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
 
     PageRow all;
     all.name = sPage.confirmPackAll ? "Really pack it all?" : "Pack up the whole base";
-    all.icon = gItemIconHammerTex;
+    all.icon = IconPackLoaded() ? gIcon_packall : gItemIconHammerTex; // a big crate: everything back
     // Seeded pieces with no kit (the "Day 1" sign) stay when the base is packed up.
     all.enabled = std::any_of(GetBase().placeables.begin(), GetBase().placeables.end(),
                               [](const Placeable& q) { return GetPlaceableInfo(q.type).kit[0] != '\0'; });
@@ -744,7 +806,9 @@ void DrawIcon(PlayState* play, const char* icon, bool rupee, s16 x, s16 top, boo
     gDPPipeSync(POLY_OPA_DISP++);
     gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
     if (gray) {
-        gDPSetGrayscaleColor(POLY_OPA_DISP++, 109, 109, 109, 255);
+        // The rendered piece icons are darker than the item icons: grey them out lighter.
+        u8 level = icon != nullptr && strncmp(icon, "__OTR__objects/7dtz_icons/", 26) == 0 ? 190 : 109;
+        gDPSetGrayscaleColor(POLY_OPA_DISP++, level, level, level, 255);
         gSPGrayscale(POLY_OPA_DISP++, true);
     }
     if (rupee) {

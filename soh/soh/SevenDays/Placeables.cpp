@@ -7,6 +7,7 @@
 #include "soh/Network/Anchor/EnemySync.h"
 #include "soh/Network/Anchor/HordeNight.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -143,6 +144,14 @@ constexpr f32 GATE_REACH = 70.0f;    // a player this far in front of or behind 
 static int16_t sPlaceableId = -1;
 static int sTrapBlasts = 0; // tests: bomb-flower traps set off
 static int16_t sGhostId = -1;
+// PHA-3969 tests: the icon studio draws one piece in front of the camera on a flat backdrop.
+static int16_t sStudioId = -1;
+static Actor* sStudio = nullptr;
+static int sStudioType = -1;      // a PLACEABLE_* type, STUDIO_SMALL_CRATE, STUDIO_LARGE_CRATE, or -1: off
+static bool sStudioWhite = false; // black or white backdrop: a shot on each gives the icon's alpha
+enum { STUDIO_SMALL_CRATE = 100, STUDIO_LARGE_CRATE = 101 };
+constexpr s16 kStudioTurn = 0x2000; // the studio shows pieces three-quarters on
+static s16 sStudioTurn = kStudioTurn; // tests may turn a piece to its best side
 static int16_t sCollisionId = -1;
 
 int16_t SevenDays::PlaceableActorId() {
@@ -550,6 +559,12 @@ static void DrawWorkbench(PlayState* play) {
     const float s = 1.8f, top = 29.0f * s;
     DrawDL(play, (Gfx*)gMMInnDeskDL, 413.0f * s, -210.0f * s, -374.5f * s, s, s, s);
     OPEN_DISPS(play->state.gfxCtx);
+    // Segments 8 and 9 are En_Kgy's render-mode hooks, which the hammer calls too: empty
+    // lists keep the opaque mode (left to chance, whatever drew before decides).
+    Gfx* empty = (Gfx*)Graph_Alloc(play->state.gfxCtx, sizeof(Gfx));
+    gSPEndDisplayList(empty);
+    gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)empty);
+    gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)empty);
     // The hammer stands with its handle along +y and its head across x (315..3034)
     // at 0.01. Laid flat: handle along x, head pointing back, resting on the top.
     Matrix_Push();
@@ -561,11 +576,6 @@ static void DrawWorkbench(PlayState* play) {
     gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gMMSmithyHammerDL);
     Matrix_Pop();
     // The blade (x 426..1727, its width along y) laid flat in front of the hammer.
-    // Segments 8 and 9 are En_Kgy's render-mode hooks: empty lists keep the opaque mode.
-    Gfx* empty = (Gfx*)Graph_Alloc(play->state.gfxCtx, sizeof(Gfx));
-    gSPEndDisplayList(empty);
-    gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)empty);
-    gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)empty);
     Matrix_Push();
     Matrix_Translate(-21.0f, top + 1.6f, 12.0f, MTXMODE_APPLY);
     Matrix_RotateX(M_PI / 2, MTXMODE_APPLY);
@@ -914,12 +924,14 @@ static void DrawTorchFlame(PlayState* play, PlaceableActor* self) {
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
     gSPSegment(POLY_XLU_DISP++, 0x08,
                (uintptr_t)Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0,
-                                (play->gameplayFrames * -20) & 0x1FF, 0x20, 0x80));
+                                ((sStudioType >= 0 ? 6 : play->gameplayFrames) * -20) & 0x1FF, 0x20, 0x80));
     gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 255, 255, 0, 255);
     gDPSetEnvColor(POLY_XLU_DISP++, 255, 0, 0, 0);
     Matrix_Push();
     Matrix_Translate(0.0f, 52.0f, 0.0f, MTXMODE_APPLY);
-    Matrix_RotateY((s16)(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) - self->actor.shape.rot.y + 0x8000) *
+    s16 toCamera = sStudioType >= 0 ? (s16)-sStudioTurn // the studio camera looks down -z
+                                    : (s16)(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) - self->actor.shape.rot.y + 0x8000);
+    Matrix_RotateY(toCamera *
                        (M_PI / 0x8000),
                    MTXMODE_APPLY);
     Matrix_Scale(0.0027f, 0.0027f, 0.0027f, MTXMODE_APPLY);
@@ -1587,6 +1599,157 @@ static void Ghost_Draw(Actor* thisx, PlayState* play) {
     DrawGhostVolume(play, GetPlaceableInfo(type), valid);
 }
 
+// MARK: - SevenDays_IconStudio (tests)
+
+// PHA-3969: the Workbench icons are the pieces' own models. The studio draws one through
+// its own orthographic camera, turned three-quarters and tipped toward it, on a black or
+// white backdrop; tools/harness/pha3969 shoots both and keeps the difference as alpha. The
+// backdrop writes the front of the depth range over the whole screen, so nothing the game
+// draws after it shows through.
+constexpr f32 kStudioHeight = 4000.0f; // over Link, out of everyone's way
+constexpr f32 kStudioDist = 150.0f;    // the studio camera to the piece
+constexpr f32 kStudioFar = 400.0f;     // the camera's depth range: the backdrop sits near its front
+constexpr f32 kStudioHalfH = 70.0f;    // half the height the camera sees
+constexpr f32 kStudioSize = 56.0f;     // the piece's largest side, scaled to this
+constexpr f32 kStudioLift = 6.0f;      // the piece a little above the middle of the shot
+
+static Vtx sStudioQuad[4] = {
+    { { { -1, -1, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } },
+    { { { 1, -1, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } },
+    { { { 1, 1, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } },
+    { { { -1, 1, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } },
+};
+
+static void Studio_Init(Actor* thisx, PlayState* play) {
+    Ghost_Init(thisx, play); // the skeletons, as the preview has them
+    ((PlaceableActor*)thisx)->ghost = false;
+}
+
+static void Studio_Destroy(Actor* thisx, PlayState* play) {
+    PlaceableActor* self = (PlaceableActor*)thisx;
+    if (self->hasSkel) {
+        SkelAnime_Free(&self->skel, play);
+        self->hasSkel = false;
+    }
+    if (sStudio == thisx) {
+        sStudio = nullptr;
+    }
+}
+
+static void Studio_Update(Actor* thisx, PlayState* play) {
+    PlaceableActor* self = (PlaceableActor*)thisx;
+    if (sStudio != thisx) {
+        Actor_Kill(thisx);
+        return;
+    }
+    Player* player = GET_PLAYER(play);
+    thisx->world.pos = { player->actor.world.pos.x, player->actor.world.pos.y + kStudioHeight,
+                         player->actor.world.pos.z };
+    thisx->shape.rot = { 0, 0, 0 };
+    self->babaYaw = 0;
+    if (self->hasSkel) {
+        SkelAnime_Update(&self->skel);
+    }
+}
+
+// How big and how tall each subject draws, before the studio scales it to kStudioSize.
+static void StudioExtent(int type, f32* size, f32* height) {
+    if (type == STUDIO_SMALL_CRATE || type == STUDIO_LARGE_CRATE) {
+        *size = *height = type == STUDIO_SMALL_CRATE ? 40.0f : 100.0f;
+        return;
+    }
+    const PlaceableInfo& info = GetPlaceableInfo((uint8_t)type);
+    *height = info.height;
+    switch (type) {
+        case PLACEABLE_GUARDBABA:
+            *height = 80.0f; // the head stands over the stalk
+            break;
+        case PLACEABLE_TORCH:
+            *height = 85.0f; // the flame
+            break;
+        case PLACEABLE_BOMBTRAP:
+            *height = 30.0f; // the bomb on its leaves
+            break;
+    }
+    *size = std::max({ 2.0f * info.halfX, 2.0f * info.halfZ, *height });
+}
+
+static void Studio_Draw(Actor* thisx, PlayState* play) {
+    PlaceableActor* self = (PlaceableActor*)thisx;
+    Vec3f pos = thisx->world.pos;
+    View* view = &play->view;
+    GraphicsContext* gfx = play->state.gfxCtx;
+
+    // The studio camera: on +z of the piece, looking at it.
+    Mtx* projection = (Mtx*)Graph_Alloc(gfx, sizeof(Mtx));
+    Mtx* viewing = (Mtx*)Graph_Alloc(gfx, sizeof(Mtx));
+    f32 aspect = (f32)(view->viewport.rightX - view->viewport.leftX) /
+                 (f32)(view->viewport.bottomY - view->viewport.topY);
+    guOrtho(projection, -kStudioHalfH * aspect, kStudioHalfH * aspect, -kStudioHalfH, kStudioHalfH, 1.0f, kStudioFar,
+            1.0f);
+    // Aimed a little under the piece: clear of the hearts, the buttons and the minimap.
+    guLookAt(viewing, pos.x, pos.y - kStudioLift, pos.z + kStudioDist, pos.x, pos.y - kStudioLift, pos.z, 0.0f, 1.0f,
+             0.0f);
+    OPEN_DISPS(gfx);
+    gSPPerspNormalize(POLY_OPA_DISP++, 0xFFFF);
+    gSPMatrix(POLY_OPA_DISP++, projection, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
+    gSPMatrix(POLY_OPA_DISP++, viewing, G_MTX_NOPUSH | G_MTX_MUL | G_MTX_PROJECTION);
+    gSPFogPosition(POLY_OPA_DISP++, 996, 1000); // no fog in the studio
+    gSPPerspNormalize(POLY_XLU_DISP++, 0xFFFF);
+    gSPMatrix(POLY_XLU_DISP++, projection, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
+    gSPMatrix(POLY_XLU_DISP++, viewing, G_MTX_NOPUSH | G_MTX_MUL | G_MTX_PROJECTION);
+    gSPFogPosition(POLY_XLU_DISP++, 996, 1000);
+
+    // The backdrop: a flat card behind the piece. It draws over everything (no depth test)
+    // and leaves its own, near, depth behind it.
+    u8 shade = sStudioWhite ? 255 : 0;
+    Matrix_Translate(pos.x, pos.y, pos.z - 80.0f, MTXMODE_NEW);
+    Matrix_Scale(400.0f, 400.0f, 1.0f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(gfx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_CULL_BOTH | G_LIGHTING | G_TEXTURE_GEN | G_FOG);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+    gDPSetRenderMode(POLY_OPA_DISP++, G_RM_OPA_SURF | Z_UPD, G_RM_OPA_SURF2 | Z_UPD);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, shade, shade, shade, 255);
+    gSPVertex(POLY_OPA_DISP++, (uintptr_t)sStudioQuad, 4, 0);
+    gSP2Triangles(POLY_OPA_DISP++, 0, 1, 2, 0, 0, 2, 3, 0);
+    CLOSE_DISPS(gfx);
+
+    // The piece: turned three-quarters and tipped toward the camera, as if seen from above.
+    // Billboards (the bomb, the flame) face the studio camera, which looks straight down -z.
+    MtxF billboard = play->billboardMtxF;
+    SkinMatrix_Clear(&play->billboardMtxF);
+    f32 size, height;
+    StudioExtent(sStudioType, &size, &height);
+    f32 sc = kStudioSize / size;
+    Matrix_Translate(pos.x, pos.y, pos.z, MTXMODE_NEW);
+    Matrix_RotateX(height < 30.0f ? 0.8f : 0.45f, MTXMODE_APPLY); // flat pieces from higher up
+    Matrix_RotateY(BINANG_TO_RAD(sStudioTurn), MTXMODE_APPLY);
+    Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
+    Matrix_Translate(0.0f, -height / 2.0f, 0.0f, MTXMODE_APPLY);
+    Gfx_SetupDL_25Opa(gfx);
+    if (sStudioType == STUDIO_SMALL_CRATE) {
+        DrawDL(play, (Gfx*)gSmallWoodenBoxDL, 0.0f, 0.0f, 0.0f, 0.1f, 0.1f, 0.1f);
+    } else if (sStudioType == STUDIO_LARGE_CRATE) {
+        DrawDL(play, (Gfx*)gLargeCrateDL, 0.0f, 0.0f, 0.0f, 0.1f, 0.1f, 0.1f);
+    } else {
+        DrawModel(play, (uint8_t)sStudioType, 1.0f, self);
+    }
+    play->billboardMtxF = billboard;
+
+    // Back to the game's camera and fog for whatever draws next.
+    OPEN_DISPS(gfx);
+    POLY_OPA_DISP = Play_SetFog(play, POLY_OPA_DISP);
+    POLY_XLU_DISP = Play_SetFog(play, POLY_XLU_DISP);
+    gSPPerspNormalize(POLY_OPA_DISP++, view->normal);
+    gSPMatrix(POLY_OPA_DISP++, view->projectionPtr, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
+    gSPMatrix(POLY_OPA_DISP++, view->viewingPtr, G_MTX_NOPUSH | G_MTX_MUL | G_MTX_PROJECTION);
+    gSPPerspNormalize(POLY_XLU_DISP++, view->normal);
+    gSPMatrix(POLY_XLU_DISP++, view->projectionPtr, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
+    gSPMatrix(POLY_XLU_DISP++, view->viewingPtr, G_MTX_NOPUSH | G_MTX_MUL | G_MTX_PROJECTION);
+    CLOSE_DISPS(gfx);
+}
+
 // MARK: - Registration and spawning
 
 void SevenDays::RegisterPlaceableActors() {
@@ -1624,6 +1787,19 @@ void SevenDays::RegisterPlaceableActors() {
     ghost.update = Ghost_Update;
     ghost.draw = Ghost_Draw;
     sGhostId = (int16_t)ActorDB::Instance->AddEntry(ghost).entry.id;
+
+    ActorDBInit studio;
+    studio.name = "SevenDays_IconStudio";
+    studio.desc = "7 Days to Zelda tests: draws one piece in front of the camera for its Workbench icon";
+    studio.category = ACTORCAT_BG;
+    studio.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED;
+    studio.objectId = OBJECT_GAMEPLAY_KEEP;
+    studio.instanceSize = sizeof(PlaceableActor);
+    studio.init = Studio_Init;
+    studio.destroy = Studio_Destroy;
+    studio.update = Studio_Update;
+    studio.draw = Studio_Draw;
+    sStudioId = (int16_t)ActorDB::Instance->AddEntry(studio).entry.id;
 
     ActorDBInit collision;
     collision.name = "SevenDays_BaseCollision";
@@ -1937,6 +2113,29 @@ int sevendays_test_last_text() {
 EMSCRIPTEN_KEEPALIVE
 int sevendays_test_trap_blasts() {
     return sTrapBlasts;
+}
+
+// PHA-3969: the icon studio. type: a PLACEABLE_* type, 100 small crate, 101 large crate,
+// or -1 to put it away; white: the backdrop's shade; turn: the piece's yaw toward the camera.
+EMSCRIPTEN_KEEPALIVE
+void sevendays_test_icon_studio(int type, int white, int turn) {
+    sStudioTurn = (s16)turn;
+    if (gPlayState == nullptr || sStudioId < 0) {
+        return;
+    }
+    bool valid = (type >= 0 && type < PLACEABLE_COUNT) || type == STUDIO_SMALL_CRATE || type == STUDIO_LARGE_CRATE;
+    sStudioWhite = white != 0;
+    if (sStudio != nullptr && (!valid || sStudioType != type)) {
+        Actor_Kill(sStudio);
+        sStudio = nullptr;
+    }
+    sStudioType = valid ? type : -1;
+    if (valid && sStudio == nullptr) {
+        Player* player = GET_PLAYER(gPlayState);
+        int16_t params = type < PLACEABLE_COUNT ? (int16_t)type : (int16_t)0xFF;
+        sStudio = Actor_Spawn(&gPlayState->actorCtx, gPlayState, sStudioId, player->actor.world.pos.x,
+                              player->actor.world.pos.y, player->actor.world.pos.z, 0, 0, 0, params, false);
+    }
 }
 
 // Navi's C-Up hint now, how many hints were heard, and the next tip.

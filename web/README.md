@@ -24,6 +24,10 @@ Ocarina of Time co-op (shared enemies, nearest-player targeting, enemy sounds an
 
 Since PHA-3904 the live `soh.o2r` also carries a few Majora's Mask models (the palisade wall's logs, the workbench's desk, hammer and blade; since PHA-3945 also the floors, deck, step, ladder, staircase and doors), cut from an MM (USA) ROM by `art/mm-pack/build_mm_pack.py --o2r public/soh.o2r`. They are Nintendo data: they live only in the deployed image and the private Nextcloud folder, never in this repo or a public release. Any deploy that replaces `soh.o2r` must re-append them, or the game falls back to OoT models (the palisade becomes a tall horse fence, the workbench the shop shelves). Re-gzip `soh.o2r.gz` afterwards: `server.js` serves the `.gz` sibling.
 
+### Workbench icons in soh.o2r
+
+Since PHA-3969 the Workbench rows show each kit as its own piece: 32x32 renders of the pieces' models, made in-game by `tools/harness/pha3969` and packed by `art/icons/build_icon_pack.py --icons icons/ --o2r public/soh.o2r` under `objects/7dtz_icons/`. Like the MM models they are renders of Nintendo data, so the PNGs live only in the private Nextcloud folder (`7daystozelda/icons/`) and the deployed image. Any deploy that replaces `soh.o2r` must re-append them (after the MM pack), or the rows fall back to the vanilla item icons. Re-gzip `soh.o2r.gz` afterwards.
+
 Rename the subdomain by changing `server_name zelda.*;` and the CNAME. The container name `soh-web` must stay lowercase; SWAG resolves it literally.
 
 **Don't add `proxy_read_timeout` to the conf.** SWAG's `proxy.conf` already sets it, and nginx refuses a duplicate, which stops SWAG and takes every site down with it. It isn't needed: the relay pings every 25 s, inside both SWAG's 240 s timeout and Cloudflare's 100 s idle cutoff.
