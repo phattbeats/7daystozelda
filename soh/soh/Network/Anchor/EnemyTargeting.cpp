@@ -52,6 +52,7 @@ struct ActiveSwap {
     s16 freezeSnapshot = 0;
     Actor* focusSnapshot = nullptr;
     Actor* autoLockSnapshot = nullptr;
+    bool heldAtStart = false;
 };
 
 std::unordered_map<Actor*, TargetMemory> sMemory;
@@ -338,6 +339,7 @@ extern "C" void Anchor_EnemyTargetBegin(PlayState* play, Actor* actor) {
     puppet->knockbackType = PLAYER_KNOCKBACK_NONE;
     puppet->knockbackDamage = 0;
 
+    sActive.heldAtStart = (puppet->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) != 0;
     sActive.on = true;
     sActive.actor = actor;
     sActive.clientId = clientId;
@@ -372,6 +374,7 @@ extern "C" void Anchor_EnemyTargetEnd(PlayState* play, Actor* actor) {
     Player* puppet = sActive.puppet;
     uint32_t clientId = sActive.clientId;
     s16 freezeSnapshot = sActive.freezeSnapshot;
+    bool heldAtStart = sActive.heldAtStart;
     // Lock-on fields an enemy may write onto "the player": Actor_Delete only clears
     // them on the real Link, so a puppet keeping them would dangle once the enemy dies.
     puppet->focusActor = sActive.focusSnapshot;
@@ -382,13 +385,19 @@ extern "C" void Anchor_EnemyTargetEnd(PlayState* play, Actor* actor) {
         return;
     }
 
-    // The enemy that grabbed this player let go (flag cleared on the puppet, or it
-    // no longer holds it): the real victim must be freed on their own machine.
+    // The enemy that grabbed this player let go: it cleared the flag on the puppet
+    // during this update. Compare against the flag at the start of the update (the
+    // stream-mirrored flag can't tell "enemy released" from "victim never held"),
+    // so the release also lands while the grab latch is still pending.
     auto owner = sGrabOwner.find(clientId);
     if (owner != sGrabOwner.end() && owner->second == actor) {
         bool held = (puppet->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) != 0;
-        if (!held && !sGrabLatch.contains(clientId)) {
+        if (heldAtStart && !held) {
             Anchor::Instance->SendPacket_EnemyPlayerEffect(clientId, ENEMY_EFFECT_RELEASE, 0, 0, 0.0f, 0.0f, 0);
+            sGrabLatch.erase(clientId);
+            sGrabOwner.erase(owner);
+        } else if (!held && !sGrabLatch.contains(clientId)) {
+            // Victim already free (mashed out) or never grabbed: nothing to release.
             sGrabOwner.erase(owner);
         }
     }
