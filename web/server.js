@@ -41,14 +41,52 @@ const MIME = {
   ".o2r": "application/octet-stream",
   ".json": "application/json",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
   ".ico": "image/x-icon",
   ".svg": "image/svg+xml",
   ".webmanifest": "application/manifest+json",
 };
 
-// Fetched by the OS/browser outside the page (home-screen install, tab icon),
-// often without cookies, and nothing secret: served without the invite key.
-const PUBLIC_PATHS = new Set(["/manifest.webmanifest", "/icon.svg", "/icon-180.png", "/icon-192.png", "/icon-512.png", "/favicon.ico"]);
+// Fetched by the OS/browser outside the page (home-screen install, tab icon,
+// link-preview bots), often without cookies, and nothing secret: served
+// without the invite key.
+const PUBLIC_PATHS = new Set([
+  "/manifest.webmanifest",
+  "/icon.svg",
+  "/icon-180.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/favicon.ico",
+  "/favicon-16.png",
+  "/favicon-32.png",
+  "/favicon-96.png",
+  "/og.jpg",
+]);
+
+// The link preview (Open Graph / Twitter card) for the "Invite only" page, so a
+// link shared without ?key= still unfurls. index.html carries the same tags.
+// PUBLIC_URL is the canonical https origin the preview image is served from.
+const PUBLIC_URL = (process.env.PUBLIC_URL || "https://zelda.phatt.vip").replace(/\/+$/, "");
+function fileVersion(name) {
+  try {
+    return crypto.createHash("md5").update(fs.readFileSync(path.join(PUBLIC_DIR, name))).digest("hex").slice(0, 8);
+  } catch {
+    return "0";
+  }
+}
+const SHARE_DESC =
+  "Co-op survival Ocarina of Time in your browser. Gather, craft, build walls, and hold Hyrule through seven nights of raids with your friends.";
+const SHARE_IMAGE = `${PUBLIC_URL}/og.jpg?v=${fileVersion("og.jpg")}`;
+const ICON_V = fileVersion("favicon-32.png");
+const SHARE_HEAD = `<meta name="description" content="${SHARE_DESC}">
+<meta property="og:type" content="website"><meta property="og:site_name" content="7 Days to Zelda">
+<meta property="og:title" content="7 Days to Zelda"><meta property="og:description" content="${SHARE_DESC}">
+<meta property="og:url" content="${PUBLIC_URL}/"><meta property="og:image" content="${SHARE_IMAGE}">
+<meta property="og:image:type" content="image/jpeg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${SHARE_IMAGE}">
+<meta name="theme-color" content="#0b0f14">
+<link rel="icon" href="/favicon.ico?v=${ICON_V}" sizes="48x48"><link rel="icon" href="/favicon-32.png?v=${ICON_V}" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/icon-180.png?v=${ICON_V}">`;
 
 function log(...args) {
   console.log(new Date().toISOString(), ...args);
@@ -93,7 +131,9 @@ function checkAccess(req) {
 }
 
 const DENIED_PAGE = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Invite only</title><body style="background:#0b0d12;color:#d8dbe2;font:16px system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0">
+<title>7 Days to Zelda - invite only</title>
+${SHARE_HEAD}
+<body style="background:#0b0d12;color:#d8dbe2;font:16px system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0">
 <div style="max-width:28rem;padding:1rem;text-align:center"><h1 style="font-size:1.3rem">Invite only</h1>
 <p>This server needs the invite link. Ask whoever runs it for the full link (it has <code>?key=</code> in it).</p></div>`;
 
@@ -172,9 +212,9 @@ function serveStatic(req, res, extraHeaders) {
 function serveManifest(req, res) {
   const keyed = ACCESS_KEY && keyEquals(cookieKey(req));
   const manifest = {
-    name: "Ocarina Co-op",
-    short_name: "Ocarina",
-    description: "Ship of Harkinian co-op with shared enemies and horde night.",
+    name: "7 Days to Zelda",
+    short_name: "7 Days",
+    description: SHARE_DESC,
     start_url: keyed ? `/?key=${encodeURIComponent(ACCESS_KEY)}` : "/",
     scope: "/",
     display: "fullscreen",
@@ -185,7 +225,6 @@ function serveManifest(req, res) {
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
       { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
-      { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
     ],
   };
   res.writeHead(200, { "Content-Type": MIME[".webmanifest"], "Cache-Control": "no-cache", Vary: "Cookie" });
@@ -206,7 +245,10 @@ const server = http.createServer((req, res) => {
   if (PUBLIC_PATHS.has(pathOnly)) return serveStatic(req, res, {});
   const access = checkAccess(req);
   if (!access.ok) {
-    res.writeHead(403, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).end(DENIED_PAGE);
+    // The front page answers 200 so link-preview bots (Discord, Slack,
+    // iMessage) read its share tags; they skip error pages. Everything else 403s.
+    const page = pathOnly === "/" || pathOnly === "/index.html";
+    res.writeHead(page ? 200 : 403, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).end(DENIED_PAGE);
     return;
   }
   serveStatic(req, res, access.setCookie ? { "Set-Cookie": access.setCookie } : {});
