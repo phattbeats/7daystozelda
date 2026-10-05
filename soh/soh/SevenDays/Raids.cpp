@@ -1796,7 +1796,7 @@ void RaidsRegisterMessages(const char* table) {
     };
     // clang-format on
     for (uint8_t i = 0; i < RAIDLINE_COUNT; i++) {
-        CustomMessageManager::Instance->CreateMessage(
+        AddText(
             table, SEVEN_DAYS_TEXT_BASE + 0x08 + i, CustomMessage(lines[i], TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     }
     // clang-format off
@@ -1807,7 +1807,7 @@ void RaidsRegisterMessages(const char* table) {
     };
     // clang-format on
     for (uint16_t i = 0; i < 3; i++) {
-        CustomMessageManager::Instance->CreateMessage(table, TEXT_RAID_EVE_EACH + i,
+        AddText(table, TEXT_RAID_EVE_EACH + i,
                                                       CustomMessage(eve[i], TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     }
 }

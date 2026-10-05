@@ -1018,20 +1018,21 @@ void LootRegisterMessages(const char* table) {
     };
     // clang-format on
     for (uint8_t i = 0; i < LOOTLINE_COUNT; i++) {
-        CustomMessageManager::Instance->CreateMessage(table, TEXT_LOOT_BASE + i,
+        AddText(table, TEXT_LOOT_BASE + i,
                                                       CustomMessage(lines[i], TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     }
-    CustomMessageManager::Instance->CreateMessage(
+    AddText(
         table, TEXT_CACHE,
         CustomMessage("A supply cache, nailed shut and banded in brass.^You pry the lid open...", TEXTBOX_TYPE_BLACK,
                       TEXTBOX_POS_BOTTOM));
-    static_assert(TEXT_MERCHANT_BASE + 8 <= SEVEN_DAYS_TEXT_BASE + SEVEN_DAYS_TEXT_COUNT, "merchant text ids");
+    static_assert(TEXT_LOOT_BASE + LOOTLINE_COUNT <= TEXT_CACHE, "loot and cache text ids overlap");
+    static_assert(TEXT_MERCHANT_BASE + 8 <= TEXT_NAVI_TIPS, "merchant and tip text ids overlap");
     for (uint16_t i = 0; i < GetMerchants().size() && i < 8; i++) {
-        CustomMessageManager::Instance->CreateMessage(
+        AddText(
             table, TEXT_MERCHANT_BASE + i,
             CustomMessage(GetMerchants()[i].line, TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM));
     }
-    CustomMessageManager::Instance->CreateMessage(
+    AddText(
         table, TEXT_CACHE_EMPTY,
         CustomMessage("An empty supply cache. Someone already took everything.", TEXTBOX_TYPE_BLACK,
                       TEXTBOX_POS_BOTTOM));

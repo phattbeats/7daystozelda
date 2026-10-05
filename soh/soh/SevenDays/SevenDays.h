@@ -144,9 +144,15 @@ bool IsPacket(const std::string& type);
 void HandlePacket(const nlohmann::json& payload);
 
 // Navi lines (custom message table "SevenDays", text ids SEVEN_DAYS_TEXT_BASE+).
+// The table keeps the first line registered under an id, so blocks must not overlap:
+//   0x00 firsts, 0x08 raid lines, 0x14 raid eve, 0x17 new gather firsts, 0x19 ledge,
+//   0x20 village, 0x28 loot lines, 0x30 supply cache, 0x34 merchants, 0x40 C-Up tips.
 constexpr uint16_t SEVEN_DAYS_TEXT_BASE = 0x9700;
-constexpr uint16_t SEVEN_DAYS_TEXT_COUNT = 0x40;
+constexpr uint16_t SEVEN_DAYS_TEXT_COUNT = 0x50;
 bool IsSevenDaysText(uint16_t textId);
+// Every line in the table goes through here: an id registered twice is logged and kept
+// for sevendays_test_text_audit instead of silently showing the other line (PHA-4005).
+void AddText(const char* table, uint16_t textId, const CustomMessage& message);
 
 // Tunic colors (TunicColors.cpp)
 void ApplyTunicOverrideForClient(uint32_t clientId);
@@ -353,8 +359,9 @@ void QueueNaviText(uint16_t textId); // SevenDays.cpp: a line Navi can say again
 // PHA-3935: Navi's warning the evening before every raid after the first (3 variants), and
 // her C-Up crafting and raid tips.
 constexpr uint16_t TEXT_RAID_EVE_EACH = SEVEN_DAYS_TEXT_BASE + 0x14;
-constexpr uint16_t TEXT_NAVI_TIPS = SEVEN_DAYS_TEXT_BASE + 0x30;
+constexpr uint16_t TEXT_NAVI_TIPS = SEVEN_DAYS_TEXT_BASE + 0x40; // PHA-4005: was 0x30, under the caches
 constexpr uint16_t NAVI_TIP_COUNT = 12;
+static_assert(TEXT_NAVI_TIPS + NAVI_TIP_COUNT <= SEVEN_DAYS_TEXT_BASE + SEVEN_DAYS_TEXT_COUNT, "tip text ids");
 void RaidsRegisterMessages(const char* table);
 void RaidsOnFrame();
 void RaidsRegisterHooks(bool enabled);

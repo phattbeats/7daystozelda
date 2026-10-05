@@ -149,6 +149,18 @@ bool IsSevenDaysText(uint16_t textId) {
     return textId >= SEVEN_DAYS_TEXT_BASE && textId < SEVEN_DAYS_TEXT_BASE + SEVEN_DAYS_TEXT_COUNT;
 }
 
+static std::vector<uint16_t> sTextIds;     // ids registered, for the audit
+static std::vector<uint16_t> sTextClashes; // ids registered twice (the table keeps the first line)
+
+void AddText(const char* table, uint16_t textId, const CustomMessage& message) {
+    if (CustomMessageManager::Instance->CreateMessage(table, textId, message)) {
+        sTextIds.push_back(textId);
+    } else {
+        SPDLOG_ERROR("[SevenDays] text id 0x{:04X} is already taken; its new line is lost", textId);
+        sTextClashes.push_back(textId);
+    }
+}
+
 // MARK: - Authority
 
 bool Net::Connected() {
@@ -296,7 +308,8 @@ void QueueNaviText(uint16_t textId) {
 constexpr uint8_t RAID_FIRST_BIT = 8;
 constexpr uint16_t RAID_TEXT_OFFSET = 0x08;
 static_assert(RAID_FIRST_BIT + RAIDLINE_COUNT <= 32, "firsts bitfield");
-static_assert(RAID_TEXT_OFFSET + RAIDLINE_COUNT <= 0x20, "raid lines must stay below the village text ids");
+static_assert(SEVEN_DAYS_TEXT_BASE + RAID_TEXT_OFFSET + RAIDLINE_COUNT <= TEXT_RAID_EVE_EACH,
+              "raid lines must stay below the raid-eve text ids");
 
 void QueueRaidNavi(uint8_t line) {
     if (line >= RAIDLINE_COUNT || (sFirsts & (1u << (RAID_FIRST_BIT + line)))) {
@@ -356,16 +369,16 @@ static void RegisterMessages() {
     RaidsRegisterMessages(CUSTOM_MESSAGE_TABLE);
     LootRegisterMessages(CUSTOM_MESSAGE_TABLE);
     for (uint8_t m = 0; m < MAT_COUNT; m++) {
-        CustomMessageManager::Instance->CreateMessage(
+        AddText(
             CUSTOM_MESSAGE_TABLE, GatherFirstText(m),
             CustomMessage(GetMaterialInfo(m).firstLine, TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     }
-    CustomMessageManager::Instance->CreateMessage(
+    AddText(
         CUSTOM_MESSAGE_TABLE, TEXT_LEDGE_FIRST,
         CustomMessage("Got it! The Hookshot reaches things up on the ledges.^Look up, Link: there's more stashed up high!",
                       TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     for (uint8_t f = FIRST_CRAFT; f < FIRST_COUNT; f++) {
-        CustomMessageManager::Instance->CreateMessage(
+        AddText(
             CUSTOM_MESSAGE_TABLE, SEVEN_DAYS_TEXT_BASE + f,
             CustomMessage(sFirstLineText[f - MAT_LEGACY_COUNT], TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM));
     }
@@ -1024,6 +1037,21 @@ const char* sevendays_test_state() {
     j["owedBuys"] = sWalletRequests.size();
     j["sticks"] = AMMO(ITEM_STICK);
     out = j.dump();
+    return out.c_str();
+}
+
+// PHA-4005: every line in the SevenDays table by id, and the ids registered twice.
+EMSCRIPTEN_KEEPALIVE
+const char* sevendays_test_text_audit() {
+    static std::string out;
+    nlohmann::json j;
+    j["clashes"] = sTextClashes;
+    j["lines"] = nlohmann::json::object();
+    for (uint16_t id : sTextIds) {
+        j["lines"][fmt::format("{:04X}", id)] =
+            CustomMessageManager::Instance->RetrieveMessage(CUSTOM_MESSAGE_TABLE, id).GetEnglish(MF_RAW);
+    }
+    out = j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
     return out.c_str();
 }
 }
