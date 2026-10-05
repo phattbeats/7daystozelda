@@ -2820,9 +2820,12 @@ extern "C" int CustomMessage_RetrieveIfExists(PlayState* play) {
                                                                        MF_FORMATTED);
     }
     if (SevenDays::IsSevenDaysText(textId) || SevenDays::OverridesVanillaText(textId)) {
-        messageEntry = CustomMessageManager::Instance->RetrieveMessage("SevenDays", textId, MF_AUTO_FORMAT);
-        messageEntry.Replace("[[day]]", std::to_string(SevenDays::CurrentDay()));
-        SevenDays::FillWorldText(messageEntry);
+        CustomMessage sevenDaysLine = CustomMessageManager::Instance->RetrieveMessage("SevenDays", textId, MF_AUTO_FORMAT);
+        sevenDaysLine.Replace("[[day]]", std::to_string(SevenDays::CurrentDay()));
+        SevenDays::FillWorldText(sevenDaysLine);
+        if (!SevenDays::OverridesVanillaText(textId) || SevenDays::AfterVanillaText(textId, sevenDaysLine)) {
+            messageEntry = sevenDaysLine;
+        }
     } else if (CustomMessage tip; SevenDays::NaviTipText(textId, tip)) {
         messageEntry = tip;
     } else if (CustomMessage worldLine; SevenDays::WorldText(textId, worldLine)) {

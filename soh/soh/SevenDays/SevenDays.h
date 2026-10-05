@@ -291,6 +291,7 @@ Actor* SpawnPlaceableActor(const Placeable& p);
 void OnPlaceableInteract(uint8_t type); // workbench / chest A-press
 // Vanilla Kokiri lines replaced while the village is active (OTRGlobals glue).
 bool OverridesVanillaText(uint16_t textId);
+bool AfterVanillaText(uint16_t textId, CustomMessage& flavor);
 // M9: town, gossip stone and Navi lines that follow the nights (Placeables.cpp).
 bool WorldText(uint16_t textId, CustomMessage& out);
 constexpr uint16_t TEXT_SIGN_DAY = SEVEN_DAYS_TEXT_BASE + 0x20;

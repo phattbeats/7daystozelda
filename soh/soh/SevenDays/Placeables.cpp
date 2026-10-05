@@ -1997,6 +1997,38 @@ static std::string NextRaidText() {
     return n == 1 ? "one day" : fmt::format("{} days", n);
 }
 
+// The new line goes after the NPC's own words, in a second box, never over them. Vanilla text that
+// runs anything (a choice, an event, an item, a delay) is left to vanilla alone.
+static bool AfterVanilla(uint16_t textId, CustomMessage& flavor) {
+    CustomMessage vanilla = CustomMessage::LoadVanillaMessageTableEntry(textId);
+    std::string v = vanilla.GetEnglish(MF_RAW);
+    if (v.empty() || v.back() != '\x02') {
+        return false;
+    }
+    v.pop_back();
+    for (size_t i = 0; i < v.size(); i++) {
+        unsigned char c = v[i];
+        if (c >= 0x20 || c == 0x01 || c == 0x04 || c == 0x0F) {
+            continue;
+        }
+        if (c == 0x05 || c == 0x06) {
+            i++;
+            continue;
+        }
+        return false;
+    }
+    std::string f = flavor.GetEnglish(MF_RAW);
+    if (!f.empty() && f.back() == '\x02') {
+        f.pop_back();
+    }
+    flavor = CustomMessage(v + "\x04" + f + "\x02", vanilla.GetTextBoxType(), vanilla.GetTextBoxPosition());
+    return true;
+}
+
+bool SevenDays::AfterVanillaText(uint16_t textId, CustomMessage& flavor) {
+    return AfterVanilla(textId, flavor);
+}
+
 static uint16_t sLastTextId = 0; // tests: the last vanilla text id asked for
 
 bool SevenDays::WorldText(uint16_t textId, CustomMessage& out) {
@@ -2012,7 +2044,7 @@ bool SevenDays::WorldText(uint16_t textId, CustomMessage& out) {
     out = CustomMessage(text, box, TEXTBOX_POS_BOTTOM);
     FillWorldText(out);
     out.AutoFormat();
-    return true;
+    return AfterVanilla(textId, out);
 }
 
 void SevenDays::FillWorldText(CustomMessage& msg) {
