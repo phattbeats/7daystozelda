@@ -78,6 +78,11 @@ constexpr f32 RING_MIN = 600.0f, RING_MAX = 900.0f;
 constexpr double STUCK_WINDOW = 5.0;
 constexpr f32 STUCK_GAIN = 20.0f;
 constexpr double DUSK_MAX_SECONDS = 120.0;
+// PHA-4006: the torch ward. The ritual: the ring's torches turn blue one after another,
+// sweeping round from Link's side, then the red night clears.
+constexpr double WARD_CHECK_SECONDS = 2.0;
+constexpr double WARD_SWEEP_SECONDS = 4.0;
+constexpr double WARD_REMIND_SECONDS = 120.0;
 
 // MARK: - Settings
 
@@ -240,6 +245,7 @@ enum WaveStatus : uint8_t {
     WAVE_INCOMING, // announced, first spawns pending
     WAVE_ASSAULT,  // spawning / fighting
     WAVE_CLEARED,  // budget spent and every raider down
+    WAVE_WARDED,   // PHA-4006: held back by the torch ring, nothing spawns while it burns
 };
 static const char* StatusName(uint8_t s) {
     switch (s) {
@@ -249,6 +255,8 @@ static const char* StatusName(uint8_t s) {
             return "assault";
         case WAVE_CLEARED:
             return "cleared";
+        case WAVE_WARDED:
+            return "warded";
     }
     return "none";
 }
@@ -261,6 +269,9 @@ static uint8_t StatusFromName(const std::string& s) {
     }
     if (s == "cleared") {
         return WAVE_CLEARED;
+    }
+    if (s == "warded") {
+        return WAVE_WARDED;
     }
     return WAVE_NONE;
 }
@@ -293,6 +304,7 @@ struct Director {
     uint32_t types = 0; // RaidEnemy bits seen this wave
     std::vector<Vec3f> samples;
     bool storyCleared = false; // the dusk's "cleared" sent to the owner
+    double lastWardCheck = 0;
 };
 static Director sDir;
 static std::vector<Vec3f> sSpawnLog; // tests: where this wave's raiders came up
@@ -315,6 +327,16 @@ struct PeerWave {
 };
 static PeerWave sPeer;
 
+// PHA-4006: this client's view of the ward's ritual (authority and peers alike).
+struct WardRitual {
+    double since = -1;      // when the ring closed here (-1: not warded)
+    Vec3f center = {};      // the workbench
+    s16 fromYaw = 0;        // the sweep starts on Link's side of the ring
+    bool announced = false; // the sweep finished: chime and notice
+    double remindedAt = 0;
+};
+static WardRitual sWard;
+
 // The clock.
 static uint16_t sVanillaIncrement = 0; // the scene's own time speed (envCtx.timeIncrement at load)
 static int32_t sLastWrittenIncrement = -1;
@@ -332,6 +354,7 @@ static BaseState& Night() {
         b.nightFought = false;
         b.nightFailed = false;
         b.nightGamestage = 0;
+        b.nightWarded = false;
     }
     return b;
 }
@@ -511,6 +534,66 @@ static bool PickSpawnPoint(Vec3f* out, const Vec3f* avoid) {
     return false;
 }
 
+// PHA-4006: every floor point of the spawn ring is within a torch's reach, so the
+// dead have nowhere to come up. Checked on a grid finer than SampleRing's spread.
+static bool WardComplete() {
+    if (!sDir.baseHere) {
+        return false;
+    }
+    // NearTorch's test, with the torches looked up once instead of for every grid point.
+    std::vector<Vec3f> torches;
+    for (auto& [id, actor] : SpawnedPlaceables()) {
+        const Placeable* p = FindPlaceable(id);
+        if (p != nullptr && p->type == PLACEABLE_TORCH && !IsRuin(*p)) {
+            torches.push_back(actor->world.pos);
+        }
+    }
+    if (torches.empty()) {
+        return false;
+    }
+    const Vec3f& c = sDir.center;
+    int floors = 0;
+    for (int i = 0; i < 72; i++) {
+        s16 angle = (s16)(i * (0x10000 / 72));
+        for (f32 dist = RING_MIN; dist <= RING_MAX; dist += 50.0f) {
+            Vec3f p;
+            if (!FloorAt(c.x + Math_SinS(angle) * dist, c.z + Math_CosS(angle) * dist, c.y, 300.0f, &p)) {
+                continue;
+            }
+            bool covered = false;
+            for (Vec3f& t : torches) {
+                covered = covered || Math_Vec3f_DistXZ(&p, &t) < TORCH_RADIUS;
+            }
+            if (!covered) {
+                return false;
+            }
+            floors++;
+        }
+    }
+    return floors > 0;
+}
+
+static void BeginRitual(const Vec3f& center) {
+    sWard = {};
+    sWard.since = Now();
+    sWard.center = center;
+    Player* player = GET_PLAYER(gPlayState);
+    sWard.fromYaw = player != nullptr ? Math_Vec3f_Yaw(&sWard.center, &player->actor.world.pos) : 0;
+}
+
+bool TorchWardLit(Actor* torch) {
+    if (sWard.since < 0 || gPlayState == nullptr || !RaidWardedHere()) {
+        return false;
+    }
+    // The ring's torches: those that cover some of the spawn band.
+    f32 d = Math_Vec3f_DistXZ(&sWard.center, &torch->world.pos);
+    if (d < RING_MIN - TORCH_RADIUS || d > RING_MAX + TORCH_RADIUS) {
+        return false;
+    }
+    uint16_t turn = (uint16_t)(Math_Vec3f_Yaw(&sWard.center, &torch->world.pos) - sWard.fromYaw);
+    return Now() - sWard.since >= WARD_SWEEP_SECONDS * turn / 0x10000;
+}
+
 // M10: the nearest scarecrow within 400 of a raider draws it away from the workbench
 // and the players. Broken scarecrows leave the piece list, so routing reverts then.
 // It has to be reachable: on about the raider's level (like EngagedPlayer) and not
@@ -683,7 +766,16 @@ void RaidHandleHordeEvent(const nlohmann::json& payload) {
             gSaveContext.skyboxTime = t;
         }
     }
-    if ((status == WAVE_INCOMING || status == WAVE_ASSAULT) && prev == WAVE_NONE) {
+    if (status == WAVE_WARDED && prev != WAVE_WARDED) {
+        Vec3f center;
+        if (BaseInThisScene(&center)) {
+            BeginRitual(center);
+        }
+    } else if (prev == WAVE_WARDED && status != WAVE_WARDED && status != WAVE_NONE) {
+        sWard = {};
+        Emit("The ward is broken!", "A torch went out. The dead are coming!", 7.0f);
+        Sfx_PlaySfxCentered(NA_SE_EN_REDEAD_AIM);
+    } else if ((status == WAVE_INCOMING || status == WAVE_ASSAULT) && prev == WAVE_NONE) {
         if (kind == KIND_DUSK) {
             Emit("Dusk", "Something claws its way up by the bridge...", 6.0f);
             QueueRaidNavi(RAIDLINE_DUSK);
@@ -729,7 +821,12 @@ static void StartWave(uint8_t kind) {
     // Raiders already here = we inherited a wave (authority handover, scene re-entry).
     bool inherited = CountRaiders() > 0;
     sDir.status = inherited ? WAVE_ASSAULT : WAVE_INCOMING;
-    if (!inherited) {
+    sDir.lastWardCheck = Now();
+    if (!inherited && kind == KIND_RAID && !sDir.prologue && WardComplete()) {
+        // PHA-4006: the ring was ready before dark. No "Raid!": the ritual instead.
+        sDir.status = WAVE_WARDED;
+        BeginRitual(sDir.center);
+    } else if (!inherited) {
         AnnounceStart();
     }
     SendWaveEvent();
@@ -739,6 +836,7 @@ static void StartWave(uint8_t kind) {
         report["scene"] = sDir.scene;
         report["base"] = sDir.baseHere;
         report["gamestage"] = sDir.gamestage;
+        report["warded"] = sDir.status == WAVE_WARDED;
         SendToOwner(report);
     }
     ESYNC_LOG("[Raids] start kind={} night={} gamestage={} budget={} baseHere={}", kind, sDir.night, sDir.gamestage,
@@ -763,6 +861,7 @@ static void EndWave(bool dawn) {
     sDir.status = WAVE_NONE;
     sTrack.clear();
     sPendingDrain.clear();
+    sWard = {};
 }
 
 static bool TrySpawnRaider() {
@@ -1034,6 +1133,41 @@ static void WaveTick() {
 
     int alive = CountRaiders();
     bool budgetSpent = sDir.spent >= sDir.budget;
+    // PHA-4006: closing the ring holds back whatever is left of the wave once the field
+    // is clear; a torch broken or packed up opens it again and the raid comes on.
+    if (sDir.kind == KIND_RAID && !sDir.prologue && Now() - sDir.lastWardCheck > WARD_CHECK_SECONDS &&
+        (sDir.status == WAVE_WARDED || (alive == 0 && !budgetSpent && sDir.status != WAVE_CLEARED))) {
+        sDir.lastWardCheck = Now();
+        bool ring = WardComplete();
+        if (ring != (sDir.status == WAVE_WARDED)) {
+            if (ring) {
+                sDir.status = WAVE_WARDED;
+                BeginRitual(sDir.center);
+            } else {
+                sDir.status = sDir.spawned > 0 ? WAVE_ASSAULT : WAVE_INCOMING;
+                sDir.startedAt = Now(); // a fresh hold for the raid that is coming after all
+                sDir.spawnTimer = HordeNight::SpawnFrames();
+                sWard = {};
+                Emit("The ward is broken!", "A torch went out. The dead are coming!", 7.0f);
+                Sfx_PlaySfxCentered(NA_SE_EN_REDEAD_AIM);
+                QueueRaidNavi(RAIDLINE_START);
+            }
+            SendWaveEvent();
+            nlohmann::json report;
+            report["type"] = RAID_REPORT;
+            report["scene"] = sDir.scene;
+            report["base"] = sDir.baseHere;
+            report["warded"] = ring;
+            SendToOwner(report);
+            ESYNC_LOG("[Raids] ward {} (spawned {}/{} budget)", ring ? "closed" : "broken", sDir.spent, sDir.budget);
+        }
+    }
+    if (sDir.status == WAVE_WARDED) {
+        if (Now() - sDir.lastStatusSent > 5.0) {
+            SendWaveEvent();
+        }
+        return;
+    }
     if (sDir.status != WAVE_CLEARED) {
         if (budgetSpent && alive == 0 && sDir.spawned > 0) {
             sDir.status = WAVE_CLEARED;
@@ -1101,11 +1235,42 @@ static bool HoldingNight() {
         return false;
     }
     if (sDir.active && sDir.kind == KIND_RAID && gPlayState->sceneNum == sDir.scene) {
-        return sDir.status != WAVE_CLEARED && Now() - sDir.startedAt < HoldSeconds();
+        return (sDir.status == WAVE_INCOMING || sDir.status == WAVE_ASSAULT) && Now() - sDir.startedAt < HoldSeconds();
     }
     // A peer holds with the authority while its wave reports in.
     return sPeer.scene == gPlayState->sceneNum && Now() - sPeer.heardAt < 12.0 &&
            (sPeer.status == WAVE_INCOMING || sPeer.status == WAVE_ASSAULT) && RaidsEnabled();
+}
+
+bool RaidWardedHere() {
+    if (gPlayState == nullptr) {
+        return false;
+    }
+    if (sDir.active && sDir.kind == KIND_RAID && gPlayState->sceneNum == sDir.scene) {
+        return sDir.status == WAVE_WARDED;
+    }
+    return sPeer.scene == gPlayState->sceneNum && Now() - sPeer.heardAt < 12.0 && sPeer.status == WAVE_WARDED;
+}
+
+// PHA-4006: the end of the ritual's sweep, and a reminder now and then while it holds.
+static void WardTick() {
+    if (sWard.since < 0) {
+        return;
+    }
+    if (!RaidWardedHere()) {
+        sWard = {};
+        return;
+    }
+    double now = Now();
+    if (!sWard.announced && now - sWard.since > WARD_SWEEP_SECONDS + 0.3) {
+        sWard.announced = true;
+        sWard.remindedAt = now;
+        Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
+        Emit("Warded", "The raid can't reach you while the ring burns.", 9.0f);
+    } else if (sWard.announced && now - sWard.remindedAt > WARD_REMIND_SECONDS && PlayerFree()) {
+        sWard.remindedAt = now;
+        Emit("Warded", "The ring holds. The dead keep their distance.", 5.0f);
+    }
 }
 
 static void StartTransition(uint16_t to) {
@@ -1285,7 +1450,7 @@ static std::string SettleEmptyBase(int32_t gamestage, std::vector<uint8_t>& navi
 static void OwnerDawn() {
     BaseState& b = Night();
     uint32_t night = CurrentDay(); // the night that just ended belongs to this day
-    const bool nightFought = b.nightFought, nightFailed = b.nightFailed;
+    const bool nightFought = b.nightFought, nightFailed = b.nightFailed, nightWarded = b.nightWarded;
     const int32_t nightGamestage = b.nightGamestage;
     bool wasRaid = RaidTonight();
     bool wasDusk = (b.story & STORY_DUSK_ACTIVE) != 0;
@@ -1306,8 +1471,13 @@ static void OwnerDawn() {
             pool.materials[MAT_WOOD] += wood;
             pool.materials[MAT_BONE] += bone;
             pool.rev++;
-            std::string reward = fmt::format("Survived: +{} Wood, +{} Bone.", wood, bone);
-            report = report.empty() ? reward : report + " " + reward;
+            std::string reward = fmt::format("{}: +{} Wood, +{} Bone.", nightWarded ? "Warded" : "Survived", wood, bone);
+            if (nightWarded) {
+                report = "The dead never came. " + reward; // a toast is one line
+                navi.push_back(RAIDLINE_WARD);
+            } else {
+                report = report.empty() ? reward : report + " " + reward;
+            }
         } else {
             b.nightsFailed++;
         }
@@ -1319,7 +1489,7 @@ static void OwnerDawn() {
         CVarSetInteger(CVAR_SEVEN_DAYS("RaidForce"), 0); // a forced night is one night
     }
     b.nightDay = 0; // a new night starts clean
-    b.nightFought = b.nightFailed = false;
+    b.nightFought = b.nightFailed = b.nightWarded = false;
     b.nightGamestage = 0;
     Net::CommitBase();
     Net::BroadcastPool();
@@ -1436,6 +1606,10 @@ void RaidHandlePacket(const std::string& type, const nlohmann::json& payload, ui
         }
         if (n.nightGamestage == 0 && payload.value("gamestage", 0) != 0) {
             n.nightGamestage = payload.value("gamestage", 0);
+            changed = true;
+        }
+        if (payload.contains("warded") && payload.value("warded", false) != n.nightWarded) {
+            n.nightWarded = payload.value("warded", false);
             changed = true;
         }
         if (changed) {
@@ -1570,12 +1744,14 @@ void RaidsOnFrame() {
         ClearStrayRaiders();
     }
     WaveTick();
+    WardTick();
     ClockTick();
 
     // Losing a night: everyone down during a raid (co-op only reaches vanilla
     // game over when nobody is left standing).
     int gameOver = gPlayState->gameOverCtx.state != GAMEOVER_INACTIVE ? 1 : 0;
-    bool raidHere = (sDir.active && sDir.kind == KIND_RAID && sDir.status != WAVE_CLEARED) ||
+    bool raidHere = (sDir.active && sDir.kind == KIND_RAID &&
+                     (sDir.status == WAVE_INCOMING || sDir.status == WAVE_ASSAULT)) ||
                     (sPeer.scene == gPlayState->sceneNum && Now() - sPeer.heardAt < 12.0 &&
                      (sPeer.status == WAVE_INCOMING || sPeer.status == WAVE_ASSAULT));
     if (gameOver && !sLastGameOver && raidHere) {
@@ -1589,6 +1765,7 @@ void RaidsOnFrame() {
 void RaidsResetSession() {
     sDir = {};
     sPeer = {};
+    sWard = {};
     sTrack.clear();
     sPendingDrain.clear();
     sTransition = false;
@@ -1615,6 +1792,7 @@ void RaidsRegisterMessages(const char* table) {
         /* WOLF  */ "A Wolfos! Watch its claws, and strike when it lunges!",
         /* REDEAD*/ "ReDead! Their scream freezes you. Don't let them get close!",
         /* GIBDO */ "A Gibdo! It's as tough as it is slow. Keep your distance!",
+        /* WARD  */ "Link... Link! Nothing came. Not one of them, all night!^Those fires... A ring of flame the dead won't cross. That's an old Sheikah warding! I thought it was just a story!^How did you even figure that out?! Nobody knows that!",
     };
     // clang-format on
     for (uint8_t i = 0; i < RAIDLINE_COUNT; i++) {
@@ -1649,6 +1827,7 @@ void RaidsRegisterHooks(bool enabled) {
         sTrack.clear();
         sPendingDrain.clear();
         sPeer = {};
+        sWard = {};
         sLastWrittenIncrement = -1;
         if (sTransition) {
             sTransition = false;
@@ -1704,6 +1883,10 @@ const char* sevendays_test_raid_state() {
                   { "spent", sDir.spent },       { "spawned", sDir.spawned },   { "relocated", sDir.relocated },
                   { "baseHere", sDir.baseHere }, { "samples", sDir.samples.size() }, { "prologue", sDir.prologue },
                   { "elapsed", sDir.active ? Now() - sDir.startedAt : 0.0 }, { "types", sDir.types } };
+    j["warded"] = gPlayState != nullptr && RaidWardedHere();
+    j["ward"] = { { "since", sWard.since < 0 ? -1.0 : Now() - sWard.since }, { "announced", sWard.announced },
+                  { "complete", gPlayState != nullptr && sDir.active && WardComplete() } };
+    j["nightWarded"] = b.nightWarded;
     j["peer"] = { { "status", StatusName(sPeer.status) }, { "scene", sPeer.scene }, { "age", Now() - sPeer.heardAt } };
     j["spawnLog"] = nlohmann::json::array();
     for (auto& p : sSpawnLog) {

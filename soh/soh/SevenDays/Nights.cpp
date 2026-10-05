@@ -118,6 +118,9 @@ std::string PauseCountersLine() {
     const BaseState& b = GetBase();
     std::string line = fmt::format("Day {}  -  Days survived: {}  -  Raids survived: {}", CurrentDay(),
                                    b.daysSurvived, b.hordeNightsSurvived);
+    if (gPlayState != nullptr && RaidWardedHere()) {
+        line += "  -  Tonight: warded"; // PHA-4006
+    }
     return line;
 }
 
@@ -148,7 +151,8 @@ static bool RaidNightLook() {
     if (gPlayState == nullptr || !IS_NIGHT || !IsOutdoorScene(gPlayState->sceneNum) || gPlayState->envCtx.indoors) {
         return false;
     }
-    return RaidTonight() || RaidWaveHere();
+    // PHA-4006: the torch ward cleanses the red night while it holds.
+    return (RaidTonight() || RaidWaveHere()) && !RaidWardedHere();
 }
 
 static void UpdateRedNight() {

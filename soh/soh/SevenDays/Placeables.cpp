@@ -131,6 +131,7 @@ struct PlaceableActor {
     bool gatePassable;   // left out of the base collision while a player walks through
     bool ruin;           // the child base after the seven-year jump: drawn broken, does nothing
     bool ghost;          // the placement preview (SevenDays_Ghost), which only draws
+    bool wardLit;        // PHA-4006: a torch of the ward's ring, burning blue
 };
 
 enum { BABA_IDLE, BABA_WINDUP, BABA_LUNGE, BABA_RECOVER };
@@ -925,8 +926,13 @@ static void DrawTorchFlame(PlayState* play, PlaceableActor* self) {
     gSPSegment(POLY_XLU_DISP++, 0x08,
                (uintptr_t)Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0,
                                 ((sStudioType >= 0 ? 6 : play->gameplayFrames) * -20) & 0x1FF, 0x20, 0x80));
-    gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 255, 255, 0, 255);
-    gDPSetEnvColor(POLY_XLU_DISP++, 255, 0, 0, 0);
+    if (self->wardLit) {
+        gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 170, 255, 255, 255); // blue fire
+        gDPSetEnvColor(POLY_XLU_DISP++, 0, 100, 255, 0);
+    } else {
+        gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 255, 255, 0, 255);
+        gDPSetEnvColor(POLY_XLU_DISP++, 255, 0, 0, 0);
+    }
     Matrix_Push();
     Matrix_Translate(0.0f, 52.0f, 0.0f, MTXMODE_APPLY);
     s16 toCamera = sStudioType >= 0 ? (s16)-sStudioTurn // the studio camera looks down -z
@@ -1136,6 +1142,7 @@ static void Placeable_Init(Actor* thisx, PlayState* play) {
     self->atCooldown = 0;
     self->hitFlash = 0;
     self->shake = 0;
+    self->wardLit = false;
     thisx->room = -1; // scene-wide: survives walking between rooms
     Actor_SetScale(thisx, 1.0f);
     thisx->shape.rot = thisx->world.rot = { 0, p->rot, 0 };
@@ -1346,8 +1353,18 @@ static void BabaUpdate(PlaceableActor* self, PlayState* play) {
 
 // Torch: flickers like ObjSyokudai's lit torches.
 static void TorchUpdate(PlaceableActor* self, PlayState* play) {
+    // PHA-4006: the ward's ritual reaches this torch: it flares up blue.
+    bool ward = SevenDays::TorchWardLit(&self->actor);
+    if (ward && !self->wardLit) {
+        Audio_PlayActorSound2(&self->actor, NA_SE_EV_FLAME_IGNITION);
+    }
+    self->wardLit = ward;
     u8 brightness = (u8)(Rand_ZeroOne() * 127.0f) + 128;
-    Lights_PointSetColorAndRadius(&self->lightInfo, brightness, brightness, 0, 250);
+    if (ward) {
+        Lights_PointSetColorAndRadius(&self->lightInfo, brightness / 3, brightness * 3 / 4, 255, 320);
+    } else {
+        Lights_PointSetColorAndRadius(&self->lightInfo, brightness, brightness, 0, 250);
+    }
     func_8002F974(&self->actor, NA_SE_EV_TORCH - SFX_FLAG);
 }
 
@@ -1543,6 +1560,7 @@ static void Ghost_Init(Actor* thisx, PlayState* play) {
     Actor_SetScale(thisx, 1.0f);
     self->type = (uint8_t)thisx->params;
     self->ghost = true;
+    self->wardLit = false;
     self->hasSkel = false;
     if (self->type == PLACEABLE_SCARECROW) {
         SkelAnime_InitFlex(play, &self->skel, (FlexSkeletonHeader*)object_ka_Skel_0065B0,
@@ -1949,6 +1967,9 @@ static const WorldLine sWorldLines[] = {
     // PHA-3935: the Training Ground's gate guard (EnGe1), unqualified / qualified
     { SCENE_GERUDOS_FORTRESS, 0x6070, "This is the Gerudo's Training Ground. Unqualified persons are not allowed. Not even if the dead come knocking.", "This is the Gerudo's Training Ground. Unqualified persons are not allowed. The red nights changed nothing!" },
     { SCENE_GERUDOS_FORTRESS, 0x6072, "This is the Gerudo's Training Ground. Even though you're qualified, don't hog all the treasure here for yourself! Some of it buys walls.", "This is the Gerudo's Training Ground. Even though you're qualified, don't hog all the treasure! We'll need it if the dead ever cross the desert." },
+    // PHA-4006: the man stuck on the Kakariko roof (EnHy) half-remembers the torch ward.
+    { SCENE_KAKARIKO_VILLAGE, 0x5050, "Being stuck up here, you hear every old story in the village.^Come back when the stars are out. That's when I remember them.", "Being stuck up here, you hear every old story in the village.^Come back when the stars are out. That's when I remember them." },
+    { SCENE_KAKARIKO_VILLAGE, 0x5051, "My grandpa sat up here too. He said the old Sheikah never bothered with walls.^They lit a dozen fires in a ring, way out where the dead crawl up, so close there was no dark left between them...^Then again, he also said he saw a fish fly.", "Grandpa said the Sheikah never bothered with walls. A dozen fires in a ring, way out, no dark between them...^Funny. Out over the forest, some nights, I could swear I see blue." },
     // Gossip stones (EnGs, the plain talk without the Mask of Truth)
     { -1, 0x2053, "This statue's one-eyed gaze pierces into your mind...^They say the night things come back every few days... and they always come for the base.", "This statue's one-eyed gaze pierces into your mind...^They say the next raid comes [[when]]. They say [[base]]." },
 };

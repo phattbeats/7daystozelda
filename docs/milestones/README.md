@@ -23,3 +23,4 @@ Exported from the Paperclip PHA-3856 issue tree on 2026-10-03. Each file is the 
 - [PHA-3918: 7DtZ M10: material merchants in towns](PHA-3918-7dtz-m10-material-merchants-in-towns.md) (done)
 - [PHA-3914: 7DTZ devlog. posts on ghost throughout the week](PHA-3914-7dtz-devlog-posts-on-ghost-throughout-the-week.md) (in_review)
 - [PHA-3935: 7DtZ spec gaps: dead-end kits, era-jump ruins, Hammer/Silver/Hookshot tiers, repair, torch, town hiding](PHA-3935-7dtz-spec-gaps-dead-end-kits-era-jump-ruins-tiers-repair-torch.md) (done)
+- [PHA-4006: 7DTZ balance: a ring of 12 torches stops raids from spawning (kept as a secret: the torch ward)](PHA-4006-7dtz-torch-ring-ward.md) (in_progress)

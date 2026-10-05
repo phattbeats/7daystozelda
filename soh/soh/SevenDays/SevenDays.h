@@ -250,6 +250,7 @@ struct BaseState {
     bool nightFought = false;
     bool nightFailed = false;
     int32_t nightGamestage = 0;
+    bool nightWarded = false; // PHA-4006: the torch ring held the raid off when dawn came
 };
 const BaseState& GetBase();
 nlohmann::json BaseToJson();
@@ -341,7 +342,8 @@ enum RaidLine : uint8_t {
     RAIDLINE_LOST,  //    the first lost night
     RAIDLINE_DUSK,  //    the Kokiri Sword's dusk
     RAIDLINE_ENEMY, // 5. each new enemy type's first raid (+ RaidEnemy)
-    RAIDLINE_COUNT = RAIDLINE_ENEMY + 5,
+    RAIDLINE_WARD = RAIDLINE_ENEMY + 5, // PHA-4006: the first dawn after a night the torch ring warded off
+    RAIDLINE_COUNT,
 };
 enum RaidEnemy : uint8_t { RAIDENEMY_STALCHILD, RAIDENEMY_KEESE, RAIDENEMY_WOLFOS, RAIDENEMY_REDEAD, RAIDENEMY_GIBDO };
 
@@ -363,6 +365,10 @@ void RaidHandleHordeEvent(const nlohmann::json& payload); // HORDE_EVENT with "r
 int32_t Gamestage();
 bool RaidTonight(); // tonight (or this day's night) is a raid night
 bool RaidWaveHere(); // a raid wave is being fought in this scene (ours or the authority's)
+// PHA-4006: the torch ward. Torches covering every spawn point of the ring around the
+// workbench hold the raid back while they burn.
+bool RaidWardedHere();          // tonight's raid in this scene is warded off
+bool TorchWardLit(Actor* torch); // this torch burns blue: part of the ring, its turn in the ritual has come
 uint32_t NightsUntilRaid(); // 0: tonight; UINT32_MAX: none scheduled
 uint32_t RaidInterval();    // the save's days between raids (the RaidInterval setting until picked)
 void RequestRaidInterval(uint32_t days); // owner only: sets the save's interval
