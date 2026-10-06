@@ -42,7 +42,7 @@ extern s16 gSevenDaysTint[3][3]; // z_kankyo.c: Environment_Update, added to the
  *   - The raid track: while a wave is fought in this scene, the Mini-Boss Battle
  *     theme from the ROM (gSevenDays.RaidTrack overrides the sequence id); the
  *     scene's own music or night ambience comes back after.
- *   - Counters: a line on the pause screen; the file select's details
+ *   - Counters: a line on the pause screen (with the time of day); the file select's details
  *     (FileSelectMoreInfo) show each file's counters.
  */
 
@@ -118,10 +118,16 @@ static f32 CardAlpha() {
     return 1.0f;
 }
 
+// "4:32 PM": the room's time of day (PHA-4025: there was no way to read it).
+static std::string TimeOfDay() {
+    s32 minutes = (s32)((u32)gSaveContext.dayTime * 24 * 60 / 0x10000);
+    return fmt::format("{}:{:02} {}", ((minutes / 60) + 11) % 12 + 1, minutes % 60, minutes < 12 * 60 ? "AM" : "PM");
+}
+
 std::string PauseCountersLine() {
     const BaseState& b = GetBase();
-    std::string line = fmt::format("Day {}  -  Days survived: {}  -  Raids survived: {}", CurrentDay(),
-                                   b.daysSurvived, b.hordeNightsSurvived);
+    std::string line = fmt::format("Day {}  -  {}  -  Days survived: {}  -  Raids survived: {}", CurrentDay(),
+                                   TimeOfDay(), b.daysSurvived, b.hordeNightsSurvived);
     if (gPlayState != nullptr && RaidWardedHere()) {
         line += "  -  Tonight: warded"; // PHA-4006
     }
@@ -384,7 +390,7 @@ static void DrawPauseLine(PlayState* play, GraphicsContext* gfx) {
     }
     const BaseState& b = GetBase();
     CenteredDotted(gfx,
-                   { fmt::format("Day {}", CurrentDay()), fmt::format("Days survived: {}", b.daysSurvived),
+                   { fmt::format("Day {}", CurrentDay()), TimeOfDay(), fmt::format("Days survived: {}", b.daysSurvived),
                      fmt::format("Raids survived: {}", b.hordeNightsSurvived) },
                    4, 255, 230, 160, 255, 0.7f);
 }

@@ -45,12 +45,20 @@ extern PlayState* gPlayState;
  *   RAID_REPORT   authority -> owner             scene, base (this scene holds the base): a raid is fought there
  *   RAID_LOST     any client -> owner            everyone went down during a raid
  *   RAID_NOTICE   owner -> room                  prefix, message, navi[] (dawn reports, penalties)
+ *   RAID_CLOCK    owner -> room, every second    t (dayTime), rate (its time speed)
+ *   RAID_CLOCK_SET any client -> owner           t: a peer's Sun's Song moved the time
  *
  * The raid clock (each client, for its own scene): after the prologue, frozen
  * outdoor scenes get about half the field's time speed; dungeons and interiors
  * stay frozen; a raid night holds the clock until the wave is cleared or about
  * four minutes pass. The prologue's nights are scripted (RAID_SCRIPT), the way
  * the Sun's Song sets the time.
+ *
+ * One clock for the room (PHA-4025): the owner's. It sends its time and speed every
+ * second; a peer outdoors runs a little faster or slower until it matches (and jumps
+ * when it's far off), a peer indoors just takes the time. While a peer is outdoors,
+ * the owner's clock doesn't stop for its own interiors, pause screen or text boxes.
+ * A wave scene keeps the authority's clock instead (HORDE_EVENT).
  */
 
 namespace SevenDays {
@@ -69,6 +77,8 @@ static const std::string RAID_REPORT = "RAID_REPORT";
 static const std::string RAID_LOST = "RAID_LOST";
 static const std::string RAID_NOTICE = "RAID_NOTICE";
 static const std::string HORDE_EVENT_TYPE = "HORDE_EVENT";
+static const std::string RAID_CLOCK = "RAID_CLOCK";
+static const std::string RAID_CLOCK_SET = "RAID_CLOCK_SET";
 
 constexpr uint16_t DUSK_TIME = 0xC400; // about 18:25: night (> 0xC000)
 constexpr uint16_t DAWN_TIME = 0x4800; // about 6:45: day (>= 0x4555)
@@ -345,6 +355,19 @@ static int32_t sLastWrittenIncrement = -1;
 static bool sTransition = false;
 static uint16_t sTransitionTo = 0;
 static int sPrevNight = -1; // owner's dawn/dusk edges (-1: not sampled yet)
+
+// PHA-4025: one clock for the room, the owner's. Peers follow its time and speed.
+struct OwnerClock {
+    double heardAt = -100.0;
+    uint16_t t = 0;
+    uint16_t rate = 0; // the owner's time speed (gTimeIncrement; doubled at night by the engine)
+};
+static OwnerClock sOwnerClock;
+static double sClockSentAt = -100.0;
+static int32_t sOwnerPrevTime = -1;      // the owner's dayTime last frame (top-ups)
+static uint16_t sLastOutdoorIncrement = 0; // the owner's last outdoor speed, for when it's indoors
+static uint8_t sPrevSunsSong = SUNSSONG_INACTIVE;
+static double sClockSetAt = -100.0; // a peer: when its Sun's Song went to the owner
 
 // Owner, per night (not saved: a reload mid-night just forgets them).
 // Tonight's record (fought at the base, lost, gamestage) lives in BaseState, keyed by
@@ -1289,6 +1312,96 @@ static void StartTransition(uint16_t to) {
     }
 }
 
+// MARK: - One clock for the room (PHA-4025)
+
+constexpr double CLOCK_SEND_SECONDS = 1.0;
+constexpr double CLOCK_STALE_SECONDS = 3.5;
+constexpr int16_t CLOCK_SNAP = 0x400;    // about 22 in-game minutes: jump instead of catching up
+constexpr int16_t CLOCK_DEADBAND = 0x60; // about 2 in-game minutes: close enough
+
+static bool PeerOutdoors() {
+    if (!Connected()) {
+        return false;
+    }
+    for (auto& [clientId, client] : Anchor::Instance->clients) {
+        if (!client.self && client.online && client.isSaveLoaded && IsOutdoorScene(client.sceneNum)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A wave scene keeps the wave authority's clock (HORDE_EVENT), not the owner's.
+static bool WaveClockHere() {
+    return (sDir.active && sDir.scene == gPlayState->sceneNum) ||
+           (sPeer.scene == gPlayState->sceneNum && sPeer.status != WAVE_NONE && Now() - sPeer.heardAt < 12.0);
+}
+
+static bool FollowingOwnerClock() {
+    return Connected() && !IsOwner() && Now() - sOwnerClock.heardAt < CLOCK_STALE_SECONDS && !sTransition &&
+           gPlayState->csCtx.state == CS_STATE_IDLE && gSaveContext.cutsceneIndex < 0xFFF0 && !WaveClockHere();
+}
+
+// The owner's time now: what it sent, run on at its speed since.
+static uint16_t OwnerTimeNow() {
+    f32 frames = (f32)std::min(Now() - sOwnerClock.heardAt, CLOCK_STALE_SECONDS) * 20.0f;
+    bool night = sOwnerClock.t > 0xC000 || sOwnerClock.t < 0x4555;
+    f32 speed = (f32)sOwnerClock.rate * (night && sOwnerClock.rate < 0x190 ? 2.0f : 1.0f);
+    return (uint16_t)(sOwnerClock.t + (uint16_t)(frames * speed));
+}
+
+static void OwnerClockTick() {
+    if (!Connected() || !IsOwner()) {
+        sOwnerPrevTime = -1;
+        return;
+    }
+    bool outdoors = IsOutdoorScene(gPlayState->sceneNum);
+    bool cutscene = gPlayState->csCtx.state != CS_STATE_IDLE || gSaveContext.cutsceneIndex >= 0xFFF0;
+    if (outdoors && !sTransition && !cutscene && gTimeIncrement != 0 && gTimeIncrement < 0x190) {
+        sLastOutdoorIncrement = gTimeIncrement;
+    }
+    uint16_t rate = outdoors ? gTimeIncrement : 0;
+    // A teammate is out in the world: the room's day doesn't stop for our interiors,
+    // pause screen or text boxes. Top the clock up when the engine didn't move it.
+    if (PeerOutdoors() && !sTransition && !cutscene && gSaveContext.sunsSongState == SUNSSONG_INACTIVE &&
+        !(HoldingNight() && IS_NIGHT)) {
+        if (!outdoors) {
+            rate = sLastOutdoorIncrement != 0 ? sLastOutdoorIncrement : RaidClockSpeed();
+        }
+        if (rate != 0 && sOwnerPrevTime == gSaveContext.dayTime) {
+            gSaveContext.dayTime += IS_DAY ? rate : rate * 2; // as Environment_Update does
+            if (outdoors) {
+                gSaveContext.skyboxTime = gSaveContext.dayTime;
+            }
+        }
+    }
+    sOwnerPrevTime = gSaveContext.dayTime;
+    // A scripted fast-forward reaches peers as RAID_SCRIPT; its speed would overshoot here.
+    if (Now() - sClockSentAt < CLOCK_SEND_SECONDS || cutscene || sTransition) {
+        return;
+    }
+    sClockSentAt = Now();
+    nlohmann::json c;
+    c["type"] = RAID_CLOCK;
+    c["t"] = gSaveContext.dayTime;
+    c["rate"] = rate;
+    Broadcast(c);
+}
+
+// A peer's Sun's Song (or anything else that jumps its clock in play) moves the room's.
+static void PeerSunsSong() {
+    uint8_t state = gSaveContext.sunsSongState;
+    if (sPrevSunsSong != SUNSSONG_INACTIVE && state == SUNSSONG_INACTIVE && Connected() && !IsOwner()) {
+        nlohmann::json s;
+        s["type"] = RAID_CLOCK_SET;
+        s["t"] = gSaveContext.dayTime;
+        SendTo(ActingOwner(), s);
+        sOwnerClock.heardAt = -100.0; // until the owner answers with the new time
+        sClockSetAt = Now();
+    }
+    sPrevSunsSong = state;
+}
+
 static void ClockTick() {
     if (gPlayState == nullptr || gSaveContext.sunsSongState != SUNSSONG_INACTIVE) {
         return;
@@ -1304,12 +1417,32 @@ static void ClockTick() {
             return;
         }
     }
+    bool following = FollowingOwnerClock();
     if (!IsOutdoorScene(gPlayState->sceneNum)) {
+        if (following) {
+            // Unseen indoors: just take the room's time, ready for the way out.
+            gSaveContext.dayTime = gSaveContext.skyboxTime = OwnerTimeNow();
+        }
         return; // dungeons, interiors and the Market keep their own (frozen) clock
     }
     // After the prologue every outdoor scene keeps the same day (Hyrule Field's own 10
     // would make it about 4 minutes there).
     uint16_t want = PrologueOver() ? RaidClockSpeed() : sVanillaIncrement;
+    if (following) {
+        // The owner's speed, nudged until our time matches; far off, jump.
+        uint16_t t = OwnerTimeNow();
+        int16_t diff = (int16_t)(t - gSaveContext.dayTime);
+        if (diff > CLOCK_SNAP || diff < -CLOCK_SNAP) {
+            gSaveContext.dayTime = gSaveContext.skyboxTime = t;
+            diff = 0;
+        }
+        want = sOwnerClock.rate;
+        if (diff > CLOCK_DEADBAND) {
+            want = sOwnerClock.rate + std::max(1, sOwnerClock.rate / 2);
+        } else if (diff < -CLOCK_DEADBAND) {
+            want = sOwnerClock.rate / 2;
+        }
+    }
     if (HoldingNight() && IS_NIGHT) {
         want = 0;
     }
@@ -1560,7 +1693,7 @@ static void OwnerRaidLost() {
 
 bool RaidOwnsPacket(const std::string& type) {
     return type == RAID_STORY || type == RAID_SCRIPT || type == RAID_REPORT || type == RAID_LOST ||
-           type == RAID_NOTICE;
+           type == RAID_NOTICE || type == RAID_CLOCK || type == RAID_CLOCK_SET;
 }
 
 void RaidHandlePacket(const std::string& type, const nlohmann::json& payload, uint32_t from) {
@@ -1587,7 +1720,24 @@ void RaidHandlePacket(const std::string& type, const nlohmann::json& payload, ui
         }
         return;
     }
+    if (type == RAID_CLOCK) {
+        // A clock sent before our Sun's Song reached the owner would undo it.
+        if (from == ActingOwner() && from != OwnId() && Now() - sClockSetAt > 1.5) {
+            sOwnerClock.heardAt = Now();
+            sOwnerClock.t = payload.value("t", (uint16_t)gSaveContext.dayTime);
+            sOwnerClock.rate = payload.value("rate", (uint16_t)0);
+        }
+        return;
+    }
     if (!IsOwner()) {
+        return;
+    }
+    if (type == RAID_CLOCK_SET) {
+        if (gPlayState != nullptr && !sTransition) {
+            gSaveContext.dayTime = gSaveContext.skyboxTime = payload.value("t", (uint16_t)gSaveContext.dayTime);
+            sOwnerPrevTime = -1;
+            sClockSentAt = -100.0; // tell the room now
+        }
         return;
     }
     BaseState& b = Net::MutableBase();
@@ -1763,7 +1913,9 @@ void RaidsOnFrame() {
     }
     WaveTick();
     WardTick();
+    PeerSunsSong();
     ClockTick();
+    OwnerClockTick();
 
     // Losing a night: everyone down during a raid (co-op only reaches vanilla
     // game over when nobody is left standing).
@@ -1792,6 +1944,12 @@ void RaidsResetSession() {
     sLastStorySent = -100;
     sLastGameOver = 0;
     sLastWrittenIncrement = -1;
+    sOwnerClock = {};
+    sClockSentAt = -100.0;
+    sOwnerPrevTime = -1;
+    sLastOutdoorIncrement = 0;
+    sPrevSunsSong = SUNSSONG_INACTIVE;
+    sClockSetAt = -100.0;
 }
 
 // MARK: - Navi's raid lines
@@ -1891,6 +2049,10 @@ const char* sevendays_test_raid_state() {
     j["vanillaIncrement"] = sVanillaIncrement;
     j["transition"] = sTransition;
     j["holding"] = HoldingNight();
+    j["ownerClock"] = { { "t", sOwnerClock.t },
+                        { "rate", sOwnerClock.rate },
+                        { "age", Now() - sOwnerClock.heardAt },
+                        { "following", gPlayState != nullptr && FollowingOwnerClock() } };
     j["authority"] = RaidAuthority();
     j["owner"] = IsOwner();
     j["gamestage"] = gPlayState != nullptr ? Gamestage() : 0;
