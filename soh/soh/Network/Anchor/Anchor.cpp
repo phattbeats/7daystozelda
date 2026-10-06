@@ -157,6 +157,10 @@ void Anchor::ProcessIncomingPacketQueue() {
             HandlePacket_PlayerLifeState(payload);
         else if (packetType == PLAYER_SFX)
             HandlePacket_PlayerSfx(payload);
+        else if (packetType == PUSH_BLOCK)
+            HandlePacket_PushBlock(payload);
+        else if (packetType == PUSH_BLOCK_REQUEST)
+            HandlePacket_PushBlockRequest(payload);
         else if (packetType == UPDATE_TEAM_STATE)
             HandlePacket_UpdateTeamState(payload);
         else if (packetType == REQUEST_TEAM_STATE)

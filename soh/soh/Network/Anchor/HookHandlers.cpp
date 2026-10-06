@@ -6,6 +6,7 @@
 #include "BossEntry.h"
 #include "CutsceneSync.h"
 #include "BgmSync.h"
+#include "PushBlockSync.h"
 #include <libultraship/libultraship.h>
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 
@@ -417,6 +418,9 @@ void Anchor::RegisterHooks() {
     // (see Packets/BgmSync.cpp).
     RegisterBgmSyncHooks(isConnected);
 
+    // Push blocks move for everyone in the room (see Packets/PushBlock.cpp)
+    RegisterPushBlockHooks(isConnected);
+
     // ---- Anchor per-frame dispatcher --------------------------------------------------
     // GameInteractor::ExecuteHooks iterates an unordered_map, so per-hook execution order
     // is implementation-defined — NOT registration order. The Anchor layer has real
@@ -439,5 +443,6 @@ void Anchor::RegisterHooks() {
         BossEntryTick();              // reconcile boss echo-latch (Fix A)
         CutsceneSyncTick();           // reconcile cutscene pull-replay
         BgmSyncTick();                // spectate restore READS myLifeState
+        PushBlockTick();              // pending remote pushes + room-entry block request
     });
 }

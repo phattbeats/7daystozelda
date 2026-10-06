@@ -140,6 +140,8 @@ class Anchor : public Network {
     void HandlePacket_PlayerLifeState(nlohmann::json payload);
     void HandlePacket_PlayerSfx(nlohmann::json payload);
     void HandlePacket_PlayerUpdate(nlohmann::json payload);
+    void HandlePacket_PushBlock(nlohmann::json payload);
+    void HandlePacket_PushBlockRequest(nlohmann::json payload);
     void HandlePacket_RequestTeamState(nlohmann::json payload);
     void HandlePacket_RequestTeleport(nlohmann::json payload);
     void HandlePacket_RupeeChange(nlohmann::json payload);
@@ -185,6 +187,8 @@ class Anchor : public Network {
     inline static const std::string PLAYER_LIFE_STATE = "PLAYER_LIFE_STATE";
     inline static const std::string PLAYER_SFX = "PLAYER_SFX";
     inline static const std::string PLAYER_UPDATE = "PLAYER_UPDATE";
+    inline static const std::string PUSH_BLOCK = "PUSH_BLOCK";
+    inline static const std::string PUSH_BLOCK_REQUEST = "PUSH_BLOCK_REQUEST";
     inline static const std::string REQUEST_TEAM_STATE = "REQUEST_TEAM_STATE";
     inline static const std::string REQUEST_TELEPORT = "REQUEST_TELEPORT";
     inline static const std::string RUPEE_CHANGE = "RUPEE_CHANGE";
@@ -241,6 +245,7 @@ class Anchor : public Network {
     void SendPacket_PlayerLifeState(u8 state);
     void SendPacket_PlayerSfx(u16 sfxId);
     void SendPacket_PlayerUpdate();
+    void SendPacket_PushBlockRequest(int16_t room);
     void SendPacket_RequestTeamState();
     void SendPacket_RequestTeleport(u32 clientId);
     void SendPacket_RupeeChange(s16 delta);
