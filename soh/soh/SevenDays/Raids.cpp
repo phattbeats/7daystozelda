@@ -1719,16 +1719,21 @@ void RaidsOnFrame() {
     StoryTriggers();
     EveWarning();
 
-    // Owner: dawn and dusk on its own clock (scripted ones included).
-    int night = IS_NIGHT ? 1 : 0;
-    if (sPrevNight >= 0 && night != sPrevNight && IsOwner()) {
-        if (night == 0) {
-            OwnerDawn();
-        } else {
-            OwnerDusk();
+    // Owner: dawn and dusk on its own clock (scripted ones included). A vanilla
+    // cutscene sets its own sky (a new file's intro dream is a night in Hyrule
+    // Field, then Link wakes up at home in the morning), so the clock is only
+    // sampled in play: a night seen before a cutscene still dawns after it.
+    if (gPlayState->csCtx.state == CS_STATE_IDLE && gSaveContext.cutsceneIndex < 0xFFF0) {
+        int night = IS_NIGHT ? 1 : 0;
+        if (sPrevNight >= 0 && night != sPrevNight && IsOwner()) {
+            if (night == 0) {
+                OwnerDawn();
+            } else {
+                OwnerDusk();
+            }
         }
+        sPrevNight = night;
     }
-    sPrevNight = night;
 
     // The Kokiri stay indoors on the village's dark nights.
     if (IS_NIGHT && gPlayState->sceneNum == SCENE_KOKIRI_FOREST && (sDir.active || sPeer.status != WAVE_NONE)) {
