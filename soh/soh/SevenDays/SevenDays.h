@@ -295,6 +295,7 @@ void RegisterPlaceableActors();
 int16_t PlaceableActorId();
 int16_t GhostActorId();
 Actor* SpawnPlaceableActor(const Placeable& p);
+bool PlaceableActorIsRuin(Actor* actor); // what the actor was spawned as
 void OnPlaceableInteract(uint8_t type); // workbench / chest A-press
 // Vanilla Kokiri lines replaced while the village is active (OTRGlobals glue).
 bool OverridesVanillaText(uint16_t textId);

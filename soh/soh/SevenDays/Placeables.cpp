@@ -150,6 +150,7 @@ static int16_t sStudioId = -1;
 static Actor* sStudio = nullptr;
 static int sStudioType = -1;      // a PLACEABLE_* type, STUDIO_SMALL_CRATE, STUDIO_LARGE_CRATE, or -1: off
 static bool sStudioWhite = false; // black or white backdrop: a shot on each gives the icon's alpha
+static bool sStudioRuin = false;  // tests: the piece as a ruin of the child base
 enum { STUDIO_SMALL_CRATE = 100, STUDIO_LARGE_CRATE = 101 };
 constexpr s16 kStudioTurn = 0x2000; // the studio shows pieces three-quarters on
 static s16 sStudioTurn = kStudioTurn; // tests may turn a piece to its best side
@@ -157,6 +158,10 @@ static int16_t sCollisionId = -1;
 
 int16_t SevenDays::PlaceableActorId() {
     return sPlaceableId;
+}
+
+bool SevenDays::PlaceableActorIsRuin(Actor* actor) {
+    return ((PlaceableActor*)actor)->ruin;
 }
 
 int16_t SevenDays::GhostActorId() {
@@ -478,9 +483,10 @@ static void DrawDL(PlayState* play, Gfx* dl, float tx, float ty, float tz, float
 
 // The treasure chest is a skeleton (base + lid limbs), posed closed like En_Box's
 // frame 0. One shared pose serves every chest and the ghost: nothing animates it.
-static SkelAnime sChestSkel;
-static Vec3s sChestJoints[5];
-static Vec3s sChestMorph[5];
+// A ruin's chest has a pose of its own: the lid hangs open, long since looted.
+static SkelAnime sChestSkel[2];
+static Vec3s sChestJoints[2][5];
+static Vec3s sChestMorph[2][5];
 static bool sChestReady = false;
 
 static void ChestPostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* arg) {
@@ -493,14 +499,19 @@ static void ChestPostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s
     }
 }
 
-static void DrawChest(PlayState* play) {
+static void DrawChest(PlayState* play, bool ruin) {
     if (!sChestReady) {
         AnimationHeader* anim = (AnimationHeader*)gTreasureChestAnim_00024C;
-        SkelAnime_Init(play, &sChestSkel, (SkeletonHeader*)gTreasureChestSkel, anim, sChestJoints, sChestMorph, 5);
-        Animation_Change(&sChestSkel, anim, 0.0f, 0.0f, 0.0f, ANIMMODE_ONCE, 0.0f);
-        SkelAnime_Update(&sChestSkel);
+        for (int i = 0; i < 2; i++) {
+            f32 frame = i == 0 ? 0.0f : Animation_GetLastFrame(anim) * 0.6f;
+            SkelAnime_Init(play, &sChestSkel[i], (SkeletonHeader*)gTreasureChestSkel, anim, sChestJoints[i],
+                           sChestMorph[i], 5);
+            Animation_Change(&sChestSkel[i], anim, 0.0f, frame, frame, ANIMMODE_ONCE, 0.0f);
+            SkelAnime_Update(&sChestSkel[i]);
+        }
         sChestReady = true;
     }
+    SkelAnime& skel = sChestSkel[ruin ? 1 : 0];
     OPEN_DISPS(play->state.gfxCtx);
     Matrix_Push();
     Matrix_RotateY(M_PI, MTXMODE_APPLY); // En_Box turns the model around too
@@ -511,7 +522,7 @@ static void DrawChest(PlayState* play) {
     gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)empty);
     gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, 255);
     CLOSE_DISPS(play->state.gfxCtx);
-    SkelAnime_DrawOpa(play, sChestSkel.skeleton, sChestSkel.jointTable, nullptr, ChestPostLimbDraw, nullptr);
+    SkelAnime_DrawOpa(play, skel.skeleton, skel.jointTable, nullptr, ChestPostLimbDraw, nullptr);
     Matrix_Pop();
 }
 
@@ -527,19 +538,31 @@ static void DrawDLYaw(PlayState* play, Gfx* dl, float tx, float ty, float tz, s1
 
 // Palisade wall: five Majora's Mask practice logs (630 tall, 182 wide at scale 1)
 // stood side by side, about 96 units tall. Below half HP one log has fallen
-// against its neighbour and another has snapped off.
-static void DrawPalisade(PlayState* play, float hpFrac) {
+// against its neighbour and another has snapped off. A ruin is stumps: one log lies
+// fallen across them and one is gone.
+static void DrawPalisade(PlayState* play, float hpFrac, bool ruin) {
     if (!MMPackLoaded()) {
         // No MM pack: the horse-jump fence stretched to the wall's height.
-        DrawDL(play, (Gfx*)gJumpableHorseFenceDL, 0.0f, 0.0f, 0.0f, 0.0375f, 0.12f, 0.1f);
+        DrawDL(play, (Gfx*)gJumpableHorseFenceDL, 0.0f, 0.0f, 0.0f, 0.0375f, ruin ? 0.05f : 0.12f, 0.1f);
         return;
     }
     static const float kHeight[5] = { 1.0f, 0.95f, 1.04f, 0.97f, 1.01f };
+    static const float kStump[5] = { 0.38f, 0.0f, 0.5f, 0.0f, 0.3f };
     static const s16 kYaw[5] = { 0x0000, 0x3000, 0x6800, 0x9C00, 0xD000 };
     const float s = 96.0f / 630.0f;
     for (int i = 0; i < 5; i++) {
         float x = -48.0f + 24.0f * i, sy = s * kHeight[i], rz = 0.0f;
-        if (hpFrac < 0.5f && i == 1) {
+        if (ruin) {
+            if (i == 3) {
+                continue; // rotted away
+            }
+            if (i == 1) {
+                // Fallen flat along the wall, at the stumps' feet.
+                DrawDL(play, (Gfx*)gMMPracticeLogDL, -44.0f, 8.0f, 18.0f, s, s * 0.9f, s, -1.5f);
+                continue;
+            }
+            sy = s * kStump[i];
+        } else if (hpFrac < 0.5f && i == 1) {
             sy *= 0.55f; // snapped off
         } else if (hpFrac < 0.5f && i == 3) {
             rz = -0.3f; // leaning on the log beside it
@@ -551,7 +574,7 @@ static void DrawPalisade(PlayState* play, float hpFrac) {
 // Workbench: the Stock Pot Inn's desk with drawers (44 x 29 x 29 in the room, at
 // -435..-391, 210..239, 360..389), scaled 1.8x, with Gabora's smithing hammer and a
 // red-hot sword blank from the Mountain Village smithy lying on top.
-static void DrawWorkbench(PlayState* play) {
+static void DrawWorkbench(PlayState* play, bool ruin) {
     if (!MMPackLoaded()) {
         // No MM pack: the dungeon shop's wooden shelves at half size.
         DrawDL(play, (Gfx*)gShopDungenWoodenShelvesDL, 0.0f, 0.0f, 9.0f, 0.5f, 0.5f, 0.5f);
@@ -559,6 +582,9 @@ static void DrawWorkbench(PlayState* play) {
     }
     const float s = 1.8f, top = 29.0f * s;
     DrawDL(play, (Gfx*)gMMInnDeskDL, 413.0f * s, -210.0f * s, -374.5f * s, s, s, s);
+    if (ruin) {
+        return; // someone walked off with the hammer and the blade
+    }
     OPEN_DISPS(play->state.gfxCtx);
     // Segments 8 and 9 are En_Kgy's render-mode hooks, which the hammer calls too: empty
     // lists keep the opaque mode (left to chance, whatever drew before decides).
@@ -596,14 +622,40 @@ static void DrawFallbackBox(PlayState* play, uint8_t type) {
            info.halfZ / 4000.0f);
 }
 
+// The whole-piece wash Placeable_Draw set (damage, ruin moss), if any. Models that wash
+// themselves (wood, iron, the tamed Baba) put it back when they are done instead of
+// switching grayscale off under the rest of the piece.
+static bool sPieceTint = false;
+static u8 sPieceTintColor[4];
+
+static void SetPieceTint(PlayState* play, bool on, u8 r = 0, u8 g = 0, u8 b = 0, u8 lerp = 0) {
+    sPieceTint = on;
+    sPieceTintColor[0] = r;
+    sPieceTintColor[1] = g;
+    sPieceTintColor[2] = b;
+    sPieceTintColor[3] = lerp;
+    OPEN_DISPS(play->state.gfxCtx);
+    if (on) {
+        gDPSetGrayscaleColor(POLY_OPA_DISP++, r, g, b, lerp);
+    }
+    gSPGrayscale(POLY_OPA_DISP++, on);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+static void RestorePieceTint(PlayState* play) {
+    SetPieceTint(play, sPieceTint, sPieceTintColor[0], sPieceTintColor[1], sPieceTintColor[2], sPieceTintColor[3]);
+}
+
 // The Pirates' Fortress panel is grey, weathered wood: washed a little warmer, unless the
 // piece is already tinted (damaged, a ruin, the ghost).
 static void WoodWash(PlayState* play, bool on) {
-    OPEN_DISPS(play->state.gfxCtx);
-    if (on) {
-        gDPSetGrayscaleColor(POLY_OPA_DISP++, 205, 160, 110, 150);
+    if (!on) {
+        RestorePieceTint(play);
+        return;
     }
-    gSPGrayscale(POLY_OPA_DISP++, on);
+    OPEN_DISPS(play->state.gfxCtx);
+    gDPSetGrayscaleColor(POLY_OPA_DISP++, 205, 160, 110, 150);
+    gSPGrayscale(POLY_OPA_DISP++, true);
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
@@ -630,24 +682,50 @@ static void DrawPanel(PlayState* play, f32 x, f32 y, f32 z, s16 yaw, f32 w, f32 
 // Wooden step: a 60 x 52 x 60 box of panels, low enough for Link to hop onto; a
 // palisade with a floor on it is one more hop up. (Majora's Mask's own "wooden step"
 // turned out to be a bent walkway plank, so it is built from the planks instead.)
-static void DrawStep(PlayState* play, bool wash) {
+// A ruin's has caved in: the top is gone and one side lies flat beside it.
+static void DrawStep(PlayState* play, bool wash, bool ruin) {
     WoodWash(play, wash);
     for (int i = 0; i < 4; i++) {
         s16 yaw = (s16)(i * 0x4000);
         f32 sx = Math_SinS(yaw) * 28.0f, sz = Math_CosS(yaw) * 28.0f;
+        if (ruin && i == 0) {
+            DrawPanel(play, 0.0f, 0.0f, 58.0f, 0, 60.0f, 48.0f, 4.0f, true);
+            continue;
+        }
         DrawPanel(play, sx, 0.0f, sz, yaw, 60.0f, 48.0f, 4.0f, false);
     }
-    DrawPanel(play, 0.0f, 48.0f, 0.0f, 0, 60.0f, 60.0f, 4.0f, true);
+    if (!ruin) {
+        DrawPanel(play, 0.0f, 48.0f, 0.0f, 0, 60.0f, 60.0f, 4.0f, true);
+    }
     WoodWash(play, false);
+}
+
+// A ruin's plank floor has rotted through: the middle third is gone and the boards left
+// either side have warped up off the ground.
+static void DrawRuinedPlankFloor(PlayState* play) {
+    for (int side = -1; side <= 1; side += 2) {
+        Matrix_Push();
+        Matrix_Translate(0.0f, 0.0f, side * 40.0f, MTXMODE_APPLY);
+        Matrix_RotateX(side * 0.12f, MTXMODE_APPLY);
+        DrawPanel(play, 0.0f, 0.0f, 0.0f, 0, 120.0f, 40.0f, 8.0f, true);
+        Matrix_Pop();
+    }
 }
 
 // Ranch floor: three planks from the Romani Ranch house (40 x 6 x 164 in the room, at
 // 600..640, 57..63, -100..64), side by side and cut to 120 long.
-static void DrawRanchFloor(PlayState* play) {
+// A ruin's has lost its middle plank, and one of the others has slewed round.
+static void DrawRanchFloor(PlayState* play, bool ruin) {
     OPEN_DISPS(play->state.gfxCtx);
     for (int i = -1; i <= 1; i++) {
+        if (ruin && i == 0) {
+            continue;
+        }
         Matrix_Push();
         Matrix_Translate(i * 40.0f, 0.0f, 0.0f, MTXMODE_APPLY);
+        if (ruin && i == 1) {
+            Matrix_RotateY(0.35f, MTXMODE_APPLY);
+        }
         Matrix_Scale(1.0f, 1.0f, 120.0f / 164.0f, MTXMODE_APPLY);
         Matrix_Translate(-620.0f, -57.0f, 18.0f, MTXMODE_APPLY);
         gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
@@ -661,9 +739,10 @@ static void DrawRanchFloor(PlayState* play) {
 // towards -x, at -30..210, 0..210, -150..-23), turned to rise towards +z and scaled to a
 // storey. Drawn a second time mirrored across the middle: that closes the open side,
 // puts a banister on both sides and gives the ramp an underside.
-static void DrawStairs(PlayState* play) {
+// A ruin's has lost one half: the open side shows, and one banister.
+static void DrawStairs(PlayState* play, bool ruin) {
     OPEN_DISPS(play->state.gfxCtx);
-    for (int mirror = 0; mirror < 2; mirror++) {
+    for (int mirror = 0; mirror < (ruin ? 1 : 2); mirror++) {
         Matrix_Push();
         Matrix_RotateY(M_PI / 2, MTXMODE_APPLY);
         Matrix_Scale(0.5f, (f32)STOREY_HEIGHT / 210.0f, 0.5f, MTXMODE_APPLY);
@@ -695,14 +774,20 @@ static void DrawLadder(PlayState* play) {
 // Doors: two leaves of a Majora's Mask door (one 6000 x 10000 leaf at scale 1, hinged
 // at x = 0 and lying down, its height along +z), 60 wide and 100 tall each, hinged at
 // the wall's ends like the player gate; they swing out to 90 degrees.
-static void DrawDoor(PlayState* play, Gfx* leaf, f32 open) {
-    s16 swing = (s16)(open * 0x4000);
+// A ruin's: one leaf hangs half open and sags, the other lies flat on the ground.
+static void DrawDoor(PlayState* play, Gfx* leaf, f32 open, bool ruin) {
+    s16 swing = (s16)((ruin ? 0.4f : open) * 0x4000);
     OPEN_DISPS(play->state.gfxCtx);
     for (int side = 0; side < 2; side++) {
         Matrix_Push();
-        Matrix_Translate(side == 0 ? -60.0f : 60.0f, 0.0f, 0.0f, MTXMODE_APPLY);
+        Matrix_Translate(side == 0 ? -60.0f : 60.0f, ruin && side == 1 ? 1.0f : 0.0f, 0.0f, MTXMODE_APPLY);
         Matrix_RotateY((side == 0 ? -swing : (s16)(0x8000 + swing)) * (M_PI / 0x8000), MTXMODE_APPLY);
-        Matrix_RotateX(-M_PI / 2, MTXMODE_APPLY); // stand it up
+        if (ruin && side == 0) {
+            Matrix_RotateZ(-0.12f, MTXMODE_APPLY); // off its top hinge
+        }
+        if (!ruin || side == 0) {
+            Matrix_RotateX(-M_PI / 2, MTXMODE_APPLY); // stand it up (the model lies flat)
+        }
         Matrix_Scale(0.01f, 0.01f, 0.01f, MTXMODE_APPLY);
         gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_OPA_DISP++, leaf);
@@ -723,11 +808,13 @@ static void BabaAngles(f32 lunge, s16 out[3]) {
     }
 }
 
+// A ruin's Baba wilted: the stalk arches over from the base and its tip lies on the
+// ground (head end first, like the angles above).
+static const s16 kBabaWilt[3] = { 0x2400, 0x0400, -0x2000 };
+
 // Where the head sits relative to the stalk's base: up, and forward along its yaw.
 // EnDekubaba draws its sections from the head down, so the sines come out negative.
-static void BabaHead(f32 lunge, f32* y, f32* z) {
-    s16 ang[3];
-    BabaAngles(lunge, ang);
+static void BabaHeadAt(const s16 ang[3], f32* y, f32* z) {
     *y = *z = 0.0f;
     for (int i = 0; i < 3; i++) {
         *y -= 20.0f * BABA_SIZE * Math_SinS(ang[i]);
@@ -735,11 +822,18 @@ static void BabaHead(f32 lunge, f32* y, f32* z) {
     }
 }
 
+static void BabaHead(f32 lunge, f32* y, f32* z) {
+    s16 ang[3];
+    BabaAngles(lunge, ang);
+    BabaHeadAt(ang, y, z);
+}
+
 static void DrawTorchFlame(PlayState* play, PlaceableActor* self);
 static void DrawBombFlower(PlayState* play, PlaceableActor* self);
 static void DrawGate(PlayState* play, f32 open);
 
 static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActor* self = nullptr) {
+    bool ruin = self != nullptr && self->ruin;
     switch (type) {
         case PLACEABLE_TORCH:
             DrawDL(play, (Gfx*)gWoodenTorchDL, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
@@ -757,18 +851,19 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActo
             }
             break;
         case PLACEABLE_IRONWALL:
-            // The stone wall's blocks, washed steel blue-grey, with an iron grate across.
+            // The stone wall's blocks, washed steel blue-grey (ruins keep their moss), with an
+            // iron grate across.
             {
-                OPEN_DISPS(play->state.gfxCtx);
-                gDPSetGrayscaleColor(POLY_OPA_DISP++, 120, 130, 150, 255);
-                gSPGrayscale(POLY_OPA_DISP++, true);
-                CLOSE_DISPS(play->state.gfxCtx);
+                if (!ruin) {
+                    OPEN_DISPS(play->state.gfxCtx);
+                    gDPSetGrayscaleColor(POLY_OPA_DISP++, 120, 130, 150, 255);
+                    gSPGrayscale(POLY_OPA_DISP++, true);
+                    CLOSE_DISPS(play->state.gfxCtx);
+                }
                 DrawDL(play, (Gfx*)gBlockSmallDL, -30.0f, 0.0f, 0.0f, 0.0075f, 0.0075f, 0.0075f);
                 DrawDL(play, (Gfx*)gBlockSmallDL, 30.0f, 0.0f, 0.0f, 0.0075f, hpFrac >= 0.5f ? 0.0075f : 0.005f,
                        0.0075f);
-                OPEN_DISPS(play->state.gfxCtx);
-                gSPGrayscale(POLY_OPA_DISP++, false);
-                CLOSE_DISPS(play->state.gfxCtx);
+                RestorePieceTint(play);
             }
             break;
         case PLACEABLE_BOMBTRAP:
@@ -801,18 +896,23 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActo
             }
             break;
         case PLACEABLE_PALISADE:
-            DrawPalisade(play, hpFrac);
+            DrawPalisade(play, hpFrac, ruin);
             break;
         case PLACEABLE_SPIKES:
+            // A ruin's has lost its middle spike, and another lies knocked flat.
             for (int i = -1; i <= 1; i++) {
-                DrawDL(play, (Gfx*)gUnusedSpikeDL, i * 30.0f, 4.0f, 0.0f, 0.004f, 0.004f, 0.004f);
+                if (ruin && i == 0) {
+                    continue;
+                }
+                DrawDL(play, (Gfx*)gUnusedSpikeDL, i * 30.0f, 4.0f, 0.0f, 0.004f, 0.004f, 0.004f,
+                       ruin && i == 1 ? -1.3f : 0.0f);
             }
             break;
         case PLACEABLE_WORKBENCH:
-            DrawWorkbench(play);
+            DrawWorkbench(play, ruin);
             break;
         case PLACEABLE_CHEST:
-            DrawChest(play);
+            DrawChest(play, ruin);
             break;
         case PLACEABLE_SIGN:
             DrawDL(play, (Gfx*)gSignRectangularDL, 0.0f, 0.0f, 0.0f, 0.01f, 0.01f, 0.01f);
@@ -829,23 +929,28 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActo
             } else if (type == PLACEABLE_FLOOR_PLANK) {
                 // Only wash pieces that aren't tinted already (damaged, ruins, the ghost).
                 WoodWash(play, self != nullptr && hpFrac >= 0.5f);
-                DrawPanel(play, 0.0f, 0.0f, 0.0f, 0, 120.0f, 120.0f, 8.0f, true);
+                if (ruin) {
+                    DrawRuinedPlankFloor(play);
+                } else {
+                    DrawPanel(play, 0.0f, 0.0f, 0.0f, 0, 120.0f, 120.0f, 8.0f, true);
+                }
                 WoodWash(play, false);
             } else if (type == PLACEABLE_FLOOR_RANCH) {
-                DrawRanchFloor(play);
+                DrawRanchFloor(play, ruin);
             } else if (type == PLACEABLE_FLOOR_STONE) {
                 // A Woodfall Temple platform (1000 square, 200 thick, its top at y = 0).
                 DrawDL(play, (Gfx*)gMMStonePlatformDL, 0.0f, 24.0f, 0.0f, 0.12f, 0.12f, 0.12f);
             } else if (type == PLACEABLE_DECK) {
                 // The top of the Clock Town carnival tower (1360 square, 800 tall): planks on four posts.
+                // A ruin's posts have snapped: it sits at half height.
                 DrawDL(play, (Gfx*)gMMFestivalDeckDL, 0.0f, 0.0f, 0.0f, 120.0f / 1360.0f,
-                       (f32)STOREY_HEIGHT / 800.0f, 120.0f / 1360.0f);
+                       (f32)STOREY_HEIGHT / 800.0f * (ruin ? 0.5f : 1.0f), 120.0f / 1360.0f);
             } else if (type == PLACEABLE_STEP) {
-                DrawStep(play, self != nullptr && hpFrac >= 0.5f);
+                DrawStep(play, self != nullptr && hpFrac >= 0.5f, ruin);
             } else if (type == PLACEABLE_LADDER) {
                 DrawLadder(play);
             } else {
-                DrawStairs(play);
+                DrawStairs(play, ruin);
             }
             break;
         case PLACEABLE_DOOR_SWAMP:
@@ -859,7 +964,7 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActo
                          (Gfx*)(type == PLACEABLE_DOOR_SWAMP   ? gMMSwampDoorDL
                                 : type == PLACEABLE_DOOR_MUSIC ? gMMMusicBoxDoorDL
                                                                : gMMPirateDoorDL),
-                         open);
+                         open, ruin);
             }
             break;
         }
@@ -868,16 +973,21 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActo
 
 // The Deku Baba's stalk and head drawn from home outward, head in front (+z in
 // the frame yawed by `yaw`). Without an actor (the placement ghost) it is just the
-// stalk and leaves.
+// stalk and leaves; a ruin's is the stalk wilted over, headless, in the ruin's moss.
 static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw) {
     const f32 size = BABA_SIZE, sc = 0.01f * size;
+    bool ruin = self != nullptr && self->ruin;
     s16 ang[3];
-    BabaAngles(lunge, ang);
+    if (ruin) {
+        memcpy(ang, kBabaWilt, sizeof(ang));
+    } else {
+        BabaAngles(lunge, ang);
+    }
     f32 headY, headZ;
-    BabaHead(lunge, &headY, &headZ);
-    OPEN_DISPS(play->state.gfxCtx);
+    BabaHeadAt(ang, &headY, &headZ);
     // Tamed: a warm gold-green wash over the usual jungle green (the ghost keeps its tint).
-    bool tamed = self != nullptr && !self->ghost;
+    bool tamed = self != nullptr && !self->ghost && !ruin;
+    OPEN_DISPS(play->state.gfxCtx);
     if (tamed) {
         gDPSetGrayscaleColor(POLY_OPA_DISP++, 255, 230, 90, 70);
         gSPGrayscale(POLY_OPA_DISP++, true);
@@ -905,7 +1015,7 @@ static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw) 
         gSPDisplayList(POLY_OPA_DISP++, stemDLists[i]);
         Matrix_Pop();
     }
-    if (self != nullptr && self->hasSkel) {
+    if (self != nullptr && self->hasSkel && !ruin) {
         Matrix_Push();
         Matrix_Translate(0.0f, headY, headZ, MTXMODE_APPLY);
         Matrix_Scale(sc, sc, sc, MTXMODE_APPLY);
@@ -913,10 +1023,10 @@ static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw) 
         Matrix_Pop();
     }
     Matrix_Pop();
-    if (tamed) {
-        gSPGrayscale(POLY_OPA_DISP++, false);
-    }
     CLOSE_DISPS(play->state.gfxCtx);
+    if (tamed) {
+        RestorePieceTint(play);
+    }
 }
 
 // ObjSyokudai's flame: the scrolling fire billboard over the stand, facing the camera.
@@ -1502,11 +1612,10 @@ static void Placeable_Update(Actor* thisx, PlayState* play) {
     }
 }
 
-static void Placeable_Draw(Actor* thisx, PlayState* play) {
-    PlaceableActor* self = (PlaceableActor*)thisx;
-    const Placeable* p = FindPlaceable(self->id);
+// A placed piece with its wear: the damage wash, a ruin's moss and keel, a hit's judder.
+// The icon studio draws ruins through here too.
+static void DrawWorn(PlayState* play, PlaceableActor* self, float hpFrac) {
     const PlaceableInfo& info = GetPlaceableInfo(self->type);
-    float hpFrac = (p != nullptr && info.maxHp > 0) ? (float)p->hp / (float)info.maxHp : 1.0f;
     if (self->ruin) {
         hpFrac = 0.1f; // the broken look: a crate knocked askew, a block knocked down
     }
@@ -1514,23 +1623,53 @@ static void Placeable_Draw(Actor* thisx, PlayState* play) {
     bool tint = (info.maxHp > 0 && hpFrac < 0.5f) || self->ruin;
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    CLOSE_DISPS(play->state.gfxCtx);
     if (self->ruin) {
         // Seven years of moss and rot.
-        gDPSetGrayscaleColor(POLY_OPA_DISP++, 70, 85, 55, 190);
-        gSPGrayscale(POLY_OPA_DISP++, true);
+        SetPieceTint(play, true, 105, 125, 65, 215);
     } else if (tint) {
         // Damaged wood darkens.
-        gDPSetGrayscaleColor(POLY_OPA_DISP++, 120, 80, 50, 140);
-        gSPGrayscale(POLY_OPA_DISP++, true);
+        SetPieceTint(play, true, 120, 80, 50, 140);
     }
-    CLOSE_DISPS(play->state.gfxCtx);
 
     if (self->ruin) {
-        // Half sunk and leaning.
+        // Sunk into the ground and keeled over, each piece its own way (seeded by its id,
+        // so it lies the same on every client and every visit): 15-20 degrees, sunk 15-20
+        // or a third of its height if that's less. Some pieces go further (below); each
+        // also has a broken shape of its own in DrawModel.
+        uint32_t h = self->id * 2654435761u;
+        f32 sink = std::min(15.0f + (f32)((h >> 8) % 6), info.height * 0.35f);
+        f32 lean = 0.26f + 0.09f * (f32)((h >> 12) & 0xFF) / 255.0f;
+        switch (self->type) {
+            case PLACEABLE_TORCH:
+            case PLACEABLE_LADDER:
+                // Rotted through at the foot: the torch has fallen flat, the ladder lies
+                // propped at a slant.
+                sink = 3.0f;
+                lean = self->type == PLACEABLE_TORCH ? 1.45f : 0.9f;
+                break;
+            case PLACEABLE_BARRICADE:
+                lean += 0.25f; // half pushed over
+                break;
+            case PLACEABLE_SCARECROW:
+                sink = 8.0f;
+                lean = 0.7f; // slumped on its pole
+                break;
+            case PLACEABLE_GUARDBABA:
+                sink = 2.0f; // the wilted stalk is low already
+                break;
+            case PLACEABLE_FLOOR_PLANK:
+            case PLACEABLE_FLOOR_RANCH:
+            case PLACEABLE_FLOOR_STONE:
+                lean *= 0.5f; // heaved by roots, not a ramp
+                break;
+        }
+        f32 dir = BINANG_TO_RAD((s16)(h >> 16));
         Matrix_Push();
-        Matrix_Translate(0.0f, -6.0f, 0.0f, MTXMODE_APPLY);
-        Matrix_RotateZ(0.12f, MTXMODE_APPLY);
-        Matrix_RotateX(-0.08f, MTXMODE_APPLY);
+        Matrix_Translate(0.0f, -sink, 0.0f, MTXMODE_APPLY);
+        Matrix_RotateY(dir, MTXMODE_APPLY);
+        Matrix_RotateX(lean, MTXMODE_APPLY);
+        Matrix_RotateY(-dir, MTXMODE_APPLY);
         DrawModel(play, self->type, hpFrac, self);
         Matrix_Pop();
     } else if (self->shake > 0) {
@@ -1543,11 +1682,16 @@ static void Placeable_Draw(Actor* thisx, PlayState* play) {
         DrawModel(play, self->type, hpFrac, self);
     }
 
-    OPEN_DISPS(play->state.gfxCtx);
     if (tint) {
-        gSPGrayscale(POLY_OPA_DISP++, false);
+        SetPieceTint(play, false);
     }
-    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+static void Placeable_Draw(Actor* thisx, PlayState* play) {
+    PlaceableActor* self = (PlaceableActor*)thisx;
+    const Placeable* p = FindPlaceable(self->id);
+    const PlaceableInfo& info = GetPlaceableInfo(self->type);
+    DrawWorn(play, self, (p != nullptr && info.maxHp > 0) ? (float)p->hp / (float)info.maxHp : 1.0f);
 }
 
 // MARK: - SevenDays_Ghost (placement mode)
@@ -1602,18 +1746,15 @@ static void Ghost_Draw(Actor* thisx, PlayState* play) {
     bool valid = PlacementGhostValid();
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    gDPSetGrayscaleColor(POLY_OPA_DISP++, valid ? 150 : 255, valid ? 255 : 90, valid ? 170 : 90, 200);
-    gSPGrayscale(POLY_OPA_DISP++, true);
     CLOSE_DISPS(play->state.gfxCtx);
+    SetPieceTint(play, true, valid ? 150 : 255, valid ? 255 : 90, valid ? 170 : 90, 200);
     // Flicker the solid model so the ghost reads as see-through.
     if ((play->gameplayFrames & 1) == 0) {
         PlaceableActor* self = (PlaceableActor*)thisx;
         bool onActor = type == PLACEABLE_SCARECROW || type == PLACEABLE_GUARDBABA || type == PLACEABLE_TORCH;
         DrawModel(play, type, 1.0f, onActor ? self : nullptr);
     }
-    OPEN_DISPS(play->state.gfxCtx);
-    gSPGrayscale(POLY_OPA_DISP++, false);
-    CLOSE_DISPS(play->state.gfxCtx);
+    SetPieceTint(play, false);
     DrawGhostVolume(play, GetPlaceableInfo(type), valid);
 }
 
@@ -1665,6 +1806,7 @@ static void Studio_Update(Actor* thisx, PlayState* play) {
                          player->actor.world.pos.z };
     thisx->shape.rot = { 0, 0, 0 };
     self->babaYaw = 0;
+    self->ruin = sStudioRuin;
     if (self->hasSkel) {
         SkelAnime_Update(&self->skel);
     }
@@ -1750,6 +1892,8 @@ static void Studio_Draw(Actor* thisx, PlayState* play) {
         DrawDL(play, (Gfx*)gSmallWoodenBoxDL, 0.0f, 0.0f, 0.0f, 0.1f, 0.1f, 0.1f);
     } else if (sStudioType == STUDIO_LARGE_CRATE) {
         DrawDL(play, (Gfx*)gLargeCrateDL, 0.0f, 0.0f, 0.0f, 0.1f, 0.1f, 0.1f);
+    } else if (sStudioRuin) {
+        DrawWorn(play, self, 1.0f);
     } else {
         DrawModel(play, (uint8_t)sStudioType, 1.0f, self);
     }
@@ -2205,6 +2349,8 @@ int sevendays_test_trap_blasts() {
 EMSCRIPTEN_KEEPALIVE
 void sevendays_test_icon_studio(int type, int white, int turn) {
     sStudioTurn = (s16)turn;
+    sStudioRuin = (type & 0x100) != 0; // type | 0x100: the piece as a ruin
+    type &= ~0x100;
     if (gPlayState == nullptr || sStudioId < 0) {
         return;
     }

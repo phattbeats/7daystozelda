@@ -534,7 +534,10 @@ static void SyncSceneActors() {
     }
     for (auto it = sSpawned.begin(); it != sSpawned.end();) {
         const Placeable* p = FindPlaceable(it->first);
-        if (p == nullptr || !(IsDecor(p->id) ? DecorHere(*p) : SpawnsHere(*p))) {
+        // A piece that turned to ruins under its actor (the seven-year jump at the base)
+        // is respawned too, so it draws and acts as a ruin.
+        if (p == nullptr || !(IsDecor(p->id) ? DecorHere(*p) : SpawnsHere(*p)) ||
+            PlaceableActorIsRuin(it->second) != IsRuin(*p)) {
             Actor_Kill(it->second);
             it = sSpawned.erase(it);
         } else {
