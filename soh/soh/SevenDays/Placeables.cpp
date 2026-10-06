@@ -572,15 +572,18 @@ static void DrawPalisade(PlayState* play, float hpFrac, bool ruin) {
 }
 
 // Workbench: the Stock Pot Inn's desk with drawers (44 x 29 x 29 in the room, at
-// -435..-391, 210..239, 360..389), scaled 1.8x, with Gabora's smithing hammer and a
-// red-hot sword blank from the Mountain Village smithy lying on top.
+// -435..-391, 210..239, 360..389), scaled 1.2x, with Gabora's smithing hammer and a
+// red-hot sword blank from the Mountain Village smithy lying on top. PHA-3856: it was
+// 1.8x (52 tall), over child Link's head; 1.2x puts the top at 35, an adult's hip and a
+// child's chest, and a child still clambers up onto it.
 static void DrawWorkbench(PlayState* play, bool ruin) {
     if (!MMPackLoaded()) {
         // No MM pack: the dungeon shop's wooden shelves at half size.
         DrawDL(play, (Gfx*)gShopDungenWoodenShelvesDL, 0.0f, 0.0f, 9.0f, 0.5f, 0.5f, 0.5f);
         return;
     }
-    const float s = 1.8f, top = 29.0f * s;
+    const float s = 1.2f, top = 29.0f * s;
+    const float k = s / 1.8f; // the tools were placed on the 1.8x desk
     DrawDL(play, (Gfx*)gMMInnDeskDL, 413.0f * s, -210.0f * s, -374.5f * s, s, s, s);
     if (ruin) {
         return; // someone walked off with the hammer and the blade
@@ -595,18 +598,18 @@ static void DrawWorkbench(PlayState* play, bool ruin) {
     // The hammer stands with its handle along +y and its head across x (315..3034)
     // at 0.01. Laid flat: handle along x, head pointing back, resting on the top.
     Matrix_Push();
-    Matrix_Translate(-10.0f, top + 4.6f, -2.0f, MTXMODE_APPLY);
+    Matrix_Translate(-10.0f * k, top + 4.6f * k, -2.0f * k, MTXMODE_APPLY);
     Matrix_RotateX(M_PI / 2, MTXMODE_APPLY);
     Matrix_RotateZ(-M_PI / 2, MTXMODE_APPLY);
-    Matrix_Scale(0.006f, 0.006f, 0.006f, MTXMODE_APPLY);
+    Matrix_Scale(0.006f * k, 0.006f * k, 0.006f * k, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gMMSmithyHammerDL);
     Matrix_Pop();
     // The blade (x 426..1727, its width along y) laid flat in front of the hammer.
     Matrix_Push();
-    Matrix_Translate(-21.0f, top + 1.6f, 12.0f, MTXMODE_APPLY);
+    Matrix_Translate(-21.0f * k, top + 1.6f * k, 12.0f * k, MTXMODE_APPLY);
     Matrix_RotateX(M_PI / 2, MTXMODE_APPLY);
-    Matrix_Scale(0.02f, 0.02f, 0.02f, MTXMODE_APPLY);
+    Matrix_Scale(0.02f * k, 0.02f * k, 0.02f * k, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gMMSmithyBladeDL);
     Matrix_Pop();

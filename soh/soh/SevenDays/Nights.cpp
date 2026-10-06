@@ -5,9 +5,11 @@
 #include "soh/ShipUtils.h"
 #include "soh/SaveManager.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
+#include "soh/Notification/Notification.h"
 
 #include <algorithm>
 #include <cmath>
+#include <deque>
 
 extern "C" {
 #include "z64.h"
@@ -19,6 +21,8 @@ extern f32 gSevenDaysMoonScale; // z_kankyo.c: Environment_DrawSunAndMoon
 extern u8 gSevenDaysMoonRed;
 extern s16 gSevenDaysTint[3][3]; // z_kankyo.c: Environment_Update, added to the adj colors
 }
+
+#include "textures/message_static/message_static.h"
 
 /**
  * M7: Majora's Mask-style nights. All of it is presentation, read from the
@@ -385,6 +389,232 @@ static void DrawPauseLine(PlayState* play, GraphicsContext* gfx) {
                    4, 255, 230, 160, 255, 0.7f);
 }
 
+// MARK: - PHA-3856: notices in the game's own text box
+//
+// No ImGui toasts: every Notification::Emit (gathering, loot, building, raids,
+// co-op) lands here and shows as a small OoT text box at the bottom of the
+// screen: the black message box texture, the game's font, and the item name in
+// red, the way "You got a Deku Stick!" reads. Nothing takes input or focus. A
+// real text box, the pause screen or the Game Over screen hides them, and their
+// time waits until they can be seen.
+
+struct NoticePart {
+    std::string text;
+    Color_RGB8 color;
+};
+
+struct Notice {
+    std::vector<NoticePart> parts;
+    std::string material; // "+N <material>" notices: repeats add up in one box
+    uint32_t amount = 0;
+    const char* icon = nullptr; // a 32x32 RGBA32 item icon, or null
+    double emitted = 0.0;
+    float secs = 3.0f;
+    float shown = 0.0f; // seconds actually on screen
+};
+static std::deque<Notice> sNotices;
+static double sNoticeLast = 0.0;
+
+static constexpr Color_RGB8 kNoticeWhite = { 255, 255, 255 };
+static constexpr Color_RGB8 kNoticeRed = { 255, 60, 60 }; // the message box's item-name red
+static constexpr f32 kNoticeScale = 0.8f;
+static constexpr s32 kNoticeMaxWidth = 216; // text, in screen pixels (320 wide)
+static constexpr size_t kNoticeMaxLines = 3;
+static constexpr size_t kNoticeVisible = 3;
+
+// The message box color closest to a toast's prefix color.
+static Color_RGB8 NoticeColor(const ImVec4& c) {
+    if (c.y > c.x + 0.2f && c.y > c.z) {
+        return { 70, 255, 80 }; // green
+    }
+    if (c.z > c.x + 0.2f) {
+        return { 100, 180, 255 }; // light blue
+    }
+    if (c.x > c.y + 0.2f) {
+        return kNoticeRed;
+    }
+    return { 255, 255, 30 }; // yellow
+}
+
+static std::vector<NoticePart> GainParts(uint32_t amount, const std::string& material) {
+    return { { "You got ", kNoticeWhite }, { fmt::format("{} {}", amount, material), kNoticeRed }, { "!", kNoticeWhite } };
+}
+
+void PushNotice(const Notification::Options& o) {
+    Notice n;
+    n.emitted = Now();
+    n.secs = std::clamp(o.remainingTime, 2.5f, 10.0f);
+    if (o.itemIcon != nullptr &&
+        (strstr(o.itemIcon, "/icon_item_static/") != nullptr || strstr(o.itemIcon, "/7dtz_icons/") != nullptr)) {
+        n.icon = o.itemIcon;
+    }
+    bool gain = o.prefix.size() > 1 && o.prefix[0] == '+' && !o.message.empty() &&
+                std::all_of(o.prefix.begin() + 1, o.prefix.end(), [](char c) { return c >= '0' && c <= '9'; });
+    if (gain) {
+        n.amount = (uint32_t)std::stoul(o.prefix.substr(1));
+        n.material = o.message;
+        for (Notice& old : sNotices) {
+            if (old.material == n.material && old.shown < old.secs - 0.5f) {
+                // Three rocks in a row read "You got 3 Stone!", not three boxes.
+                old.amount += n.amount;
+                old.parts = GainParts(old.amount, old.material);
+                old.shown = std::min(old.shown, 0.25f);
+                old.secs = std::max(old.secs, n.secs);
+                return;
+            }
+        }
+        n.parts = GainParts(n.amount, n.material);
+    } else {
+        if (!o.prefix.empty()) {
+            n.parts.push_back({ o.prefix, NoticeColor(o.prefixColor) });
+        }
+        if (!o.message.empty()) {
+            // "Scarecrow decoy: No kit in the pool", but "Saria opened a supply cache".
+            bool sentence = !n.parts.empty() && o.message[0] >= 'A' && o.message[0] <= 'Z' &&
+                            !strchr(".:!?", o.prefix.back());
+            if (sentence) {
+                n.parts.back().text += ":";
+            }
+            n.parts.push_back({ (n.parts.empty() ? "" : " ") + o.message, kNoticeWhite });
+        }
+        if (!o.suffix.empty()) {
+            n.parts.push_back({ (n.parts.empty() ? "" : " ") + o.suffix, NoticeColor(o.suffixColor) });
+        }
+        if (n.parts.empty()) {
+            return;
+        }
+    }
+    sNotices.push_back(std::move(n));
+    while (sNotices.size() > 8) {
+        sNotices.pop_front();
+    }
+}
+
+struct NoticeWord {
+    std::string text;
+    Color_RGB8 color;
+    bool spaceBefore;
+};
+
+struct NoticeLayout {
+    std::vector<std::vector<std::pair<NoticeWord, s32>>> lines; // words and their x offsets
+    s32 width = 0;
+};
+
+// Words keep their part's color; a color change mid-word ("Stone" + "!") glues.
+static NoticeLayout LayOutNotice(const Notice& n) {
+    std::vector<NoticeWord> words;
+    bool space = false;
+    for (const NoticePart& part : n.parts) {
+        bool open = false;
+        for (char c : part.text) {
+            if (c == ' ') {
+                space = true;
+                open = false;
+                continue;
+            }
+            if (!open) {
+                words.push_back({ "", part.color, space });
+                open = true;
+                space = false;
+            }
+            words.back().text += c;
+        }
+    }
+    NoticeLayout layout;
+    const s32 spaceW = (s32)TextWidth(" ", kNoticeScale);
+    s32 x = 0;
+    layout.lines.emplace_back();
+    for (NoticeWord& w : words) {
+        s32 ww = (s32)TextWidth(w.text, kNoticeScale);
+        s32 gap = layout.lines.back().empty() || !w.spaceBefore ? 0 : spaceW;
+        if (!layout.lines.back().empty() && w.spaceBefore && x + gap + ww > kNoticeMaxWidth) {
+            if (layout.lines.size() == kNoticeMaxLines) {
+                break;
+            }
+            layout.lines.emplace_back();
+            x = 0;
+            gap = 0;
+        }
+        layout.lines.back().push_back({ w, x + gap });
+        x += gap + ww;
+        layout.width = std::max(layout.width, x);
+    }
+    return layout;
+}
+
+// The message box: OoT's black box texture, mirrored across like Message_DrawTextBox.
+static void DrawNoticeBox(GraphicsContext* gfx, s32 x0, s32 y0, s32 w, s32 h, u8 a) {
+    OPEN_DISPS(gfx);
+    Gfx_SetupDL_39Opa(gfx);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+    gDPSetRenderMode(POLY_OPA_DISP++, G_RM_XLU_SURF, G_RM_XLU_SURF2);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 0, 0, 0, a);
+    gDPLoadTextureBlock_4b(POLY_OPA_DISP++, gDefaultMessageBackgroundTex, G_IM_FMT_I, 128, 64, 0, G_TX_MIRROR,
+                           G_TX_NOMIRROR, 7, 0, G_TX_NOLOD, G_TX_NOLOD);
+    gSPTextureRectangle(POLY_OPA_DISP++, x0 << 2, y0 << 2, (x0 + w) << 2, (y0 + h) << 2, G_TX_RENDERTILE, 0, 0,
+                        (256 << 10) / w, (64 << 10) / h);
+    CLOSE_DISPS(gfx);
+}
+
+static void DrawNoticeIcon(GraphicsContext* gfx, const char* icon, s32 x, s32 y, u8 a) {
+    OPEN_DISPS(gfx);
+    Gfx_SetupDL_39Opa(gfx);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+    gDPSetRenderMode(POLY_OPA_DISP++, G_RM_XLU_SURF, G_RM_XLU_SURF2);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, a);
+    gDPLoadTextureBlock(POLY_OPA_DISP++, icon, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0, G_TX_NOMIRROR | G_TX_CLAMP,
+                        G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+    gSPTextureRectangle(POLY_OPA_DISP++, x << 2, y << 2, (x + 16) << 2, (y + 16) << 2, G_TX_RENDERTILE, 0, 0, 2 << 10,
+                        2 << 10);
+    CLOSE_DISPS(gfx);
+}
+
+static void DrawNotices(PlayState* play, GraphicsContext* gfx) {
+    double now = Now();
+    f32 dt = sNoticeLast > 0.0 ? (f32)std::min(now - sNoticeLast, 0.25) : 0.0f;
+    sNoticeLast = now;
+    // Notices raised where nothing draws them (the title, file select) go stale.
+    std::erase_if(sNotices, [now](const Notice& n) { return n.shown <= 0.0f && now - n.emitted > 30.0; });
+    // Text boxes, cutscenes (their letterbox covers the bottom), the pause and Game Over
+    // screens own the screen; the notices wait for them.
+    if (sNotices.empty() || play->pauseCtx.state != 0 || play->pauseCtx.debugState != 0 ||
+        play->msgCtx.msgMode != MSGMODE_NONE || play->gameOverCtx.state != GAMEOVER_INACTIVE ||
+        play->csCtx.state != CS_STATE_IDLE || Player_InCsMode(play)) {
+        return;
+    }
+    const s32 lineH = (s32)(15 * kNoticeScale);
+    const s32 glyph = (s32)(16 * kNoticeScale * R_TEXT_CHAR_SCALE / 100.0f);
+    size_t count = std::min(sNotices.size(), kNoticeVisible);
+    // The oldest on top, the newest at the bottom, where the message box sits.
+    s32 bottom = SCREEN_HEIGHT - 14;
+    for (size_t k = count; k-- > 0;) {
+        Notice& n = sNotices[k];
+        n.shown += dt;
+        f32 alpha = std::min({ 1.0f, n.shown / 0.2f, std::max(0.0f, (n.secs - n.shown) / 0.4f) });
+        NoticeLayout layout = LayOutNotice(n);
+        s32 iconW = n.icon != nullptr ? 20 : 0;
+        s32 textH = lineH * (s32)(layout.lines.size() - 1) + glyph;
+        s32 h = std::max(textH, n.icon != nullptr ? 16 : 0) + 12;
+        s32 w = layout.width + iconW + 20;
+        s32 x0 = (SCREEN_WIDTH - w) / 2, y0 = bottom - h;
+        bottom = y0 - 3;
+        DrawNoticeBox(gfx, x0, y0, w, h, (u8)(170.0f * alpha));
+        u8 a = (u8)(255.0f * alpha);
+        if (n.icon != nullptr) {
+            DrawNoticeIcon(gfx, n.icon, x0 + 10, y0 + (h - 16) / 2, a);
+        }
+        s32 ty = y0 + (h - textH) / 2;
+        for (size_t l = 0; l < layout.lines.size(); l++) {
+            for (auto& [word, x] : layout.lines[l]) {
+                Text(gfx, word.text, x0 + 10 + iconW + x, ty + (s32)l * lineH, word.color.r, word.color.g,
+                     word.color.b, a, kNoticeScale);
+            }
+        }
+    }
+    std::erase_if(sNotices, [](const Notice& n) { return n.shown >= n.secs; });
+}
+
 } // namespace SevenDays
 
 using namespace SevenDays;
@@ -392,7 +622,18 @@ using namespace SevenDays;
 // Called at the end of Play_DrawOverlayElements (z_play.c), after the HUD, the
 // pause screen and the message box: the card and the clock sit on top of them.
 extern "C" void SevenDays_DrawOverlay(PlayState* play) {
-    if (!NightsEnabled() || play == nullptr || !GameInteractor::IsSaveLoaded(true)) {
+    if (play == nullptr || !GameInteractor::IsSaveLoaded(true)) {
+        return;
+    }
+    {
+        GraphicsContext* gfx = play->state.gfxCtx;
+        Gfx* savedOpa = gfx->polyOpa.p;
+        gfx->polyOpa.p = gfx->overlay.p;
+        DrawNotices(play, gfx);
+        gfx->overlay.p = gfx->polyOpa.p;
+        gfx->polyOpa.p = savedOpa;
+    }
+    if (!NightsEnabled()) {
         return;
     }
     if (!sCard.active && sClockAlpha <= 0.0f && play->pauseCtx.state != 6) {

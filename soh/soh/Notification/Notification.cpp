@@ -9,6 +9,10 @@ extern "C" {
 #include "variables.h"
 }
 
+namespace SevenDays {
+void PushNotice(const Notification::Options& o); // SevenDays/Nights.cpp
+}
+
 namespace Notification {
 
 static uint32_t nextId = 0;
@@ -130,7 +134,9 @@ void Emit(Options notification) {
     if (notification.remainingTime == 0.0f) {
         notification.remainingTime = CVarGetFloat(CVAR_SETTING("Notifications.Duration"), 10.0f);
     }
-    notifications.push_back(notification);
+    // 7 Days to Zelda (PHA-3856): no ImGui toasts. Every notice is drawn in the game's
+    // own message box style instead, on the overlay (SevenDays::PushNotice).
+    SevenDays::PushNotice(notification);
     if (!notification.mute) {
         Audio_PlaySoundGeneral(NA_SE_SY_METRONOME, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);

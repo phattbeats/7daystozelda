@@ -81,7 +81,7 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     //                         kit          name              halfX halfZ height maxHp
     /* PLACEABLE_BARRICADE */ { "barricade", "Barricade",      60,   10,   48,    100 },
     /* PLACEABLE_SPIKES    */ { "spikes",    "Spike strip",    45,   15,   8,     60  },
-    /* PLACEABLE_WORKBENCH */ { "workbench", "Workbench",      40,   27,   52,    0   },
+    /* PLACEABLE_WORKBENCH */ { "workbench", "Workbench",      27,   18,   35,    0   }, // PHA-3856: 1.2x desk
     /* PLACEABLE_CHEST     */ { "chest",     "Storage chest",  26,   20,   44,    0   },
     /* PLACEABLE_SIGN      */ { "",          "Sign",           20,   5,    60,    0   },
     /* PLACEABLE_SCARECROW */ { "scarecrow", "Scarecrow decoy", 18,   18,   75,    80  },
