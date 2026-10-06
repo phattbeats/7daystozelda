@@ -757,47 +757,79 @@ float TextWidth(const std::string& text, float scale) {
     return width;
 }
 
-void DrawText(PlayState* play, const std::string& text, float x, float top, float scale, Color_RGB8 color,
-              u8 alpha) {
-    if (text.empty()) {
-        return;
-    }
-    OPEN_DISPS(play->state.gfxCtx);
-    Vtx* vtx = (Vtx*)Graph_Alloc(play->state.gfxCtx, text.size() * 4 * sizeof(Vtx));
-    gDPPipeSync(POLY_OPA_DISP++);
-    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
-    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, color.r, color.g, color.b, alpha);
+// PHA-4029: every glyph is its own texture, and the renderer ends a draw call whenever the
+// texture changes, so drawing text letter by letter cost a draw call per letter (over a
+// thousand a frame with the shadows and the page on the side faces): choppy on phones.
+// DrawText queues the glyphs; FlushText draws them grouped by letter, one texture load per
+// letter, the shadows under the text. Prim colour goes into the vertices: no extra calls.
+struct QueuedGlyph {
+    u8 c;
+    u8 layer; // 0 shadow, 1 text
+    s16 x0, x1, y0, y1, tw;
+    Color_RGB8 color;
+    u8 alpha;
+};
+
+std::vector<QueuedGlyph> sGlyphs;
+
+void DrawText(PlayState* play, const std::string& text, float x, float top, float scale, Color_RGB8 color, u8 alpha,
+              u8 layer = 1) {
     float cx = x;
-    for (size_t i = 0; i < text.size(); i++) {
-        float advance = Ship_GetCharFontWidth((u8)text[i]);
-        Vtx* v = &vtx[i * 4];
-        s16 x0 = (s16)cx;
-        s16 x1 = (s16)(cx + advance * scale + 0.5f);
-        s16 y0 = (s16)top;
-        s16 y1 = (s16)(top - FONT_CHAR_TEX_HEIGHT * scale);
-        s16 tw = (s16)(advance * 32.0f);
-        s16 th = FONT_CHAR_TEX_HEIGHT << 5;
-        v[0] = { { { x0, y0, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } };
-        v[1] = { { { x1, y0, 0 }, 0, { tw, 0 }, { 255, 255, 255, 255 } } };
-        v[2] = { { { x0, y1, 0 }, 0, { 0, th }, { 255, 255, 255, 255 } } };
-        v[3] = { { { x1, y1, 0 }, 0, { tw, th }, { 255, 255, 255, 255 } } };
+    for (char ch : text) {
+        float advance = Ship_GetCharFontWidth((u8)ch);
+        QueuedGlyph g;
+        g.c = (u8)ch;
+        g.layer = layer;
+        g.x0 = (s16)cx;
+        g.x1 = (s16)(cx + advance * scale + 0.5f);
+        g.y0 = (s16)top;
+        g.y1 = (s16)(top - FONT_CHAR_TEX_HEIGHT * scale);
+        g.tw = (s16)(advance * 32.0f);
+        g.color = color;
+        g.alpha = alpha;
         cx += advance * scale;
-        if (text[i] == ' ') {
-            continue;
+        if (ch != ' ') {
+            sGlyphs.push_back(g);
         }
-        gDPLoadTextureBlock_4b(POLY_OPA_DISP++, Ship_GetCharFontTexture((u8)text[i]), G_IM_FMT_I, FONT_CHAR_TEX_WIDTH,
-                               FONT_CHAR_TEX_HEIGHT, 0, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP,
-                               G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
-        gSPVertex(POLY_OPA_DISP++, (uintptr_t)v, 4, 0);
-        gSP1Quadrangle(POLY_OPA_DISP++, 0, 2, 3, 1, 0);
     }
-    CLOSE_DISPS(play->state.gfxCtx);
 }
 
 void DrawShadowText(PlayState* play, const std::string& text, float x, float top, float scale, Color_RGB8 color,
                     u8 alpha) {
-    DrawText(play, text, x + 1.0f, top - 1.0f, scale, { 0, 0, 0 }, alpha);
-    DrawText(play, text, x, top, scale, color, alpha);
+    DrawText(play, text, x + 1.0f, top - 1.0f, scale, { 0, 0, 0 }, alpha, 0);
+    DrawText(play, text, x, top, scale, color, alpha, 1);
+}
+
+void FlushText(PlayState* play) {
+    if (sGlyphs.empty()) {
+        return;
+    }
+    std::stable_sort(sGlyphs.begin(), sGlyphs.end(), [](const QueuedGlyph& a, const QueuedGlyph& b) {
+        return a.layer != b.layer ? a.layer < b.layer : a.c < b.c;
+    });
+    OPEN_DISPS(play->state.gfxCtx);
+    Vtx* vtx = (Vtx*)Graph_Alloc(play->state.gfxCtx, sGlyphs.size() * 4 * sizeof(Vtx));
+    gDPPipeSync(POLY_OPA_DISP++);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+    const s16 th = FONT_CHAR_TEX_HEIGHT << 5;
+    for (size_t i = 0; i < sGlyphs.size(); i++) {
+        const QueuedGlyph& g = sGlyphs[i];
+        if (i == 0 || g.c != sGlyphs[i - 1].c || g.layer != sGlyphs[i - 1].layer) {
+            gDPLoadTextureBlock_4b(POLY_OPA_DISP++, Ship_GetCharFontTexture(g.c), G_IM_FMT_I, FONT_CHAR_TEX_WIDTH,
+                                   FONT_CHAR_TEX_HEIGHT, 0, G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP,
+                                   G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+        }
+        Vtx* v = &vtx[i * 4];
+        v[0] = { { { g.x0, g.y0, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } };
+        v[1] = { { { g.x1, g.y0, 0 }, 0, { g.tw, 0 }, { 255, 255, 255, 255 } } };
+        v[2] = { { { g.x0, g.y1, 0 }, 0, { 0, th }, { 255, 255, 255, 255 } } };
+        v[3] = { { { g.x1, g.y1, 0 }, 0, { g.tw, th }, { 255, 255, 255, 255 } } };
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, g.color.r, g.color.g, g.color.b, g.alpha);
+        gSPVertex(POLY_OPA_DISP++, (uintptr_t)v, 4, 0);
+        gSP1Quadrangle(POLY_OPA_DISP++, 0, 2, 3, 1, 0);
+    }
+    CLOSE_DISPS(play->state.gfxCtx);
+    sGlyphs.clear();
 }
 
 void DrawIcon(PlayState* play, const char* icon, bool rupee, s16 x, s16 top, bool gray, u8 alpha) {
@@ -1061,6 +1093,7 @@ extern "C" void SevenDaysKaleido_DrawPage(PlayState* play, s32 current) {
     if (sPage.top + kVisibleRows < (int)rows.size()) {
         DrawText(play, "v", 112, kRowTop - (kVisibleRows - 1) * kRowHeight - 6 + dy, 0.6f, { 255, 255, 255 }, alpha);
     }
+    FlushText(play);
 
     if (!current) {
         return;
@@ -1115,10 +1148,12 @@ extern "C" void SevenDaysKaleido_DrawInfo(PlayState* play, s16 top) {
     }
     Color_RGB8 color = canA ? Color_RGB8{ 255, 255, 255 } : Color_RGB8{ 200, 200, 200 };
     DrawText(play, line, x + aw, top, scale, color, 255);
+    FlushText(play);
 }
 
 extern "C" void SevenDaysKaleido_DrawPageLabel(PlayState* play, s16 top) {
     std::string label = "To Workbench";
     float w = SevenDays::TextWidth(label, 1.0f);
     SevenDays::DrawText(play, label, 1 - w / 2, top, 1.0f, { 255, 200, 0 }, 255);
+    SevenDays::FlushText(play);
 }
