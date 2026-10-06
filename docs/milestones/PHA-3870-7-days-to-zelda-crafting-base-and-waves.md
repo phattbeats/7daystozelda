@@ -185,7 +185,8 @@ Each placeable is a new actor type registered through SoH's `ActorDB::AddEntry(n
 
 * the scene's clock must run;
 * every piece sits within 800 units of the base's workbench;
-* one base per era.
+* one base per era;
+* outposts (PHA-4027): in any other outdoor scene, a workbench starts a camp, and pieces there sit within 800 units of one of the era's workbenches in that scene. Raids still go to the base. The piece cap counts per scene.
 
 Spawn placeables as scene-wide actors (room −1), not as children of one room, so they survive walking between rooms of the same scene. Packing up turns each piece back into a kit.
 

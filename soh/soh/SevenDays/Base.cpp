@@ -247,6 +247,31 @@ static int CountEra(int era) {
     return n;
 }
 
+// The cap is the scene's collision budget, so each scene counts its own pieces.
+static int CountEraIn(int era, int16_t scene) {
+    int n = 0;
+    for (auto& p : sBase.placeables) {
+        n += p.era == era && p.scene == scene;
+    }
+    return n;
+}
+
+// PHA-4027: outposts. Away from the base's scene, a workbench starts a camp, and
+// pieces go within BASE_RADIUS of any of the era's workbenches in that scene. The
+// base itself (raids, the village) stays where its first workbench is.
+static bool NearOutpostWorkbench(int era, int16_t scene, float x, float z) {
+    for (auto& p : sBase.placeables) {
+        if (p.era != era || p.scene != scene || p.type != PLACEABLE_WORKBENCH) {
+            continue;
+        }
+        float dx = p.pos[0] - x, dz = p.pos[2] - z;
+        if (dx * dx + dz * dz <= BASE_RADIUS * BASE_RADIUS) {
+            return true;
+        }
+    }
+    return false;
+}
+
 uint32_t CurrentDay() {
     return sBase.daysSurvived + 1;
 }
@@ -632,7 +657,8 @@ static void Reply(uint32_t requester, nlohmann::json result) {
 
 // The owner's placement check (spec "Anywhere bases"): kit in the pool, the
 // scene's clock runs, within 800 of the era's workbench (the first one sets the
-// center), one base per era, at most BASE_CAP pieces.
+// center), one base per era plus workbench outposts elsewhere (PHA-4027), at most
+// BASE_CAP pieces per scene.
 static void ProcessPlaceRequest(const nlohmann::json& payload, uint32_t requester) {
     nlohmann::json result;
     result["type"] = PLACE_RESULT;
@@ -674,14 +700,17 @@ static void ProcessPlaceRequest(const nlohmann::json& payload, uint32_t requeste
         setsCenter = true;
     } else {
         if (center.scene != scene) {
-            return refuse(fmt::format("Your base is in {}. Pack it up to move", BaseSceneName(center.scene)));
-        }
-        float dx = pos[0] - center.pos[0], dz = pos[2] - center.pos[2];
-        if (sqrtf(dx * dx + dz * dz) > BASE_RADIUS) {
-            return refuse("Too far from the base's workbench");
+            if (type != PLACEABLE_WORKBENCH && !NearOutpostWorkbench(era, scene, pos[0], pos[2])) {
+                return refuse("Build a workbench first: it starts a camp here");
+            }
+        } else {
+            float dx = pos[0] - center.pos[0], dz = pos[2] - center.pos[2];
+            if (sqrtf(dx * dx + dz * dz) > BASE_RADIUS) {
+                return refuse("Too far from the base's workbench");
+            }
         }
     }
-    if (CountEra(era) >= BASE_CAP) {
+    if (CountEraIn(era, scene) >= BASE_CAP) {
         return refuse(fmt::format("The base is full ({} pieces)", BASE_CAP));
     }
 
@@ -1769,10 +1798,11 @@ static void Validate(PlayState* play, Player* player) {
     if (c.valid) {
         float dx = c.pos[0] - x, dz = c.pos[2] - z;
         if (c.scene != play->sceneNum) {
-            sPlace.reason = "Your base is in another place";
-            return;
-        }
-        if (dx * dx + dz * dz > BASE_RADIUS * BASE_RADIUS) {
+            if (sPlace.type != PLACEABLE_WORKBENCH && !NearOutpostWorkbench(CurrentEra(), play->sceneNum, x, z)) {
+                sPlace.reason = "Build a workbench first: it starts a camp here";
+                return;
+            }
+        } else if (dx * dx + dz * dz > BASE_RADIUS * BASE_RADIUS) {
             sPlace.reason = "Too far from the base's workbench";
             return;
         }
