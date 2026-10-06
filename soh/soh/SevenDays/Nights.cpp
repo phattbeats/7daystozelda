@@ -576,6 +576,29 @@ static void DrawNoticeIcon(GraphicsContext* gfx, const char* icon, s32 x, s32 y,
     CLOSE_DISPS(gfx);
 }
 
+// PHA-4028: every glyph costs about 17 display-list commands (its font texture load,
+// the shadow and the letter), and the notices, the clock and the card run to a few
+// hundred glyphs. The game's overlay list holds 0x800 commands and the HUD shares it:
+// three long placement notices ran it past its end into the frame's root list, and
+// the game froze or crashed. They draw into a list of their own instead (one per
+// frame in flight), and the overlay only calls it (SevenDays_DrawOverlay).
+static constexpr size_t kOverlayGfxMax = 0x3000;
+static constexpr size_t kOverlayGfxForNights = 0x1000; // the notices leave this much for the clock and card
+static Gfx sOverlayGfx[2][kOverlayGfxMax];
+static size_t sOverlayGfxIdx = 0;
+static size_t sOverlayGfxPeak = 0; // for sevendays_test_nights_state
+
+static bool NoticeFits(GraphicsContext* gfx, const NoticeLayout& layout) {
+    size_t glyphs = 0;
+    for (auto& line : layout.lines) {
+        for (auto& [word, x] : line) {
+            glyphs += word.text.size();
+        }
+    }
+    Gfx* limit = sOverlayGfx[sOverlayGfxIdx] + (kOverlayGfxMax - kOverlayGfxForNights);
+    return gfx->polyOpa.p + glyphs * 20 + 64 <= limit;
+}
+
 static void DrawNotices(PlayState* play, GraphicsContext* gfx) {
     double now = Now();
     f32 dt = sNoticeLast > 0.0 ? (f32)std::min(now - sNoticeLast, 0.25) : 0.0f;
@@ -596,9 +619,12 @@ static void DrawNotices(PlayState* play, GraphicsContext* gfx) {
     s32 bottom = SCREEN_HEIGHT - 14;
     for (size_t k = count; k-- > 0;) {
         Notice& n = sNotices[k];
+        NoticeLayout layout = LayOutNotice(n);
+        if (!NoticeFits(gfx, layout)) {
+            break; // it waits (its time doesn't run) until the ones under it go
+        }
         n.shown += dt;
         f32 alpha = std::min({ 1.0f, n.shown / 0.2f, std::max(0.0f, (n.secs - n.shown) / 0.4f) });
-        NoticeLayout layout = LayOutNotice(n);
         s32 iconW = n.icon != nullptr ? 20 : 0;
         s32 textH = lineH * (s32)(layout.lines.size() - 1) + glyph;
         s32 h = std::max(textH, n.icon != nullptr ? 16 : 0) + 12;
@@ -625,30 +651,39 @@ static void DrawNotices(PlayState* play, GraphicsContext* gfx) {
 
 using namespace SevenDays;
 
+static void DrawOverlayElements(PlayState* play, GraphicsContext* gfx);
+
 // Called at the end of Play_DrawOverlayElements (z_play.c), after the HUD, the
 // pause screen and the message box: the card and the clock sit on top of them.
 extern "C" void SevenDays_DrawOverlay(PlayState* play) {
     if (play == nullptr || !GameInteractor::IsSaveLoaded(true)) {
         return;
     }
-    {
-        GraphicsContext* gfx = play->state.gfxCtx;
-        Gfx* savedOpa = gfx->polyOpa.p;
-        gfx->polyOpa.p = gfx->overlay.p;
-        DrawNotices(play, gfx);
-        gfx->overlay.p = gfx->polyOpa.p;
-        gfx->polyOpa.p = savedOpa;
+    GraphicsContext* gfx = play->state.gfxCtx;
+    sOverlayGfxIdx ^= 1;
+    Gfx* start = sOverlayGfx[sOverlayGfxIdx];
+    // The helpers (Interface_DrawTextLine) write POLY_OPA: point it at our list.
+    Gfx* savedOpa = gfx->polyOpa.p;
+    gfx->polyOpa.p = start;
+    DrawOverlayElements(play, gfx);
+    Gfx* end = gfx->polyOpa.p;
+    gfx->polyOpa.p = savedOpa;
+    if (end == start) {
+        return;
     }
+    gSPEndDisplayList(end++);
+    sOverlayGfxPeak = std::max(sOverlayGfxPeak, (size_t)(end - start));
+    gSPDisplayList(gfx->overlay.p++, start);
+}
+
+static void DrawOverlayElements(PlayState* play, GraphicsContext* gfx) {
+    DrawNotices(play, gfx);
     if (!NightsEnabled()) {
         return;
     }
     if (!sCard.active && sClockAlpha <= 0.0f && play->pauseCtx.state != 6) {
         return;
     }
-    GraphicsContext* gfx = play->state.gfxCtx;
-    // Draw on the overlay list: the helpers (Interface_DrawTextLine) write POLY_OPA.
-    Gfx* savedOpa = gfx->polyOpa.p;
-    gfx->polyOpa.p = gfx->overlay.p;
     if (play->pauseCtx.state == 0) {
         // Cutscenes and text boxes own the screen: the clock steps aside for both,
         // the card for cutscenes (a dawn often comes with a Navi line under it).
@@ -668,8 +703,6 @@ extern "C" void SevenDays_DrawOverlay(PlayState* play) {
     } else {
         DrawPauseLine(play, gfx);
     }
-    gfx->overlay.p = gfx->polyOpa.p;
-    gfx->polyOpa.p = savedOpa;
 }
 
 // FileSelectMoreInfo (z_file_choose.c DrawMoreInfo): this file's counters.
@@ -738,6 +771,8 @@ const char* sevendays_test_nights_state() {
                   { "raid", sCard.raid },
                   { "counts", sCard.counts + " / " + sCard.counts2 } };
     j["clockAlpha"] = sClockAlpha;
+    j["overlayGfxPeak"] = sOverlayGfxPeak; // PHA-4028: commands in our own overlay list, at most
+    j["notices"] = sNotices.size();
     j["red"] = sRed;
     j["moonScale"] = gSevenDaysMoonScale;
     j["moonRed"] = gSevenDaysMoonRed;
