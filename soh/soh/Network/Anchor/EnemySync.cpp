@@ -14,6 +14,8 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/OTRGlobals.h"
 #include "soh/ActorDB.h"
+#include "src/overlays/actors/ovl_En_Nutsball/z_en_nutsball.h"
+#include "src/overlays/actors/ovl_En_Okuta/z_en_okuta.h"
 
 extern "C" {
 #include "variables.h"
@@ -95,6 +97,7 @@ struct TrackedState {
     bool remoteSpawned = false;       // spawned from an ENEMY_SPAWN packet
     bool needsSpawnBroadcast = false; // authority: announce this dynamic spawn
     bool projectile = false;          // whitelisted enemy projectile: fire-and-forget replica, never streamed/mirrored
+    bool reflected = false;           // projectile: bounced off a shield (here or on a peer); announced once
     uint8_t phase = 0;                // last adapter phase seen/applied
 };
 
@@ -115,6 +118,9 @@ struct RemoteEnemyState {
     // per quad, in the authority's st.colliders capture order. Empty when this
     // enemy submitted no quad class this frame (the whole Deku Tree roster).
     std::vector<Vec3f> quadVerts;
+    // Per captured collider (st.colliders order), 4 values each: AT/AC/OC on-bits
+    // and the cylinder's radius, height, yShift. Empty when not streamed.
+    std::vector<int16_t> colState;
     nlohmann::json extras;
 };
 
@@ -248,6 +254,27 @@ static bool IsTrackedCategory(Actor* actor) {
 // so gate on the already-changed PROP category to catch only the projectile.
 static bool IsSyncedProjectile(Actor* actor) {
     return actor->id == ACTOR_EN_NUTSBALL || (actor->id == ACTOR_EN_OKUTA && actor->category == ACTORCAT_PROP);
+}
+
+// Both projectiles keep their collider and flight timer at different offsets.
+static ColliderCylinder* ProjectileCollider(Actor* actor) {
+    if (actor->id == ACTOR_EN_NUTSBALL) {
+        return &((EnNutsball*)actor)->collider;
+    }
+    if (actor->id == ACTOR_EN_OKUTA) {
+        return &((EnOkuta*)actor)->collider;
+    }
+    return nullptr;
+}
+
+static s16* ProjectileTimer(Actor* actor) {
+    if (actor->id == ACTOR_EN_NUTSBALL) {
+        return &((EnNutsball*)actor)->timer;
+    }
+    if (actor->id == ACTOR_EN_OKUTA) {
+        return &((EnOkuta*)actor)->timer;
+    }
+    return nullptr;
 }
 
 // EN_GOMA params >= 6: hatch debris (>=10) and defeat limb pieces (>=100) are
@@ -723,12 +750,16 @@ static void DetectAndForwardLocalHits(Actor* actor, TrackedState& st) {
     uint32_t dmgFlags = 0;
     Vec3s hitPos = { (int16_t)actor->world.pos.x, (int16_t)actor->world.pos.y, (int16_t)actor->world.pos.z };
     bool hit = false;
+    Actor* source = nullptr;
 
     auto scan = [&](Collider* col) {
         if (col == nullptr || col->actor != actor || !(col->acFlags & AC_HIT)) {
             return;
         }
         hit = true;
+        if (source == nullptr) {
+            source = col->ac;
+        }
         ForEachColliderInfo(col, [&](ColliderInfo* info) {
             if (dmgFlags == 0 && (info->bumperFlags & BUMP_HIT) && info->acHitInfo != NULL) {
                 dmgFlags = info->acHitInfo->toucher.dmgFlags;
@@ -751,10 +782,54 @@ static void DetectAndForwardLocalHits(Actor* actor, TrackedState& st) {
     uint8_t damage = actor->colChkInfo.damage;
     actor->colChkInfo.damage = 0;
 
-    Anchor::Instance->SendPacket_EnemyHitRequest(actor, st.key, damage, dmgFlags, hitPos);
+    // A nut we reflected: say so, or the authority's copy reacts to our puppet
+    // instead (a Hint Deku Scrub just burrows, so the B2 puzzle can't be solved).
+    // Looked up by pointer before any deref: only tracked, live projectiles count.
+    Actor* projectile = nullptr;
+    auto src = source != nullptr ? tracked.find(source) : tracked.end();
+    if (src != tracked.end() && src->second.projectile) {
+        projectile = source;
+    }
+
+    Anchor::Instance->SendPacket_EnemyHitRequest(actor, st.key, damage, dmgFlags, hitPos, projectile);
 
     // Immediate local reaction while the authority's verdict streams back.
     Actor_SetColorFilter(actor, 0x4000, 255, 0, 8);
+}
+
+// Collider on-bits for the colState stream.
+enum ColStateBit : int16_t {
+    COLSTATE_AT = 1 << 0,
+    COLSTATE_AC = 1 << 1,
+    COLSTATE_OC = 1 << 2,
+};
+
+// The AI switches AT_ON/AC_ON/OC1_ON and resizes cylinders as it changes state
+// (a Hint Deku Scrub drops AC_ON and shrinks to 5 units tall while burrowed).
+// A suppressed mirror never runs that code, so its colliders stay frozen in
+// whatever state suppression began in — for scrubs that was burrowed, which
+// meant nothing the mirror's player threw or reflected could ever hit them.
+// Take both from the authority before submitting.
+static void ApplyColliderState(Actor* actor, TrackedState& st, RemoteEnemyState& r) {
+    if (r.colState.size() != st.colliders.size() * 4) {
+        return; // capture lists differ (or an older peer): keep the local flags
+    }
+    for (size_t i = 0; i < st.colliders.size(); i++) {
+        Collider* col = st.colliders[i];
+        if (col == nullptr || col->actor != actor) {
+            continue;
+        }
+        int16_t bits = r.colState[i * 4];
+        col->atFlags = (bits & COLSTATE_AT) ? (col->atFlags | AT_ON) : (col->atFlags & ~AT_ON);
+        col->acFlags = (bits & COLSTATE_AC) ? (col->acFlags | AC_ON) : (col->acFlags & ~AC_ON);
+        col->ocFlags1 = (bits & COLSTATE_OC) ? (col->ocFlags1 | OC1_ON) : (col->ocFlags1 & ~OC1_ON);
+        if (col->shape == COLSHAPE_CYLINDER) {
+            ColliderCylinder* cyl = (ColliderCylinder*)col;
+            cyl->dim.radius = r.colState[i * 4 + 1];
+            cyl->dim.height = r.colState[i * 4 + 2];
+            cyl->dim.yShift = r.colState[i * 4 + 3];
+        }
+    }
 }
 
 static void SubmitColliders(Actor* actor, TrackedState& st, RemoteEnemyState& r) {
@@ -762,6 +837,7 @@ static void SubmitColliders(Actor* actor, TrackedState& st, RemoteEnemyState& r)
     if (gPlayState == NULL || mask == 0) {
         return;
     }
+    ApplyColliderState(actor, st, r);
     // Cursor into r.quadVerts (4 Vec3f per submitted quad). The authority appended
     // one 4-vertex set per quad that passed the AT/AC predicate below, in this same
     // st.colliders order, so the nth qualifying quad here pairs with the nth set.
@@ -1038,6 +1114,29 @@ static nlohmann::json SnapshotEnemy(Actor* actor, TrackedState& st) {
     // mirrored enemy.
     e["scale"] = actor->scale;
     e["mask"] = st.submitMask;
+    if (!st.colliders.empty()) {
+        std::vector<int> cs;
+        cs.reserve(st.colliders.size() * 4);
+        for (Collider* col : st.colliders) {
+            int bits = 0;
+            int radius = 0, height = 0, yShift = 0;
+            if (col != nullptr && col->actor == actor) {
+                bits = ((col->atFlags & AT_ON) ? COLSTATE_AT : 0) | ((col->acFlags & AC_ON) ? COLSTATE_AC : 0) |
+                       ((col->ocFlags1 & OC1_ON) ? COLSTATE_OC : 0);
+                if (col->shape == COLSHAPE_CYLINDER) {
+                    ColliderCylinder* cyl = (ColliderCylinder*)col;
+                    radius = cyl->dim.radius;
+                    height = cyl->dim.height;
+                    yShift = cyl->dim.yShift;
+                }
+            }
+            cs.push_back(bits);
+            cs.push_back(radius);
+            cs.push_back(height);
+            cs.push_back(yShift);
+        }
+        e["cs"] = cs;
+    }
     SkelAnime* skel = st.skelAnime;
     if (skel != nullptr && skel->jointTable != nullptr && skel->limbCount > 0 && skel->limbCount <= MAX_STREAM_LIMBS) {
         std::vector<int> jt;
@@ -1144,6 +1243,17 @@ void IngestEnemyState(const nlohmann::json& payload) {
                     }
                 } else {
                     SPDLOG_WARN("[EnemySync] Bad jt size {} for key={:#x}", jt.size(), key);
+                }
+            }
+            // Collider on-bits and cylinder sizes (see ApplyColliderState).
+            r.colState.clear();
+            if (e.contains("cs")) {
+                const auto& cs = e["cs"];
+                if (cs.size() % 4 == 0 && cs.size() <= (size_t)MAX_TRACKED_COLLIDERS * 4) {
+                    r.colState.reserve(cs.size());
+                    for (const auto& v : cs) {
+                        r.colState.push_back((int16_t)v.get<int>());
+                    }
                 }
             }
             // Quad AT/AC vertices (Step 4). Cleared unconditionally so a quad that
@@ -1543,6 +1653,58 @@ void NoteUnresolvedRemoteKill(uint64_t key) {
     pendingRemoteKills[key] = 1;
 }
 
+void HandleRemoteReflect(uint64_t key, Vec3f pos, s16 rotY) {
+    auto it = keyToActor.find(key);
+    if (it == keyToActor.end() || it->second->update == NULL) {
+        return; // our copy already hit something or timed out: nothing to show
+    }
+    Actor* actor = it->second;
+    auto st = tracked.find(actor);
+    ColliderCylinder* col = ProjectileCollider(actor);
+    if (st == tracked.end() || !st->second.projectile || st->second.reflected || col == nullptr) {
+        return;
+    }
+    st->second.reflected = true;
+
+    // Same state the reflecting shield leaves behind, minus AT_ON: the
+    // reflector's own copy is the one that hits (its hit request reaches the
+    // authority), so this copy must not land a second hit on the same enemy.
+    actor->world.pos = pos;
+    actor->world.rot.y = rotY;
+    col->base.atFlags &= ~(AT_ON | AT_HIT | AT_BOUNCED | AT_TYPE_ENEMY);
+    col->base.atFlags |= AT_TYPE_PLAYER;
+    col->info.toucher.dmgFlags = 2;
+    if (s16* timer = ProjectileTimer(actor)) {
+        *timer = 30;
+    }
+    ESYNC_LOG("[EnemySync] REFLECT rx id={} key={:#x}", actor->id, key);
+}
+
+Actor* ProjectileAttacker(uint64_t key, int16_t actorId, Vec3f pos, Vec3s rot) {
+    // Our copy of the nut is the obvious attacker, but it can die (wall, timer)
+    // before the enemy reads collider.base.ac. A zeroed stand-in with the nut's
+    // id and position never dangles; enemies only read ac->id and ac->world.
+    static Actor sStandIns[4];
+    static uint8_t sStandInIndex = 0;
+    Actor* standIn = &sStandIns[sStandInIndex];
+    sStandInIndex = (sStandInIndex + 1) % 4;
+    memset(standIn, 0, sizeof(Actor));
+    standIn->id = actorId;
+    standIn->category = ACTORCAT_PROP;
+    standIn->world.pos = standIn->home.pos = standIn->focus.pos = standIn->prevPos = pos;
+    standIn->world.rot = standIn->shape.rot = standIn->home.rot = rot;
+
+    // The nut burst on the reflector's screen; retire our harmless copy too.
+    auto it = keyToActor.find(key);
+    if (it != keyToActor.end() && it->second->update != NULL) {
+        auto st = tracked.find(it->second);
+        if (st != tracked.end() && st->second.projectile) {
+            Actor_Kill(it->second);
+        }
+    }
+    return standIn;
+}
+
 nlohmann::json BuildRoster(int16_t roomNum) {
     nlohmann::json entries = nlohmann::json::array();
     for (auto& [actor, st] : tracked) {
@@ -1602,6 +1764,15 @@ static void OnEnemyActorUpdate(Actor* actor) {
     // the remote-damage/force-kill bookkeeping entirely; none of it applies (their
     // deathCooldown / pendingKillFrames / expectedRemoteDamage are never set).
     if (state.projectile) {
+        // A shield just turned it around (z_en_nutsball.c / z_en_okuta.c flip the
+        // AT type to player on reflection). Show the bounce on every screen.
+        ColliderCylinder* col = ProjectileCollider(actor);
+        if (!state.reflected && col != nullptr && (col->base.atFlags & AT_TYPE_PLAYER)) {
+            state.reflected = true;
+            if (MirroringEnabled() && HasSameScenePeer()) {
+                Anchor::Instance->SendPacket_ProjectileReflect(state.key, actor->world.pos, actor->world.rot.y);
+            }
+        }
         return;
     }
 
@@ -1954,4 +2125,99 @@ const char* anchor_test_enemies(int kill) {
     return out.c_str();
 }
 }
+
+// PHA-4022 tests: per-enemy collider/projectile detail (sync state the scrub
+// seeds depend on), and a reflected-nut launcher.
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE
+const char* anchor_test_enemy_detail() {
+    using namespace EnemySync;
+    static std::string out;
+    nlohmann::json j;
+    j["auth"] = cachedAuthorityId;
+    j["own"] = Anchor::Instance != nullptr ? Anchor::Instance->ownClientId : 0;
+    j["enemies"] = nlohmann::json::array();
+    for (auto& [actor, st] : tracked) {
+        if (actor->update == NULL) {
+            continue;
+        }
+        nlohmann::json e;
+        e["id"] = actor->id;
+        e["params"] = (uint16_t)actor->params;
+        e["key"] = st.key;
+        e["cat"] = actor->category;
+        e["sup"] = st.suppressed;
+        e["proj"] = st.projectile;
+        e["refl"] = st.reflected;
+        e["hp"] = actor->colChkInfo.health;
+        e["cf"] = actor->colorFilterTimer;
+        e["x"] = actor->world.pos.x;
+        e["y"] = actor->world.pos.y;
+        e["z"] = actor->world.pos.z;
+        nlohmann::json cols = nlohmann::json::array();
+        for (Collider* col : st.colliders) {
+            if (col == nullptr || col->actor != actor) {
+                continue;
+            }
+            nlohmann::json c;
+            c["shape"] = col->shape;
+            c["at"] = (col->atFlags & AT_ON) != 0;
+            c["ac"] = (col->acFlags & AC_ON) != 0;
+            if (col->shape == COLSHAPE_CYLINDER) {
+                c["h"] = ((ColliderCylinder*)col)->dim.height;
+            }
+            cols.push_back(c);
+        }
+        e["cols"] = cols;
+        j["enemies"].push_back(e);
+    }
+    out = j.dump();
+    return out.c_str();
+}
+
+// Fires an already-reflected Deku nut at the tracked enemy with this key from
+// `dist` units away along the line to the local player — what a Deku Shield
+// bounce leaves behind (z_en_nutsball.c), without having to aim a shield.
+// dist 0: the key is a replicated nut instead; bounce it in place.
+EMSCRIPTEN_KEEPALIVE
+int anchor_test_reflect_nut(const char* keyStr, int dist) {
+    using namespace EnemySync;
+    if (gPlayState == NULL) {
+        return 0;
+    }
+    uint64_t key = strtoull(keyStr, nullptr, 10); // dynamic keys use bit 63: no doubles
+    auto it = keyToActor.find(key);
+    if (it == keyToActor.end()) {
+        return 0;
+    }
+    Actor* target = it->second;
+    if (dist == 0) {
+        ColliderCylinder* col = ProjectileCollider(target);
+        if (col == nullptr || target->update == NULL) {
+            return 0;
+        }
+        col->base.atFlags &= ~AT_TYPE_ENEMY;
+        col->base.atFlags |= AT_TYPE_PLAYER;
+        col->info.toucher.dmgFlags = 2;
+        target->world.rot.y += 0x8000;
+        return 2;
+    }
+    Player* player = GET_PLAYER(gPlayState);
+    s16 yawToPlayer = Actor_WorldYawTowardActor(target, &player->actor);
+    f32 x = target->world.pos.x + Math_SinS(yawToPlayer) * dist;
+    f32 z = target->world.pos.z + Math_CosS(yawToPlayer) * dist;
+    Actor* nut = Actor_Spawn(&gPlayState->actorCtx, gPlayState, ACTOR_EN_NUTSBALL, x, target->world.pos.y + 12.0f, z,
+                             0, yawToPlayer + 0x8000, 0, 1, false);
+    if (nut == NULL) {
+        return 0;
+    }
+    ColliderCylinder* col = &((EnNutsball*)nut)->collider;
+    col->base.atFlags &= ~AT_TYPE_ENEMY;
+    col->base.atFlags |= AT_TYPE_PLAYER;
+    col->info.toucher.dmgFlags = 2;
+    return 1;
+}
+
+} // extern "C"
 #endif

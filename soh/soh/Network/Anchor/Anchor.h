@@ -133,6 +133,7 @@ class Anchor : public Network {
     void HandlePacket_HordeEvent(nlohmann::json payload);
     void HandlePacket_EnemyRoster(nlohmann::json payload);
     void HandlePacket_EnemySpawn(nlohmann::json payload);
+    void HandlePacket_ProjectileReflect(nlohmann::json payload);
     void HandlePacket_EnemyState(nlohmann::json payload);
     void HandlePacket_EntranceDiscovered(nlohmann::json payload);
     void HandlePacket_GameComplete(nlohmann::json payload);
@@ -179,6 +180,7 @@ class Anchor : public Network {
     inline static const std::string ENEMY_ROSTER = "ENEMY_ROSTER";
     inline static const std::string ENEMY_SPAWN = "ENEMY_SPAWN";
     inline static const std::string ENEMY_STATE = "ENEMY_STATE";
+    inline static const std::string PROJECTILE_REFLECT = "PROJECTILE_REFLECT";
     inline static const std::string ENTRANCE_DISCOVERED = "ENTRANCE_DISCOVERED";
     inline static const std::string GAME_COMPLETE = "GAME_COMPLETE";
     inline static const std::string GIVE_ITEM = "GIVE_ITEM";
@@ -230,13 +232,15 @@ class Anchor : public Network {
     void SendPacket_EnemyDespawn(uint64_t enemyKey);
     void SendPacket_EnemyDied(Actor* actor, uint64_t enemyKey, bool permanent);
     void SendPacket_EnemyHit(Actor* actor, uint64_t enemyKey, u8 damage, u32 dmgFlags, Vec3s hitPos, u8 health);
-    void SendPacket_EnemyHitRequest(Actor* actor, uint64_t enemyKey, u8 damage, u32 dmgFlags, Vec3s hitPos);
+    void SendPacket_EnemyHitRequest(Actor* actor, uint64_t enemyKey, u8 damage, u32 dmgFlags, Vec3s hitPos,
+                                    Actor* projectile);
     void SendPacket_EnemyPlayerEffect(uint32_t targetClientId, u8 kind, s32 amount, s16 rot, f32 speed, f32 yVel,
                                       u8 kbType);
     void SendPacket_EnemyRosterRequest(int16_t roomNum);
     void SendPacket_EnemySpawn(uint64_t enemyKey, int16_t actorId, uint16_t params, Vec3f pos, Vec3s rot,
                                int16_t roomNum, uint64_t parentKey);
     void SendPacket_EnemyState(nlohmann::json& enemies);
+    void SendPacket_ProjectileReflect(uint64_t projectileKey, Vec3f pos, s16 rotY);
     void SendPacket_EntranceDiscovered(u16 entranceIndex);
     void SendPacket_GameComplete();
     void SendPacket_GiveItem(u16 modId, s16 getItemId);

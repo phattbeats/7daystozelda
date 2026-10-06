@@ -122,6 +122,18 @@ void ReconcileRoster(int16_t roomNum, const nlohmann::json& entries);
 // packet is processed). Scene-scoped; cleared on scene teardown.
 void NoteUnresolvedRemoteKill(uint64_t key);
 
+// Projectile reflection (PROJECTILE_REFLECT): turns our copy of a Deku nut /
+// Octorok rock around the way the sender's shield did. The copy only shows the
+// bounce — it can't hit anything, because the reflector's hit request is what
+// lands the hit on the enemy (exactly once).
+void HandleRemoteReflect(uint64_t key, Vec3f pos, s16 rotY);
+
+// Hit requests from a reflected projectile: a stand-in attacker with the
+// projectile's actor id, so enemies that check collider.base.ac->id (Hint Deku
+// Scrubs only fall for their own nut) react as if the nut hit them here. Also
+// retires our copy of that projectile. Static storage: never dangles.
+Actor* ProjectileAttacker(uint64_t key, int16_t actorId, Vec3f pos, Vec3s rot);
+
 // Exact lookup by packed key. Static keys fall back to a fuzzy match (same
 // actorId+params, nearest home position) that logs loudly — fuzzy hits are the
 // desync canary; dynamic keys never fuzzy-match. Keys of recently destroyed

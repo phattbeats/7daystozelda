@@ -22,7 +22,7 @@ extern PlayState* gPlayState;
  */
 
 void Anchor::SendPacket_EnemyHitRequest(Actor* actor, uint64_t enemyKey, uint8_t damage, uint32_t dmgFlags,
-                                        Vec3s hitPos) {
+                                        Vec3s hitPos, Actor* projectile) {
     if (!IsSaveLoaded() || !EnemySync::SyncEnabled() || gPlayState == NULL) {
         return;
     }
@@ -42,6 +42,14 @@ void Anchor::SendPacket_EnemyHitRequest(Actor* actor, uint64_t enemyKey, uint8_t
     payload["dmgFlags"] = dmgFlags;
     payload["hitPos"] = hitPos;
     payload["targetClientId"] = authorityId;
+    // The hit came from a replicated projectile we reflected: the authority has
+    // to see the projectile as the attacker, not our puppet (see ProjectileAttacker).
+    if (projectile != nullptr) {
+        payload["srcKey"] = EnemySync::KeyForActor(projectile);
+        payload["srcId"] = projectile->id;
+        payload["srcPos"] = projectile->world.pos;
+        payload["srcRot"] = projectile->world.rot;
+    }
 
     SendJsonToRemote(payload);
     ESYNC_LOG("[EnemySync] HITREQ tx key={:#x} dmg={} flags={:#x}", enemyKey, damage, dmgFlags);
@@ -75,6 +83,11 @@ void Anchor::HandlePacket_EnemyHitRequest(nlohmann::json payload) {
     uint32_t clientId = payload["clientId"].get<uint32_t>();
     if (clients.contains(clientId) && clients[clientId].player != NULL) {
         attacker = &clients[clientId].player->actor;
+    }
+
+    if (payload.contains("srcId")) {
+        attacker = EnemySync::ProjectileAttacker(payload["srcKey"].get<uint64_t>(), payload["srcId"].get<int16_t>(),
+                                                 payload["srcPos"].get<Vec3f>(), payload["srcRot"].get<Vec3s>());
     }
 
     uint8_t damage = payload["damage"].get<uint8_t>();

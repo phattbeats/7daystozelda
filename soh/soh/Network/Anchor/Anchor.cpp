@@ -145,6 +145,8 @@ void Anchor::ProcessIncomingPacketQueue() {
             HandlePacket_EnemyRoster(payload);
         else if (packetType == ENEMY_SPAWN)
             HandlePacket_EnemySpawn(payload);
+        else if (packetType == PROJECTILE_REFLECT)
+            HandlePacket_ProjectileReflect(payload);
         else if (packetType == ENEMY_STATE)
             HandlePacket_EnemyState(payload);
         else if (packetType == ENTRANCE_DISCOVERED)

@@ -61,3 +61,46 @@ void Anchor::HandlePacket_EnemySpawn(nlohmann::json payload) {
                                  payload["rot"].get<Vec3s>(), payload["roomNum"].get<int16_t>(),
                                  payload["parentKey"].get<uint64_t>());
 }
+
+/**
+ * PROJECTILE_REFLECT
+ *
+ * A replicated projectile (Deku nut / Octorok rock) bounced off this client's
+ * shield. Every copy runs its own physics, so without this the other players'
+ * copies keep flying past the reflector and the bounce only exists on one screen.
+ * Sent by whichever client reflected it, authority or not.
+ */
+
+void Anchor::SendPacket_ProjectileReflect(uint64_t projectileKey, Vec3f pos, s16 rotY) {
+    if (!IsSaveLoaded() || !EnemySync::SyncEnabled() || gPlayState == NULL) {
+        return;
+    }
+
+    nlohmann::json payload;
+    payload["type"] = PROJECTILE_REFLECT;
+    payload["quiet"] = true;
+    payload["sceneNum"] = gPlayState->sceneNum;
+    payload["key"] = projectileKey;
+    payload["pos"] = pos;
+    payload["rotY"] = rotY;
+
+    for (auto& [clientId, client] : clients) {
+        if (client.sceneNum == gPlayState->sceneNum && client.online && client.isSaveLoaded && !client.self) {
+            payload["targetClientId"] = clientId;
+            SendJsonToRemote(payload);
+        }
+    }
+    ESYNC_LOG("[EnemySync] REFLECT tx key={:#x}", projectileKey);
+}
+
+void Anchor::HandlePacket_ProjectileReflect(nlohmann::json payload) {
+    if (!IsSaveLoaded() || !EnemySync::SyncEnabled() || !EnemySync::MirroringEnabled() || gPlayState == NULL) {
+        return;
+    }
+    if (payload["sceneNum"].get<int16_t>() != gPlayState->sceneNum) {
+        return;
+    }
+
+    EnemySync::HandleRemoteReflect(payload["key"].get<uint64_t>(), payload["pos"].get<Vec3f>(),
+                                   payload["rotY"].get<int16_t>());
+}
