@@ -397,7 +397,7 @@ static void AddCollider(Actor* actor, TrackedState& st, Collider* collider) {
 }
 
 static void OnColliderSetup(Actor* actor, Collider* collider) {
-    if (actor == NULL || collider == NULL || !IsTrackedCategory(actor)) {
+    if (actor == NULL || collider == NULL) {
         return;
     }
     auto it = tracked.find(actor);
@@ -406,6 +406,10 @@ static void OnColliderSetup(Actor* actor, Collider* collider) {
         return;
     }
     // Not tracked yet — likely inside the overlay init, before OnActorInit.
+    // Ring it whatever the category: some enemies only switch to ACTORCAT_ENEMY
+    // at the end of their own init (En_Sw wall Skulltulas start as NPCs), after
+    // their colliders are set up. Uncaptured, a mirror that never ran the AI has
+    // no hitbox to submit or to land a remote death on (PHA-4019).
     colliderSetupRing[colliderSetupRingIndex] = { actor, collider };
     colliderSetupRingIndex = (colliderSetupRingIndex + 1) % 16;
 }
@@ -543,6 +547,19 @@ void ApplyRemoteHit(Actor* actor, uint8_t damage, uint32_t dmgFlags, Vec3s hitPo
     // then let the enemy's own update consume it (hurt anim, knockback, death).
     // Same trick Anchor already uses for destructible walls in HookHandlers.cpp.
     actor->colChkInfo.damage = damage;
+
+    // A mirror suppressed since its first frame never ran CollisionCheck_SetAC,
+    // so acCollider is unset. Use the captured hurtbox instead: the direct-health
+    // fallback below leaves an enemy whose death is driven by AC_HIT (En_Sw) at
+    // 0 HP, alive and unhittable — a ghost (PHA-4019).
+    if (state.acCollider == nullptr) {
+        for (Collider* col : state.colliders) {
+            if (col != nullptr && col->actor == actor && (col->acFlags & AC_ON)) {
+                state.acCollider = col;
+                break;
+            }
+        }
+    }
 
     if (state.acCollider != nullptr) {
         Collider* col = state.acCollider;
@@ -1856,3 +1873,48 @@ void RegisterHooks(bool isConnected) {
 }
 
 } // namespace EnemySync
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+extern "C" {
+// PHA-4019 tests: list tracked enemies (id, key, captured colliders, mirror
+// state). kill >= 0 lands a lethal hit on the actor with that id, the way a
+// local sword hit would, through its captured hurtbox. kill -2 forgets each
+// enemy's AC collider (a mirror that never ran the AI); -3 also drops the
+// captured colliders (what the pre-PHA-4019 capture left for En_Sw).
+EMSCRIPTEN_KEEPALIVE
+const char* anchor_test_enemies(int kill) {
+    static std::string out;
+    nlohmann::json j = nlohmann::json::array();
+    for (auto& [actor, st] : EnemySync::tracked) {
+        if (kill <= -2) {
+            st.acCollider = nullptr;
+            if (kill == -3) {
+                st.colliders.clear();
+            }
+        }
+        if (actor->id == kill && actor->update != NULL && actor->colChkInfo.health > 0) {
+            for (Collider* col : st.colliders) {
+                if (col != nullptr && col->actor == actor && (col->acFlags & AC_ON)) {
+                    actor->colChkInfo.damage = actor->colChkInfo.health;
+                    col->acFlags |= AC_HIT;
+                    kill = -1;
+                    break;
+                }
+            }
+        }
+        j.push_back({ { "id", actor->id },
+                      { "key", st.key },
+                      { "hp", actor->colChkInfo.health },
+                      { "colliders", st.colliders.size() },
+                      { "ac", st.acCollider != nullptr },
+                      { "suppressed", st.suppressed },
+                      { "dying", st.dying },
+                      { "pos", { actor->world.pos.x, actor->world.pos.y, actor->world.pos.z } } });
+    }
+    j = { { "enemies", j }, { "auth", EnemySync::CurrentAuthorityId() }, { "self", Anchor::Instance->ownClientId } };
+    out = j.dump();
+    return out.c_str();
+}
+}
+#endif
