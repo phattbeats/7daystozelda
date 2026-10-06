@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <iterator>
 
 extern "C" {
 #include "z64.h"
@@ -585,7 +586,14 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
     }
     if (tab == PAGE_CRAFT || tab == PAGE_TRADE) {
         const PoolState& pool = GetPool();
+        // PHA-4018: base kits first, then consumables, so the pieces don't need a scroll.
+        std::vector<const Recipe*> order;
         for (const Recipe& recipe : GetRecipes()) {
+            order.push_back(&recipe);
+        }
+        std::stable_partition(order.begin(), order.end(), [](const Recipe* r) { return r->kind == RECIPE_KIT; });
+        for (const Recipe* rp : order) {
+            const Recipe& recipe = *rp;
             bool trade = recipe.kind == RECIPE_TRADE;
             if (recipe.kind == RECIPE_BUY || trade != (tab == PAGE_TRADE)) {
                 continue;
@@ -623,31 +631,10 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
         return rows;
     }
 
-    // Base: how often raids come (the host picks), place a kit (the pause menu closes for
-    // the ghost), or pack pieces up.
-    if (RaidsEnabled()) {
-        uint32_t days = RaidInterval();
-        bool picked = GetBase().raidInterval != 0;
-        PageRow raids;
-        raids.name = days == 1 ? std::string("Raids every night") : fmt::format("Raids every {} days", days);
-        raids.icon = gItemIconDekuStickTex;
-        raids.enabled = Net::IsOwner();
-        raids.right = picked ? "" : "pick one";
-        raids.hint = raids.enabled ? "Change how often" : "The host decides";
-        raids.action = [days]() {
-            size_t next = 0;
-            for (size_t i = 0; i < ARRAY_COUNT(kIntervals); i++) {
-                if (kIntervals[i].days == days) {
-                    next = (i + 1) % ARRAY_COUNT(kIntervals);
-                }
-            }
-            Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
-            RequestRaidInterval(kIntervals[next].days);
-        };
-        rows.push_back(std::move(raids));
-    }
-
+    // Base: place a kit (the pause menu closes for the ghost), how often raids come, or
+    // pack pieces up. PHA-4018: the kits come first, the ones in the pool ahead of the rest.
     const PoolState& pool = GetPool();
+    std::vector<PageRow> empty;
     for (int t = 0; t < PLACEABLE_COUNT; t++) {
         const PlaceableInfo& info = GetPlaceableInfo((uint8_t)t);
         if (info.kit[0] == '\0') {
@@ -668,7 +655,31 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
             ClosePauseMenu(play);
             BeginPlacement(type);
         };
-        rows.push_back(std::move(row));
+        (count > 0 ? rows : empty).push_back(std::move(row));
+    }
+    std::move(empty.begin(), empty.end(), std::back_inserter(rows));
+
+    // How often raids come (the host picks).
+    if (RaidsEnabled()) {
+        uint32_t days = RaidInterval();
+        bool picked = GetBase().raidInterval != 0;
+        PageRow raids;
+        raids.name = days == 1 ? std::string("Raids every night") : fmt::format("Raids every {} days", days);
+        raids.icon = gItemIconDekuStickTex;
+        raids.enabled = Net::IsOwner();
+        raids.right = picked ? "" : "pick one";
+        raids.hint = raids.enabled ? "Change how often" : "The host decides";
+        raids.action = [days]() {
+            size_t next = 0;
+            for (size_t i = 0; i < ARRAY_COUNT(kIntervals); i++) {
+                if (kIntervals[i].days == days) {
+                    next = (i + 1) % ARRAY_COUNT(kIntervals);
+                }
+            }
+            Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+            RequestRaidInterval(kIntervals[next].days);
+        };
+        rows.push_back(std::move(raids));
     }
 
     uint16_t nearest = NearestPlaceable(150.0f);

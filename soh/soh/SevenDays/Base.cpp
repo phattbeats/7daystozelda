@@ -593,6 +593,8 @@ static void Toast(const std::string& prefix, const std::string& message, bool er
     Sfx_PlaySfxCentered(error ? NA_SE_SY_ERROR : NA_SE_SY_GET_ITEM);
 }
 
+static void EndPlacement();
+
 static void OnPlaceResult(const nlohmann::json& payload) {
     if (payload.value("reqId", 0u) != sPlaceInFlight.reqId) {
         return;
@@ -600,6 +602,20 @@ static void OnPlaceResult(const nlohmann::json& payload) {
     sPlaceInFlight = {};
     uint8_t type = payload.value("ptype", (uint8_t)0);
     if (payload.value("ok", false)) {
+        // PHA-4018: placement stays open for the next kit of the same piece until B,
+        // the pause menu, or the last kit.
+        auto kit = GetPool().kits.find(GetPlaceableInfo(type).kit);
+        uint32_t left = payload.value("left", kit != GetPool().kits.end() ? kit->second : 0u);
+        if (InPlacement() && PlacementGhostType() == type) {
+            if (left == 0) {
+                EndPlacement();
+                Toast("Built", fmt::format("{} (that was the last kit)", GetPlaceableInfo(type).name), false);
+                return;
+            }
+            Toast("Built", fmt::format("{} ({} left: A place another, B done)", GetPlaceableInfo(type).name, left),
+                  false);
+            return;
+        }
         Toast("Built", GetPlaceableInfo(type).name, false);
     } else {
         Toast(GetPlaceableInfo(type).name, payload.value("reason", "Couldn't build there"), true);
@@ -704,6 +720,7 @@ static void ProcessPlaceRequest(const nlohmann::json& payload, uint32_t requeste
 
     result["ok"] = true;
     result["id"] = p.id;
+    result["left"] = kit->second; // PHA-4018: the builder keeps placing while this is above 0
     Reply(requester, result);
 }
 
@@ -1263,6 +1280,7 @@ struct PlacementState {
     bool stacked = false; // PHA-3945: on top of another piece
     int16_t finalRot = 0; // PHA-3945: rot, or the angle a snap turned it to
     bool armed = false;   // A has been up since placement began: a held A doesn't place
+    bool unpaused = false; // PHA-4018: the pause menu has been shut since placement began
 };
 static PlacementState sPlace;
 
@@ -1310,7 +1328,7 @@ void BeginPlacement(uint8_t type) {
     // Face the same way as Link, snapped to 45 degrees.
     sPlace.rot = (int16_t)(((player->actor.shape.rot.y + 0x1000) / 0x2000) * 0x2000);
     Notification::Emit({ .prefix = fmt::format("Placing {}", info.name),
-                         .message = "C-Left/C-Right rotate, A place, B cancel",
+                         .message = "C-Left/C-Right rotate, A place, B done",
                          .remainingTime = 5.0f,
                          .mute = true });
 }
@@ -1827,14 +1845,17 @@ void PlacementUpdate(Actor* ghost, PlayState* play) {
         return;
     }
     if ((pressed & BTN_A) && armed) {
+        if (sPlaceInFlight.reqId != 0) {
+            return; // the last one hasn't landed yet; its answer says whether a kit is left
+        }
         if (!sPlace.valid) {
             Toast(GetPlaceableInfo(sPlace.type).name, sPlace.reason.empty() ? "Can't build here" : sPlace.reason,
                   true);
             return;
         }
         Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+        // PHA-4018: the ghost stays up; OnPlaceResult ends placement on the last kit.
         SendPlaceRequest();
-        EndPlacement();
     }
 }
 
@@ -2001,7 +2022,14 @@ void BaseOnFrame() {
     }
     if (sPlace.active && gPlayState != nullptr) {
         Player* player = GET_PLAYER(gPlayState);
-        if (player == nullptr || gPlayState->msgCtx.msgMode != MSGMODE_NONE ||
+        // PHA-4018: placement repeats, so opening the pause menu is one of the ways out.
+        // Placement starts while the Workbench page is still closing; only a pause that
+        // opens after that counts.
+        bool paused = gPlayState->pauseCtx.state != 0;
+        if (!paused) {
+            sPlace.unpaused = true;
+        }
+        if (player == nullptr || gPlayState->msgCtx.msgMode != MSGMODE_NONE || (paused && sPlace.unpaused) ||
             (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE))) {
             EndPlacement();
         }
