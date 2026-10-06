@@ -35,9 +35,14 @@ constexpr auto WARP_EXPIRY = std::chrono::seconds(30);
 // Plain entrance warp — mirrors EnemySyncTestBoot.cpp. respawnFlag is deliberately
 // left untouched (0) so Cutscene_HandleEntranceTriggers (respawnFlag <= 0 at
 // z_demo.c:2200) still arms; a synced entrance/scene-layer cutscene replays on load.
+// The cutscene goes through nextCutsceneIndex, which Play_Init copies into
+// cutsceneIndex (z_play.c:443). Writing cutsceneIndex here would make the scene we
+// are leaving start a cutscene on the next frame (Cutscene_UpdateAuto runs whenever it
+// is >= 0xFFF0) and run that scene's stale csCtx.segment script: the host tab crashed
+// when a teammate's save load pulled it out of Deku Tree B2 (PHA-4030).
 void ExecuteEntranceWarp(const PendingWarp& w) {
     if (w.cutsceneIndex >= 0) {
-        gSaveContext.cutsceneIndex = w.cutsceneIndex;
+        gSaveContext.nextCutsceneIndex = (u16)w.cutsceneIndex;
     }
     gPlayState->nextEntranceIndex = w.entranceIndex;
     gPlayState->transitionTrigger = TRANS_TRIGGER_START;
@@ -136,3 +141,15 @@ void RegisterCoopWarpHooks(bool isConnected) {
     // per-frame dispatcher (CoopWarpTick) so the Anchor-internal tick order is explicit.
     // The disconnect path above still clears the pending slot.
 }
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+extern "C" {
+
+// PHA-4030 tests: queue the same pull warp a CUTSCENE_SYNC packet queues.
+EMSCRIPTEN_KEEPALIVE
+void anchor_test_coop_warp(int entrance, int cutsceneIndex) {
+    RequestEntranceWarp((s16)entrance, cutsceneIndex);
+}
+}
+#endif

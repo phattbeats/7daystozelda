@@ -75,6 +75,13 @@ struct ReplayLatch {
 ReplayLatch sEntranceCsReplay;   // kind 0, consumed by the VB_PLAY_ENTRANCE_CS hook
 ReplayLatch sSceneLayerCsReplay; // kind 1, consumed by the OnSceneInit detector
 
+// Set by OnLoadGame, cleared by the first ordinary scene load after it. A save load
+// can open on a chain of scene-layer cutscenes (a new file's intro dream, then "Wake
+// up!" in Link's house; a save made before that ended), but that is the loading
+// player's own start, not a story trigger: broadcasting it pulled teammates out of
+// wherever they were whenever someone (re)joined (PHA-4030).
+bool sOpeningCutscenes = false;
+
 bool ConsumeLatch(ReplayLatch& latch, s32 entrance) {
     if (latch.armed && latch.entrance == entrance) {
         latch.armed = false;
@@ -291,7 +298,10 @@ void RegisterCutsceneSyncHooks(bool isConnected) {
         sEntranceCsReplay = {};
         sSceneLayerCsReplay = {};
         sPendingReplay = {};
+        sOpeningCutscenes = false;
     }
+
+    COND_HOOK(OnLoadGame, isConnected, [](int32_t fileNum) { sOpeningCutscenes = true; });
 
     // NOTE: the per-frame reconcile is NOT registered here; it is driven by the Anchor
     // per-frame dispatcher (CutsceneSyncTick) so the Anchor-internal tick order is explicit.
@@ -322,7 +332,12 @@ void RegisterCutsceneSyncHooks(bool isConnected) {
     COND_HOOK(OnSceneInit, isConnected, [](int16_t sceneNum) {
         s32 cutsceneIndex = gSaveContext.cutsceneIndex;
         if (cutsceneIndex < SCENE_LAYER_CS_MIN) {
+            sOpeningCutscenes = false;
             return; // ordinary load, not a scene-layer cutscene
+        }
+        if (sOpeningCutscenes) {
+            SPDLOG_INFO("[CutsceneSync] tx skipped (save-load opening) kind=1 cs={}", cutsceneIndex);
+            return;
         }
 
         s32 entrance = gSaveContext.entranceIndex;
@@ -336,3 +351,17 @@ void RegisterCutsceneSyncHooks(bool isConnected) {
         }
     });
 }
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+extern "C" {
+// PHA-4030 tests: broadcast a CUTSCENE_SYNC as if this client had triggered it
+// (kind 1, scene 52, entrance 0xBB, cs 0xFFF0 pulls teammates into "Wake up!").
+EMSCRIPTEN_KEEPALIVE
+void anchor_test_cs_send(int kind, int sceneNum, int entrance, int cutsceneIndex) {
+    if (Anchor::Instance != nullptr) {
+        Anchor::Instance->SendPacket_CutsceneSync(kind, sceneNum, entrance, cutsceneIndex, -1);
+    }
+}
+}
+#endif
