@@ -45,4 +45,4 @@ vol.addEventListener("input",function(){pct.textContent=vol.value+"%";localStora
 btn.addEventListener("click",function(e){e.stopPropagation();if(src){wantPlay=!1;pause()}else{wantPlay=!0;ensureCtx();ctx.resume();start()}});
 var EV=["pointerdown","pointerup","touchend","click","keydown"];function unlock(e){if(done||e.target===btn&&e.type!=="click")return;ensureCtx();var p=ctx.resume();function ok(){if(ctx.state==="running"){EV.forEach(function(n){document.removeEventListener(n,unlock,!0)});e.target!==btn&&start()}}p&&p.then?p.then(ok):ok()}
 EV.forEach(function(n){document.addEventListener(n,unlock,!0)});
-if(ov)new MutationObserver(function(){(ov.classList.contains("hidden")||ov.style.display==="none")&&stop()}).observe(ov,{attributes:!0,attributeFilter:["class","style"]})}()</script><script async src="soh.js?v=4cec92b1"></script></body></html>
+if(ov)new MutationObserver(function(){(ov.classList.contains("hidden")||ov.style.display==="none")&&stop()}).observe(ov,{attributes:!0,attributeFilter:["class","style"]})}()</script><script async src="soh.js?v=2c109bc7"></script></body></html>
