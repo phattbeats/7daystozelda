@@ -161,6 +161,12 @@ static uint8_t skelAnimeRingIndex = 0;
 
 static uint64_t tickCounter = 0;
 static uint32_t cachedAuthorityId = UINT32_MAX;
+// clientId -> tickCounter of its last ENEMY_STATE (see NoteAuthorityClaim).
+static std::unordered_map<uint32_t, uint64_t> authorityClaims;
+// A claim counts this long after the claimant's last stream packet. Short, so a
+// legitimate handover (the old authority went down and stopped streaming) isn't
+// held back by its trailing claims.
+static constexpr uint64_t AUTHORITY_CLAIM_TICKS = 10;
 
 // Task 2 (W1 Step 2): per-tick perception-target cache. Holds the clientIds of
 // same-scene live puppets; the local player is always an implicit target, so a
@@ -290,6 +296,7 @@ static void Reset() {
     keyToActor.clear();
     tracked.clear();
     remoteStates.clear();
+    authorityClaims.clear();
     spawnCounts.clear();
     recentlyDeadKeys.clear();
     pendingRemoteKills.clear();
@@ -331,6 +338,36 @@ static uint32_t ElectAuthority(bool requireAlive) {
     return best;
 }
 
+// Split-brain resolution: a same-scene peer that is streaming has elected
+// itself. If our own inputs (its life state, scene, save state) disagree with
+// its view, both of us would run the AI and drop each other's stream. Folding
+// fresh claims into the election makes both sides settle on the lowest
+// claimant; the other one stops streaming, so this never oscillates.
+static uint32_t ApplyAuthorityClaims(uint32_t elected) {
+    uint32_t best = elected;
+    for (auto it = authorityClaims.begin(); it != authorityClaims.end();) {
+        if (tickCounter - it->second > AUTHORITY_CLAIM_TICKS) {
+            it = authorityClaims.erase(it);
+            continue;
+        }
+        auto cit = Anchor::Instance->clients.find(it->first);
+        if (cit != Anchor::Instance->clients.end() && !cit->second.self && cit->second.online &&
+            cit->second.isSaveLoaded && cit->second.sceneNum == gPlayState->sceneNum) {
+            best = std::min(best, it->first);
+        }
+        ++it;
+    }
+    if (best != elected && cachedAuthorityId != best) {
+        SPDLOG_INFO("[EnemySync] split brain: elected {} but client {} is streaming; deferring to {}", elected,
+                    best, best);
+    }
+    return best;
+}
+
+void NoteAuthorityClaim(uint32_t clientId) {
+    authorityClaims[clientId] = tickCounter;
+}
+
 static uint32_t ComputeAuthorityClientId() {
     if (Anchor::Instance == nullptr || !Anchor::Instance->IsSaveLoaded() || gPlayState == NULL) {
         return UINT32_MAX;
@@ -338,12 +375,12 @@ static uint32_t ComputeAuthorityClientId() {
     // Prefer the alive-eligible election so a dead player never keeps enemy authority.
     uint32_t alive = ElectAuthority(true);
     if (alive != UINT32_MAX) {
-        return alive;
+        return ApplyAuthorityClaims(alive);
     }
     // Nobody in-scene is alive (both dead): fall back to the aliveness-agnostic
     // election so the authority id stays put — no flapping while the shared
     // game-over sequence runs. The 30-tick stale stream fallback remains the crash net.
-    return ElectAuthority(false);
+    return ApplyAuthorityClaims(ElectAuthority(false));
 }
 
 static bool AnySameScenePeer() {

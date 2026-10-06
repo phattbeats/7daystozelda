@@ -46,6 +46,9 @@ void Anchor::HandlePacket_EnemyState(nlohmann::json payload) {
     if (!payload.contains("sceneNum") || payload["sceneNum"].get<int16_t>() != gPlayState->sceneNum) {
         return;
     }
+    if (payload.contains("clientId")) {
+        EnemySync::NoteAuthorityClaim(payload["clientId"].get<uint32_t>());
+    }
     // Split-brain guard: only the currently elected authority's stream is
     // applied, and a client that believes it is the authority applies nothing.
     if (EnemySync::IsLocalAuthority()) {

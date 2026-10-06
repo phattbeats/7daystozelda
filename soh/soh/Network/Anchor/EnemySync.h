@@ -69,6 +69,12 @@ bool MirroringEnabled();
 
 // The clientId that owns enemy AI for the local scene (lowest clientId among
 // same-scene, save-loaded clients, self included). UINT32_MAX when unknown.
+// ENEMY_STATE receipt: the sender is streaming, i.e. it elected itself. Fresh
+// claims feed the election so two clients that disagree about who is in charge
+// (split brain) both settle on the lowest claimant instead of each running its
+// own copy of every enemy (PHA-4023).
+void NoteAuthorityClaim(uint32_t clientId);
+
 uint32_t CurrentAuthorityId();
 bool IsLocalAuthority();
 
