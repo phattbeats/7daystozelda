@@ -128,8 +128,10 @@ void Sram_OpenSave() {
             break;
 
         default:
-            // Use the saved entrance value with remember save location, except when in grottos/fairy fountains
-            if (CVarGetInteger(CVAR_ENHANCEMENT("RememberSaveLocation"), 0) &&
+            // Use the saved entrance value with remember save location, except when in grottos/fairy fountains.
+            // PHA-4026: 7 Days to Zelda always does, so a reload doesn't send child Link back to Kokiri.
+            if ((CVarGetInteger(CVAR_ENHANCEMENT("RememberSaveLocation"), 0) ||
+                 CVarGetInteger("gSevenDays.Enabled", 0)) &&
                 gSaveContext.savedSceneNum != SCENE_FAIRYS_FOUNTAIN && gSaveContext.savedSceneNum != SCENE_GROTTOS) {
                 break;
             }
