@@ -637,6 +637,26 @@ void ReleaseForDeath(Actor* actor) {
     ForceUncull(actor, st);
 }
 
+bool HandOffRemoteDefeat(Actor* actor) {
+    auto it = tracked.find(actor);
+    const ActorSyncAdapter* adapter = GetAdapter(actor->id);
+    if (it == tracked.end() || adapter == nullptr || adapter->OnRemoteDefeat == nullptr) {
+        return false;
+    }
+    TrackedState& st = it->second;
+    // Never inject a lethal synthetic hit or force-kill: a boss whose stream
+    // went stale is running local AI in a state that may not take damage, and
+    // Actor_Kill without the defeat sequence leaves no blue warp (PHA-4023).
+    st.pendingKillFrames = 0;
+    if (st.dying) {
+        return true; // defeat already handed off (phase edge or earlier packet)
+    }
+    adapter->OnRemoteDefeat(actor);
+    ESYNC_LOG("[EnemySync] remote defeat handoff key={:#x} id={}", st.key, actor->id);
+    ReleaseForDeath(actor);
+    return true;
+}
+
 // Reads this frame's collision results (CollisionCheck_Damage already resolved
 // the damage table, even for suppressed actors) and forwards them to the
 // authority as a hit request. Local feedback: red damage flash; the hit spark
@@ -1615,8 +1635,11 @@ static void OnEnemyActorKill(Actor* actor) {
         return;
     }
 
-    // Only broadcast real deaths (health exhausted), not despawns/cleanup kills
-    if (state.deathCooldown == 0 && actor->colChkInfo.health == 0) {
+    // Only broadcast real deaths (health exhausted), not despawns/cleanup kills.
+    // Bosses decrement health as s8 (Gohma's final hit can leave it negative).
+    bool healthExhausted = actor->colChkInfo.health == 0 ||
+                           (GetAdapter(actor->id) != nullptr && (int8_t)actor->colChkInfo.health <= 0);
+    if (state.deathCooldown == 0 && healthExhausted) {
         state.deathCooldown = DEATH_COOLDOWN_FRAMES;
         Anchor::Instance->SendPacket_EnemyDied(actor, state.key, /*permanent=*/true);
     } else if (state.deathCooldown == 0 && state.dynamicKey && MirroringEnabled() && IsLocalAuthority()) {
@@ -1648,6 +1671,19 @@ static void OnEnemyDefeated(Actor* actor) {
     // Defeat-hook deaths (regrowers like En_Karebaba never Actor_Kill): the
     // receiver must not force-kill if its copy can't consume the lethal hit.
     Anchor::Instance->SendPacket_EnemyDied(actor, state.key, /*permanent=*/false);
+}
+
+// Boss defeats: announce at the killing blow, not only at the Actor_Kill that
+// ends the defeat sequence, so a mirror whose stream went stale starts its own
+// defeat (and blue warp) with everyone else. deathCooldown stays untouched: the
+// authority must keep streaming the defeat phase edge.
+static void OnBossDefeated(Actor* actor) {
+    auto it = tracked.find(actor);
+    if (it == tracked.end() || GetAdapter(actor->id) == nullptr) {
+        return;
+    }
+    ESYNC_LOG("[EnemySync] BOSS DEFEAT id={} -> broadcasting death", actor->id);
+    Anchor::Instance->SendPacket_EnemyDied(actor, it->second.key, /*permanent=*/false);
 }
 
 static void OnEnemyActorDestroy(Actor* actor) {
@@ -1762,6 +1798,12 @@ void RegisterHooks(bool isConnected) {
     COND_HOOK(OnEnemyDefeat, isConnected, [](void* actor) {
         if (SyncEnabled() && actor != NULL) {
             OnEnemyDefeated((Actor*)actor);
+        }
+    });
+
+    COND_HOOK(OnBossDefeat, isConnected, [](void* actor) {
+        if (SyncEnabled() && actor != NULL) {
+            OnBossDefeated((Actor*)actor);
         }
     });
 

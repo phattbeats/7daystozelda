@@ -28,6 +28,10 @@ struct ActorSyncAdapter {
     // Mirror: gate suppression; false = run the actor locally this frame
     // (e.g. intro cutscenes must run on every client).
     bool (*ShouldMirror)(Actor* actor, uint8_t streamedPhase) = nullptr;
+    // Mirror: a remote client reported this boss defeated (ENEMY_DIED) but our
+    // copy never took the streamed defeat edge (stale stream, missed frame).
+    // Start the local defeat sequence; no-op if it is already running.
+    void (*OnRemoteDefeat)(Actor* actor) = nullptr;
 };
 
 namespace EnemySync {

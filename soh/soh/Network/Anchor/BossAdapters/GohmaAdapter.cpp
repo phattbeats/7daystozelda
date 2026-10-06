@@ -100,6 +100,15 @@ static bool Gohma_OnPhaseChange(Actor* actor, uint8_t fromPhase, uint8_t toPhase
     return false;
 }
 
+static void Gohma_OnRemoteDefeat(Actor* actor) {
+    if (Gohma_GetPhase(actor) == GOHMA_PHASE_DEFEATED) {
+        return; // already decaying locally
+    }
+    actor->colChkInfo.health = 0;
+    BossGoma_SetupDefeated((BossGoma*)actor, gPlayState);
+    ESYNC_LOG("[GohmaSync] remote defeat (missed phase edge, SetupDefeated called locally)");
+}
+
 static bool Gohma_ShouldMirror(Actor* actor, uint8_t streamedPhase) {
     BossGoma* g = (BossGoma*)actor;
     // Mirror only during the fight proper, and only once our own intro is done
@@ -114,5 +123,6 @@ void RegisterGohmaAdapter() {
     adapter.GetPhase = Gohma_GetPhase;
     adapter.OnPhaseChange = Gohma_OnPhaseChange;
     adapter.ShouldMirror = Gohma_ShouldMirror;
+    adapter.OnRemoteDefeat = Gohma_OnRemoteDefeat;
     EnemySync::RegisterAdapter(ACTOR_BOSS_GOMA, adapter);
 }

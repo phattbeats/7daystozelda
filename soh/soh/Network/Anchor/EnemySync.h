@@ -94,6 +94,12 @@ uint64_t KeyForActor(Actor* actor);
 // simulation play the death (called on ENEMY_DIED receipt, before ApplyRemoteDeath).
 void ReleaseForDeath(Actor* actor);
 
+// Boss defeat handoff on ENEMY_DIED receipt for adapters with OnRemoteDefeat:
+// starts the local defeat sequence if the streamed phase edge was missed, then
+// latches the actor as dying. Returns false when the actor has no such adapter
+// (the caller falls back to ApplyRemoteDeath).
+bool HandOffRemoteDefeat(Actor* actor);
+
 // Game-thread ingest of an ENEMY_STATE payload into the stream cache.
 void IngestEnemyState(const nlohmann::json& payload);
 
