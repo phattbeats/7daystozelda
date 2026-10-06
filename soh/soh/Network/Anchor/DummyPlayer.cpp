@@ -151,11 +151,15 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     if (Anchor::Instance->roomState.pvpMode == 0 ||
         (Anchor::Instance->roomState.pvpMode == 1 &&
          client.teamId == CVarGetString(CVAR_REMOTE_ANCHOR("TeamId"), "default"))) {
+        // Lock-on disabled alone still lets Navi hover over (and chime at) a
+        // teammate, so drop attention entirely (PHA-4021).
         actor->flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
+        actor->flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
         return;
     }
 
     actor->flags &= ~ACTOR_FLAG_LOCK_ON_DISABLED;
+    actor->flags |= ACTOR_FLAG_ATTENTION_ENABLED;
 
     // Tracked enemies already damage the remote player locally on their own
     // machine (mirrored AT colliders) — relaying the puppet hit too would deal
