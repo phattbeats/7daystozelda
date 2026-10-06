@@ -237,6 +237,12 @@ constexpr int ERA_RUINS = 2; // PHA-3935: the child base after the seven-year ju
 constexpr int BASE_CAP = 100; // PHA-3916: pieces share chunked collision actors (Placeables.cpp)
 constexpr float BASE_RADIUS = 800.0f;
 constexpr float TORCH_RADIUS = 300.0f; // spec: no wave spawn point within 300 units of a torch
+// PHA-4038: torchlight. The field's own Stalchildren (En_Encount1's) sink back into the
+// ground within TORCHLIGHT_RADIUS of a torch, and none rise while Link stands within
+// TORCHLIGHT_SPAWNER_RADIUS of one (they come up 100-240 from him). Raiders aren't
+// affected: raids keep their TORCH_RADIUS rule and the ward.
+constexpr float TORCHLIGHT_RADIUS = 450.0f;
+constexpr float TORCHLIGHT_SPAWNER_RADIUS = 700.0f;
 
 struct Placeable {
     uint16_t id = 0; // stable, assigned by the owner; also the actor's params

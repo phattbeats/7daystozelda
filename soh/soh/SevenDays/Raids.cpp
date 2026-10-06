@@ -19,6 +19,7 @@ extern "C" {
 #include "macros.h"
 #include "variables.h"
 #include "functions.h"
+#include "overlays/actors/ovl_En_Encount1/z_en_encount1.h"
 extern PlayState* gPlayState;
 }
 
@@ -557,6 +558,46 @@ static bool PickSpawnPoint(Vec3f* out, const Vec3f* avoid) {
         }
     }
     return false;
+}
+
+// PHA-4038: torchlight. Building in Hyrule Field at night meant a Stalchild every few
+// seconds, torches or not. A torch's light now keeps the field's own spawns away
+// (see TORCHLIGHT_RADIUS), so a base or a torch-lit work spot is a quiet place at night.
+static bool Torchlit(const Vec3f& point, f32 radius) {
+    for (auto& [id, actor] : SpawnedPlaceables()) {
+        const Placeable* p = FindPlaceable(id);
+        if (p != nullptr && p->type == PLACEABLE_TORCH && !IsRuin(*p) &&
+            Math_Vec3f_DistXZ(const_cast<Vec3f*>(&point), &actor->world.pos) < radius) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool IsFieldSpawnerChild(Actor* actor) {
+    return actor->parent != nullptr && actor->parent->id == ACTOR_EN_ENCOUNT1 && actor->parent->update != nullptr;
+}
+
+// No new Stalchildren or Wolfos while Link is in a torch's light. Mirrors already
+// freeze their spawners (EnemySync), so this only matters where the spawner runs.
+static void OnFieldSpawner(void* actorRef, bool* should) {
+    EnEncount1* spawner = (EnEncount1*)actorRef;
+    if (!*should || gPlayState == nullptr ||
+        (spawner->spawnType != SPAWNER_STALCHILDREN && spawner->spawnType != SPAWNER_WOLFOS)) {
+        return;
+    }
+    Player* player = GET_PLAYER(gPlayState);
+    if (player != nullptr && Torchlit(player->actor.world.pos, TORCHLIGHT_SPAWNER_RADIUS)) {
+        *should = false;
+    }
+}
+
+// z_en_skb.c: a spawner's Stalchild in a torch's light burrows, the same as at dawn.
+extern "C" s32 SevenDays_StalchildTorchlit(Actor* actor) {
+    if (!Enabled() || gPlayState == nullptr || !IsFieldSpawnerChild(actor)) {
+        return false;
+    }
+    return Torchlit(actor->world.pos, TORCHLIGHT_RADIUS);
 }
 
 // PHA-4006: every floor point of the spawn ring is within a torch's reach, so the
@@ -1993,6 +2034,7 @@ void RaidsRegisterMessages(const char* table) {
 void RaidsRegisterHooks(bool enabled) {
     COND_ID_HOOK(ShouldActorUpdate, ACTOR_EN_SKB, enabled, OnRaiderPerception);
     COND_ID_HOOK(ShouldActorUpdate, ACTOR_EN_WF, enabled, OnRaiderPerception);
+    COND_ID_HOOK(ShouldActorUpdate, ACTOR_EN_ENCOUNT1, enabled, OnFieldSpawner);
     COND_HOOK(OnActorDestroy, enabled, [](void* actor) { sTrack.erase((Actor*)actor); });
     COND_HOOK(OnSceneSpawnActors, enabled, []() {
         // A new scene: the wave and the transition belong to the old one.
@@ -2053,6 +2095,18 @@ const char* sevendays_test_raid_state() {
                         { "rate", sOwnerClock.rate },
                         { "age", Now() - sOwnerClock.heardAt },
                         { "following", gPlayState != nullptr && FollowingOwnerClock() } };
+    if (gPlayState != nullptr) {
+        // PHA-4038: the field spawner's Stalchildren (distance to Link) and whether Link is torchlit.
+        Player* player = GET_PLAYER(gPlayState);
+        nlohmann::json kids = nlohmann::json::array();
+        for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
+            if (a->id == ACTOR_EN_SKB && IsFieldSpawnerChild(a)) {
+                kids.push_back((int)Math_Vec3f_DistXZ(&a->world.pos, &player->actor.world.pos));
+            }
+        }
+        j["torchlight"] = { { "linkLit", Torchlit(player->actor.world.pos, TORCHLIGHT_SPAWNER_RADIUS) },
+                            { "fieldStalchildren", kids } };
+    }
     j["authority"] = RaidAuthority();
     j["owner"] = IsOwner();
     j["gamestage"] = gPlayState != nullptr ? Gamestage() : 0;
