@@ -92,8 +92,10 @@ static int32_t Interval() {
 static double HoldSeconds() {
     return (double)std::max(0, CVarGetInteger(CVAR_SEVEN_DAYS("RaidHoldSeconds"), 240));
 }
+// A day is 0x8000 of daylight plus 0x8000 of night at double speed: 49152 / speed frames
+// at 20 fps, so 2 makes a day about 20 minutes (PHA-4015; 5 was about 8).
 static uint16_t RaidClockSpeed() {
-    return (uint16_t)std::clamp(CVarGetInteger(CVAR_SEVEN_DAYS("RaidClockSpeed"), 5), 0, 30);
+    return (uint16_t)std::clamp(CVarGetInteger(CVAR_SEVEN_DAYS("RaidClockSpeed"), 2), 0, 30);
 }
 
 // MARK: - Enemies and the budget
@@ -1305,10 +1307,9 @@ static void ClockTick() {
     if (!IsOutdoorScene(gPlayState->sceneNum)) {
         return; // dungeons, interiors and the Market keep their own (frozen) clock
     }
-    uint16_t want = sVanillaIncrement;
-    if (want == 0 && PrologueOver()) {
-        want = RaidClockSpeed(); // about half Hyrule Field's 10: a day lasts ~8 minutes
-    }
+    // After the prologue every outdoor scene keeps the same day (Hyrule Field's own 10
+    // would make it about 4 minutes there).
+    uint16_t want = PrologueOver() ? RaidClockSpeed() : sVanillaIncrement;
     if (HoldingNight() && IS_NIGHT) {
         want = 0;
     }
@@ -1454,8 +1455,20 @@ static void OwnerDawn() {
     const int32_t nightGamestage = b.nightGamestage;
     bool wasRaid = RaidTonight();
     bool wasDusk = (b.story & STORY_DUSK_ACTIVE) != 0;
-    b.daysSurvived++;
     b.story &= ~STORY_DUSK_ACTIVE;
+    if (!PrologueOver()) {
+        // The prologue's nights (the Kokiri Sword's dusk, Hyrule Field's own clock) are
+        // story, not survival: Day 1 lasts until the first raid's dawn (PHA-4015).
+        b.nightDay = 0;
+        b.nightFought = b.nightFailed = b.nightWarded = false;
+        b.nightGamestage = 0;
+        Net::CommitBase();
+        if (wasDusk) {
+            Notice("", "The night things went back into the ground.", {});
+        }
+        return;
+    }
+    b.daysSurvived++;
     std::vector<uint8_t> navi;
     std::string report;
     if (wasRaid) {
