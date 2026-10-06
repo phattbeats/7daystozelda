@@ -103,6 +103,23 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     /* PLACEABLE_DOOR_SWAMP  */ { "doorswamp",  "Swamp door",   60,   8,    100,   120 },
     /* PLACEABLE_DOOR_MUSIC  */ { "doormusic",  "Music Box door", 60, 8,    100,   150 },
     /* PLACEABLE_DOOR_PIRATE */ { "doorpirate", "Pirate door",  60,   8,    100,   200 },
+    // PHA-3962: furniture, Majora's Mask models at about 1.3x, sized to Link. The box is
+    // the whole piece; seats and beds collide only up to the seat (BuildShape).
+    /* PLACEABLE_CHAIR_INN     */ { "chairinn",     "Inn chair",        16, 16, 57, 0 },
+    /* PLACEABLE_CHAIR_MILKBAR */ { "chairmilkbar", "Milk Bar chair",   10, 11, 55, 0 },
+    /* PLACEABLE_BENCH         */ { "bench",        "Inn bench",        60, 23, 39, 0 },
+    /* PLACEABLE_BED_INN       */ { "bedinn",       "Inn bed",          47, 70, 31, 0 },
+    /* PLACEABLE_BED_MAYOR     */ { "bedmayor",     "Mayor's bed",      47, 68, 47, 0 },
+    /* PLACEABLE_DRESSER       */ { "dresser",      "Inn dresser",      20, 10, 58, 0 },
+    /* PLACEABLE_DRAWERS       */ { "drawers",      "Chest of drawers", 20, 13, 58, 0 },
+    /* PLACEABLE_BOOKSHELF     */ { "bookshelf",    "Bookshelf",        48, 12, 96, 0 },
+    /* PLACEABLE_PAINTING      */ { "painting",     "Skull Kid painting", 29, 3, 73, 0 },
+    /* PLACEABLE_MILKCAN       */ { "milkcan",      "Milk can",         20, 17, 53, 0 },
+    /* PLACEABLE_RUG           */ { "rug",          "Rug",              46, 46, 1,  0 },
+    /* PLACEABLE_BARREL        */ { "barrel",       "Barrel",           30, 27, 60, 0 },
+    /* PLACEABLE_BARREL_ROMANI */ { "barrelromani", "Ranch barrel",     37, 32, 52, 0 },
+    /* PLACEABLE_WAGONWHEEL    */ { "wagonwheel",   "Wagon wheel",      33, 4,  65, 0 },
+    /* PLACEABLE_STALL         */ { "stall",        "Festival stall",   60, 60, 70, 0 },
 };
 // clang-format on
 
@@ -115,7 +132,49 @@ bool IsFloorType(uint8_t type) {
 }
 
 bool IsWalkOverType(uint8_t type) {
-    return type == PLACEABLE_SPIKES || IsFloorType(type);
+    return type == PLACEABLE_SPIKES || IsFloorType(type) || type == PLACEABLE_RUG;
+}
+
+FurnitureUse FurnitureUseOf(uint8_t type) {
+    switch (type) {
+        case PLACEABLE_CHAIR_INN:
+        case PLACEABLE_CHAIR_MILKBAR:
+        case PLACEABLE_BENCH:
+            return USE_SIT;
+        case PLACEABLE_BED_INN:
+        case PLACEABLE_BED_MAYOR:
+            return USE_SLEEP;
+        case PLACEABLE_RUG:
+            return USE_LIE;
+        case PLACEABLE_MILKCAN:
+            return USE_DRINK;
+        case PLACEABLE_DRESSER:
+        case PLACEABLE_DRAWERS:
+            return USE_STORAGE;
+        case PLACEABLE_BOOKSHELF:
+        case PLACEABLE_PAINTING:
+            return USE_READ;
+    }
+    return USE_NONE;
+}
+
+// The models' own seat and mattress heights at the size they are drawn (Placeables.cpp).
+int16_t FurnitureSeatHeight(uint8_t type) {
+    switch (type) {
+        case PLACEABLE_CHAIR_INN:
+            return 26; // 20 in the inn, at 1.3x
+        case PLACEABLE_CHAIR_MILKBAR:
+            return 27; // 210 at 0.13
+        case PLACEABLE_BENCH:
+            return 20;
+        case PLACEABLE_BED_INN:
+            return 29;
+        case PLACEABLE_BED_MAYOR:
+            return 21;
+        case PLACEABLE_RUG:
+            return 1;
+    }
+    return 0;
 }
 
 bool IsDoorType(uint8_t type) {
@@ -2091,6 +2150,7 @@ void BaseRegisterHooks(bool enabled) {
         SyncSceneActors();
     });
     COND_HOOK(OnLoadGame, enabled, [](int32_t fileNum) { RegisterPlaceableActors(); });
+    RestRegisterHooks(enabled);
     if (!enabled) {
         if (sPlace.active) {
             EndPlacement();

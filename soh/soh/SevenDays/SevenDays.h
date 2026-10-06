@@ -146,7 +146,8 @@ void HandlePacket(const nlohmann::json& payload);
 // Navi lines (custom message table "SevenDays", text ids SEVEN_DAYS_TEXT_BASE+).
 // The table keeps the first line registered under an id, so blocks must not overlap:
 //   0x00 firsts, 0x08 raid lines, 0x14 raid eve, 0x17 new gather firsts, 0x19 ledge,
-//   0x20 village, 0x28 loot lines, 0x30 supply cache, 0x34 merchants, 0x40 C-Up tips.
+//   0x20 village, 0x23 furniture (PHA-3962), 0x28 loot lines, 0x30 supply cache, 0x34 merchants,
+//   0x40 C-Up tips.
 constexpr uint16_t SEVEN_DAYS_TEXT_BASE = 0x9700;
 constexpr uint16_t SEVEN_DAYS_TEXT_COUNT = 0x50;
 bool IsSevenDaysText(uint16_t textId);
@@ -192,6 +193,23 @@ enum PlaceableType : uint8_t {
     PLACEABLE_DOOR_SWAMP,   // doors: the player gate's behaviour in Majora's Mask doors
     PLACEABLE_DOOR_MUSIC,
     PLACEABLE_DOOR_PIRATE,
+    // PHA-3962: furniture from Majora's Mask. Indestructible, so raiders leave it alone;
+    // most of it does something on A (FurnitureUseOf).
+    PLACEABLE_CHAIR_INN,     // sit: the Stock Pot Inn's chair
+    PLACEABLE_CHAIR_MILKBAR, // sit: the Milk Bar's tall chair
+    PLACEABLE_BENCH,         // sit: the inn lobby's bench
+    PLACEABLE_BED_INN,       // sleep: the Stock Pot Inn's bed
+    PLACEABLE_BED_MAYOR,     // sleep: the Mayor's bed
+    PLACEABLE_DRESSER,       // storage: the Stock Pot Inn's dresser
+    PLACEABLE_DRAWERS,       // storage: the Oceanside Spider House's chest of drawers
+    PLACEABLE_BOOKSHELF,     // read: the Spider House's bookshelf
+    PLACEABLE_PAINTING,      // read: the Spider House's Skull Kid painting
+    PLACEABLE_MILKCAN,       // drink: a Romani Ranch milk can
+    PLACEABLE_RUG,           // lie down: the Romani Ranch house's rug
+    PLACEABLE_BARREL,        // decor
+    PLACEABLE_BARREL_ROMANI, // decor
+    PLACEABLE_WAGONWHEEL,    // decor
+    PLACEABLE_STALL,         // decor: the carnival tower's cloth-walled base
     PLACEABLE_COUNT,
 };
 
@@ -208,6 +226,10 @@ constexpr int16_t STOREY_HEIGHT = 104; // a palisade (96) with a plank floor (8)
 bool IsFloorType(uint8_t type);    // a flat floor: tiles on a 120 grid, extends at the level Link stands on
 bool IsWalkOverType(uint8_t type); // low enough that raiders walk over it instead of breaking it
 bool IsDoorType(uint8_t type);     // swings open for players: the player gate and the doors
+// PHA-3962: what A does at a piece of furniture.
+enum FurnitureUse : uint8_t { USE_NONE, USE_SIT, USE_SLEEP, USE_LIE, USE_DRINK, USE_STORAGE, USE_READ };
+FurnitureUse FurnitureUseOf(uint8_t type);
+int16_t FurnitureSeatHeight(uint8_t type); // the seat or mattress top Link rests on (0: none)
 
 constexpr int ERA_ADULT = 0; // == gSaveContext.linkAge
 constexpr int ERA_CHILD = 1;
@@ -297,6 +319,16 @@ int16_t GhostActorId();
 Actor* SpawnPlaceableActor(const Placeable& p);
 bool PlaceableActorIsRuin(Actor* actor); // what the actor was spawned as
 void OnPlaceableInteract(uint8_t type); // workbench / chest A-press
+// PHA-3962: Link sits, sleeps or lies down on a piece, or drinks from it (Rest.cpp).
+bool StartRest(Actor* piece, uint8_t type);
+bool Resting();
+void RestRegisterHooks(bool enabled);
+void OnBookRead();           // the bookshelf was read: the next line for [[book]]
+const char* BookLine();      // [[book]]
+bool MilkCanEmpty(uint16_t id); // drunk from today
+constexpr uint16_t TEXT_BOOKSHELF = SEVEN_DAYS_TEXT_BASE + 0x23;
+constexpr uint16_t TEXT_PAINTING = SEVEN_DAYS_TEXT_BASE + 0x24;
+constexpr uint16_t TEXT_MILK_EMPTY = SEVEN_DAYS_TEXT_BASE + 0x25;
 // Vanilla Kokiri lines replaced while the village is active (OTRGlobals glue).
 bool OverridesVanillaText(uint16_t textId);
 bool AfterVanillaText(uint16_t textId, CustomMessage& flavor);

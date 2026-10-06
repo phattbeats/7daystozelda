@@ -75,6 +75,23 @@ static const std::vector<Recipe> sRecipes = {
     { "doorswamp",      "Swamp door",       RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_FIBER, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
     { "doormusic",      "Music Box door", RECIPE_KIT,          { { MAT_WOOD, 8 }, { MAT_STONE, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG },
     { "doorpirate",     "Pirate door",      RECIPE_KIT,        { { MAT_WOOD, 6 }, { MAT_STONE, 4 }, { MAT_BONE, 2 } }, 3, ITEM_NONE, ITEM_NONE,   1,  UNLOCK_HOOKSHOT },
+    // PHA-3962: furniture (Majora's Mask models). Cheap and untiered: it's for living in the
+    // base, not defending it. The milk can's milk is the one that costs something.
+    { "chairinn",       "Inn chair",        RECIPE_KIT,        { { MAT_WOOD, 3 } },                          1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "chairmilkbar",   "Milk Bar chair",   RECIPE_KIT,        { { MAT_WOOD, 2 }, { MAT_STONE, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "bench",          "Inn bench",        RECIPE_KIT,        { { MAT_WOOD, 5 }, { MAT_FIBER, 1 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "bedinn",         "Inn bed",          RECIPE_KIT,        { { MAT_WOOD, 5 }, { MAT_FIBER, 6 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "bedmayor",       "Mayor's bed",      RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_FIBER, 8 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
+    { "dresser",        "Inn dresser",      RECIPE_KIT,        { { MAT_WOOD, 6 } },                          1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
+    { "drawers",        "Chest of drawers", RECIPE_KIT,        { { MAT_WOOD, 6 }, { MAT_STONE, 1 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
+    { "bookshelf",      "Bookshelf",        RECIPE_KIT,        { { MAT_WOOD, 6 }, { MAT_FIBER, 3 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "painting",       "Skull Kid painting", RECIPE_KIT,      { { MAT_WOOD, 2 }, { MAT_FIBER, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "milkcan",        "Milk can",         RECIPE_KIT,        { { MAT_IRON, 1 }, { MAT_STONE, 3 }, { MAT_FIBER, 2 } }, 3, ITEM_NONE, ITEM_NONE,  1,  UNLOCK_DEKU_TREE },
+    { "rug",            "Rug",              RECIPE_KIT,        { { MAT_FIBER, 5 } },                         1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "barrel",         "Barrel",           RECIPE_KIT,        { { MAT_WOOD, 4 } },                          1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "barrelromani",   "Ranch barrel",     RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_STONE, 1 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "wagonwheel",     "Wagon wheel",      RECIPE_KIT,        { { MAT_WOOD, 3 } },                          1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
+    { "stall",          "Festival stall",   RECIPE_KIT,        { { MAT_WOOD, 6 }, { MAT_FIBER, 6 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
 
     { "trade_fiber",    "Sell Fiber",       RECIPE_TRADE,      { { MAT_FIBER, 5 } },                         1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },
     { "trade_wood",     "Sell Wood",        RECIPE_TRADE,      { { MAT_WOOD, 3 } },                          1, ITEM_NONE,        ITEM_NONE,      5,  UNLOCK_START },

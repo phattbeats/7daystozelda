@@ -470,7 +470,23 @@ const char* KitIcon(const std::string& kit) {
         return nullptr;
     }
     auto it = sKits.find(kit);
-    return it != sKits.end() ? it->second : nullptr;
+    if (it != sKits.end()) {
+        return it->second;
+    }
+    // PHA-3962: furniture icons came in a later icon pack; each is checked on its own, so an
+    // older pack keeps the vanilla icons for them.
+    static std::map<std::string, std::string> sFurniture;
+    static std::map<std::string, bool> sFound;
+    if (FindPlaceableTypeForKit(kit) >= PLACEABLE_CHAIR_INN) {
+        auto f = sFound.find(kit);
+        if (f == sFound.end()) {
+            std::string path = "__OTR__objects/7dtz_icons/" + kit;
+            sFurniture[kit] = path;
+            f = sFound.emplace(kit, ResourceMgr_FileExists(path.c_str())).first;
+        }
+        return f->second ? sFurniture[kit].c_str() : nullptr;
+    }
+    return nullptr;
 }
 
 const char* RecipeIcon(const Recipe& recipe) {
@@ -493,6 +509,15 @@ const char* RecipeIcon(const Recipe& recipe) {
         { "step", gItemIconBootsHoverTex },          { "ladder", gItemIconLongshotTex },
         { "stairs", gItemIconBootsIronTex },         { "doorswamp", gItemIconMagicBeanTex },
         { "doormusic", gItemIconOcarinaFairyTex },   { "doorpirate", gItemIconMaskGerudoTex },
+        // PHA-3962
+        { "chairinn", gItemIconMaskBunnyHoodTex },       { "chairmilkbar", gItemIconMaskZoraTex },
+        { "bench", gItemIconDekuStickTex },          { "bedinn", gItemIconWeirdEggTex },
+        { "bedmayor", gItemIconWeirdEggTex },      { "dresser", gMapChestIconTex },
+        { "drawers", gMapChestIconTex },             { "bookshelf", gItemIconZeldasLetterTex },
+        { "painting", gItemIconMaskSpookyTex },      { "milkcan", gItemIconBottleMilkFullTex },
+        { "rug", gItemIconMaskGoronTex },            { "barrel", gItemIconBombTex },
+        { "barrelromani", gItemIconPocketEggTex },   { "wagonwheel", gItemIconBoomerangTex },
+        { "stall", gItemIconMaskKeatonTex },
     };
     auto it = sIcons.find(recipe.id);
     return it != sIcons.end() ? it->second : nullptr;

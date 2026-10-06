@@ -61,6 +61,38 @@ static const ALIGN_ASSET(2) char gMMSwampDoorDL[] = "__OTR__objects/7dtz_mm/dor0
 static const ALIGN_ASSET(2) char gMMMusicBoxDoorDL[] = "__OTR__objects/7dtz_mm/wdor05/gMMMusicBoxDoorDL";
 static const ALIGN_ASSET(2) char gMMPirateDoorDL[] = "__OTR__objects/7dtz_mm/kaizoku_obj/gMMPirateDoorDL";
 
+// PHA-3962: furniture, from the same pack (a newer build of it).
+static const ALIGN_ASSET(2) char gMMInnChairDL[] = "__OTR__objects/7dtz_mm/gMMInnChairDL";
+static const ALIGN_ASSET(2) char gMMMilkBarChairDL[] = "__OTR__objects/7dtz_mm/mbar_obj/gMMMilkBarChairDL";
+static const ALIGN_ASSET(2) char gMMInnBenchDL[] = "__OTR__objects/7dtz_mm/gMMInnBenchDL";
+static const ALIGN_ASSET(2) char gMMInnBedDL[] = "__OTR__objects/7dtz_mm/gMMInnBedDL";
+static const ALIGN_ASSET(2) char gMMMayorBedDL[] = "__OTR__objects/7dtz_mm/gMMMayorBedDL";
+static const ALIGN_ASSET(2) char gMMInnDresserDL[] = "__OTR__objects/7dtz_mm/gMMInnDresserDL";
+static const ALIGN_ASSET(2) char gMMDrawersDL[] = "__OTR__objects/7dtz_mm/kin2_obj/gMMDrawersDL";
+static const ALIGN_ASSET(2) char gMMBookshelfDL[] = "__OTR__objects/7dtz_mm/kin2_obj/gMMBookshelfDL";
+static const ALIGN_ASSET(2) char gMMPaintingDL[] = "__OTR__objects/7dtz_mm/kin2_obj/gMMPaintingDL";
+static const ALIGN_ASSET(2) char gMMMilkCanDL[] = "__OTR__objects/7dtz_mm/gMMMilkCanDL";
+static const ALIGN_ASSET(2) char gMMRugDL[] = "__OTR__objects/7dtz_mm/gMMRugDL";
+static const ALIGN_ASSET(2) char gMMBarrelDL[] = "__OTR__objects/7dtz_mm/taru/gMMBarrelDL";
+static const ALIGN_ASSET(2) char gMMRomaniBarrelDL[] = "__OTR__objects/7dtz_mm/gMMRomaniBarrelDL";
+static const ALIGN_ASSET(2) char gMMWagonWheelDL[] = "__OTR__objects/7dtz_mm/gMMWagonWheelDL";
+static const ALIGN_ASSET(2) char gMMFestivalStallDL[] = "__OTR__objects/7dtz_mm/tokei_turret/gMMFestivalStallDL";
+
+static bool MMFurniturePackLoaded() {
+    static int8_t sLoaded = -1;
+    if (sLoaded < 0) {
+        static const char* const kAll[] = { gMMInnChairDL,   gMMMilkBarChairDL, gMMInnBenchDL,    gMMInnBedDL,
+                                            gMMMayorBedDL,   gMMInnDresserDL,   gMMDrawersDL,     gMMBookshelfDL,
+                                            gMMPaintingDL,   gMMMilkCanDL,      gMMRugDL,         gMMBarrelDL,
+                                            gMMRomaniBarrelDL, gMMWagonWheelDL, gMMFestivalStallDL };
+        sLoaded = 1;
+        for (const char* res : kAll) {
+            sLoaded = sLoaded && ResourceMgr_FileExists(res);
+        }
+    }
+    return sLoaded == 1;
+}
+
 static bool MMBuildPackLoaded() {
     static int8_t sLoaded = -1;
     if (sLoaded < 0) {
@@ -259,6 +291,14 @@ static void BuildShape(ShapeCollision& shape, uint8_t type) {
         }
         case PLACEABLE_LADDER:
             AddBox(shape, -hx, hx, 0, h, -hz, hz, 0x3); // both faces climb
+            break;
+        case PLACEABLE_CHAIR_INN:
+        case PLACEABLE_CHAIR_MILKBAR:
+        case PLACEABLE_BENCH:
+        case PLACEABLE_BED_INN:
+        case PLACEABLE_BED_MAYOR:
+            // PHA-3962: only up to the seat or the mattress, which Link sits or lies on.
+            AddBox(shape, -hx, hx, 0, FurnitureSeatHeight(type), -hz, hz);
             break;
         default:
             AddBox(shape, -hx, hx, 0, h, -hz, hz);
@@ -799,6 +839,114 @@ static void DrawDoor(PlayState* play, Gfx* leaf, f32 open, bool ruin) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// MARK: - PHA-3962: furniture
+
+// A model cut from a Majora's Mask room or object, moved so that its footprint is centred
+// on the origin with its bottom at y = 0 (native `at` is that point in the model's own
+// coordinates), turned by `yaw` and scaled in the piece's frame. Pieces face -z, towards
+// Link as he places them: a chair's back and a bed's head are at +z.
+static void DrawCut(PlayState* play, const char* dl, Vec3f at, s16 yaw, f32 sx, f32 sy, f32 sz) {
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+    Matrix_Scale(sx, sy, sz, MTXMODE_APPLY);
+    Matrix_RotateY(BINANG_TO_RAD(yaw), MTXMODE_APPLY);
+    Matrix_Translate(-at.x, -at.y, -at.z, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dl);
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Without the pack: the push block stretched over the box, like the floors.
+static void DrawFurniture(PlayState* play, uint8_t type) {
+    if (!MMFurniturePackLoaded()) {
+        DrawFallbackBox(play, type);
+        return;
+    }
+    const f32 s = 1.3f; // the house furniture at Link's size
+    switch (type) {
+        case PLACEABLE_CHAIR_INN:
+            // Stock Pot Inn room 2 (25 x 44 x 24 at -432..-407, 210..254, -69..-45), back towards +x.
+            DrawCut(play, gMMInnChairDL, { -419.5f, 210.0f, -57.0f }, -0x4000, s, s, s);
+            break;
+        case PLACEABLE_CHAIR_MILKBAR:
+            // object_mbar_obj (154 x 420 x 168 at scale 1), back towards -z.
+            DrawCut(play, gMMMilkBarChairDL, { 0.0f, 0.0f, 0.0f }, -0x8000, s * 0.1f, s * 0.1f, s * 0.1f);
+            break;
+        case PLACEABLE_BENCH: {
+            // The inn lobby's bench (room 0: 35 x 30 x 150 at 285..320, 0..30, 120..270), rails
+            // towards +x, cut down to a floor tile's length. The lobby's lists call segment 8.
+            OPEN_DISPS(play->state.gfxCtx);
+            Gfx* empty = (Gfx*)Graph_Alloc(play->state.gfxCtx, sizeof(Gfx));
+            gSPEndDisplayList(empty);
+            gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)empty);
+            CLOSE_DISPS(play->state.gfxCtx);
+            DrawCut(play, gMMInnBenchDL, { 302.5f, 0.0f, 195.0f }, -0x4000, 120.0f / 150.0f, s, s);
+            break;
+        }
+        case PLACEABLE_BED_INN:
+            // Room 2 (72 x 24 x 108 at -591..-519, 210..234, -236..-128), pillow towards -z.
+            DrawCut(play, gMMInnBedDL, { -555.0f, 210.0f, -182.0f }, -0x8000, s, s, s);
+            break;
+        case PLACEABLE_BED_MAYOR:
+            // Mayor's Residence room 3 (105 x 36 x 72 at 570..675, 0..36, -51..21), head towards +x.
+            DrawCut(play, gMMMayorBedDL, { 622.5f, 0.0f, -15.0f }, -0x4000, s, s, s);
+            break;
+        case PLACEABLE_DRESSER:
+            // Room 2 (30 x 45 x 15 at -465..-435, 210..255, -240..-225), against the wall at -z.
+            DrawCut(play, gMMInnDresserDL, { -450.0f, 210.0f, -232.5f }, -0x8000, s, s, s);
+            break;
+        case PLACEABLE_DRAWERS:
+            // object_kin2_obj (300 x 450 x 200, its back at z = 0).
+            DrawCut(play, gMMDrawersDL, { 0.0f, 0.0f, 100.0f }, -0x8000, s * 0.1f, s * 0.1f, s * 0.1f);
+            break;
+        case PLACEABLE_BOOKSHELF:
+            // object_kin2_obj (120 x 120 x 30, its back at z = 0), a palisade tall.
+            DrawCut(play, gMMBookshelfDL, { 0.0f, 0.0f, 15.0f }, -0x8000, 0.8f, 0.8f, 0.8f);
+            break;
+        case PLACEABLE_PAINTING:
+            // object_kin2_obj (450 x 563 x 40, its back at z = 0), stood on the floor.
+            DrawCut(play, gMMPaintingDL, { 0.0f, 0.0f, 20.0f }, -0x8000, s * 0.1f, s * 0.1f, s * 0.1f);
+            break;
+        case PLACEABLE_MILKCAN:
+            // Romani Ranch house room 1 (39 x 53 x 34 at 1099..1138, 0..53, -180..-146).
+            DrawCut(play, gMMMilkCanDL, { 1118.5f, 0.0f, -163.0f }, 0, 1.0f, 1.0f, 1.0f);
+            break;
+        case PLACEABLE_RUG: {
+            // Hung on the ranch house wall in room 2 (5 thick in x, 23 x 23 at 784..789,
+            // 308..331, -110..-87): laid flat on the floor and spread to 92 across.
+            OPEN_DISPS(play->state.gfxCtx);
+            Matrix_Push();
+            Matrix_Translate(0.0f, 0.6f, 0.0f, MTXMODE_APPLY);
+            Matrix_Scale(4.0f, 0.2f, 4.0f, MTXMODE_APPLY);
+            Matrix_RotateZ(M_PI / 2, MTXMODE_APPLY); // its face (+x) up
+            Matrix_Translate(-786.5f, -319.5f, 98.5f, MTXMODE_APPLY);
+            gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gMMRugDL);
+            Matrix_Pop();
+            CLOSE_DISPS(play->state.gfxCtx);
+            break;
+        }
+        case PLACEABLE_BARREL:
+            // object_taru's barrel (600 x 600 x 540).
+            DrawCut(play, gMMBarrelDL, { 0.0f, 0.0f, 0.0f }, 0, 0.1f, 0.1f, 0.1f);
+            break;
+        case PLACEABLE_BARREL_ROMANI:
+            // Ranch house room 0 (57 x 40 x 49 at -392..-335, 0..40, -198..-149).
+            DrawCut(play, gMMRomaniBarrelDL, { -363.5f, 0.0f, -173.5f }, 0, s, s, s);
+            break;
+        case PLACEABLE_WAGONWHEEL:
+            // Ranch house room 0 (65 x 65 x 8 at -65..0, 15..80, 90..98), stood up on its rim.
+            DrawCut(play, gMMWagonWheelDL, { -32.5f, 15.0f, 94.0f }, 0, 1.0f, 1.0f, 1.0f);
+            break;
+        case PLACEABLE_STALL:
+            // The carnival tower's base (1360 square, 800 tall): its cloth walls and posts.
+            DrawCut(play, gMMFestivalStallDL, { 0.0f, 0.0f, 0.0f }, 0, 120.0f / 1360.0f, 70.0f / 800.0f,
+                    120.0f / 1360.0f);
+            break;
+    }
+}
+
 // The model of each type, in the actor's local space (origin on the floor).
 static void DrawBaba(PlayState* play, PlaceableActor* self, f32 lunge, s16 yaw);
 
@@ -971,6 +1119,23 @@ static void DrawModel(PlayState* play, uint8_t type, float hpFrac, PlaceableActo
             }
             break;
         }
+        case PLACEABLE_CHAIR_INN:
+        case PLACEABLE_CHAIR_MILKBAR:
+        case PLACEABLE_BENCH:
+        case PLACEABLE_BED_INN:
+        case PLACEABLE_BED_MAYOR:
+        case PLACEABLE_DRESSER:
+        case PLACEABLE_DRAWERS:
+        case PLACEABLE_BOOKSHELF:
+        case PLACEABLE_PAINTING:
+        case PLACEABLE_MILKCAN:
+        case PLACEABLE_RUG:
+        case PLACEABLE_BARREL:
+        case PLACEABLE_BARREL_ROMANI:
+        case PLACEABLE_WAGONWHEEL:
+        case PLACEABLE_STALL:
+            DrawFurniture(play, type);
+            break;
     }
 }
 
@@ -1228,6 +1393,9 @@ static ColliderCylinderInit sBlastCylinderInit = {
     { 110, 80, -10, { 0, 0, 0 } },
 };
 
+// PHA-3962: the furniture Link uses straight away offers A with no textbox (0xFFFF).
+constexpr uint16_t TEXT_NONE_USE = 0xFFFF;
+
 static uint16_t TextFor(uint8_t type) {
     switch (type) {
         case PLACEABLE_SIGN:
@@ -1236,8 +1404,22 @@ static uint16_t TextFor(uint8_t type) {
             return TEXT_WORKBENCH;
         case PLACEABLE_CHEST:
             return TEXT_CHEST;
+        case PLACEABLE_BOOKSHELF:
+            return TEXT_BOOKSHELF;
+        case PLACEABLE_PAINTING:
+            return TEXT_PAINTING;
     }
-    return 0;
+    switch (FurnitureUseOf(type)) {
+        case USE_STORAGE:
+            return TEXT_CHEST; // the same stores as the chest
+        case USE_SIT:
+        case USE_SLEEP:
+        case USE_LIE:
+        case USE_DRINK:
+            return TEXT_NONE_USE;
+        default:
+            return 0;
+    }
 }
 
 static void Placeable_Init(Actor* thisx, PlayState* play) {
@@ -1559,14 +1741,22 @@ static void Placeable_Update(Actor* thisx, PlayState* play) {
     RebuildBaseCollision(play);
 
     if (thisx->textId != 0) {
+        if (self->type == PLACEABLE_MILKCAN && !self->talking) {
+            // PHA-3962: once a day; until tomorrow it just says it's empty.
+            thisx->textId = MilkCanEmpty(self->id) ? TEXT_MILK_EMPTY : TEXT_NONE_USE;
+        }
         if (self->talking) {
             if (Actor_TextboxIsClosing(thisx, play) || play->msgCtx.msgMode == MSGMODE_NONE) {
                 self->talking = 0;
                 OnPlaceableInteract(self->type);
             }
         } else if (Actor_ProcessTalkRequest(thisx, play)) {
-            self->talking = 1;
-        } else if (!InPlacement()) {
+            if (thisx->textId == TEXT_NONE_USE) {
+                StartRest(thisx, self->type); // PHA-3962: sit, sleep, lie down or drink
+            } else {
+                self->talking = 1;
+            }
+        } else if (!InPlacement() && !Resting()) {
             // Offer "Check" on A when Link is close.
             func_8002F2CC(thisx, play, (f32)std::max(info.halfX, info.halfZ) + 40.0f);
         }
@@ -2007,8 +2197,10 @@ void SevenDays::OnPlaceableHit(uint16_t id, Actor* actor) {
 void SevenDays::OnPlaceableInteract(uint8_t type) {
     if (type == PLACEABLE_WORKBENCH) {
         OpenCraftingWindow(0);
-    } else if (type == PLACEABLE_CHEST) {
+    } else if (type == PLACEABLE_CHEST || FurnitureUseOf(type) == USE_STORAGE) {
         OpenCraftingWindow(2);
+    } else if (type == PLACEABLE_BOOKSHELF) {
+        OnBookRead(); // another book next time
     }
 }
 
@@ -2048,6 +2240,14 @@ void SevenDays::RegisterVillageMessages(const char* table) {
         table, TEXT_CHEST,
         CustomMessage("The village storage chest. Everything the village has gathered is in here.", TEXTBOX_TYPE_BLACK,
                       TEXTBOX_POS_BOTTOM));
+    // PHA-3962: furniture
+    AddText(table, TEXT_BOOKSHELF, CustomMessage("[[book]]", TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM));
+    AddText(table, TEXT_PAINTING,
+            CustomMessage("A masked imp, painted in a faraway land.^Its eyes seem to follow you around the room...",
+                          TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM));
+    AddText(table, TEXT_MILK_EMPTY,
+            CustomMessage("The milk can is empty.^It'll be full again tomorrow.", TEXTBOX_TYPE_BLACK,
+                          TEXTBOX_POS_BOTTOM));
 }
 
 // MARK: - M9: the world reacts (towns talk about the nights)
@@ -2231,6 +2431,7 @@ void SevenDays::FillWorldText(CustomMessage& msg) {
                             : n == 1        ? std::string("tomorrow night")
                                             : fmt::format("in {} days", n));
     msg.Replace("[[base]]", home != nullptr ? fmt::format("someone built walls in {}", home) : "nobody has built walls yet");
+    msg.Replace("[[book]]", BookLine()); // PHA-3962: the bookshelf
 }
 
 // MARK: - PHA-3935: Navi's C-Up tips

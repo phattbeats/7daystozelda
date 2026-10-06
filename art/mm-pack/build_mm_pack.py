@@ -19,6 +19,31 @@ PHA-3945, floors, stairs and doors:
   objects/7dtz_mm/kaizoku_obj/gMMPirateDoorDL   the Pirates' Fortress door
   objects/7dtz_mm/wdor05/gMMMusicBoxDoorDL      and the Music Box House door
 
+PHA-3962, furniture (room pieces are cut from the room meshes like the inn desk):
+  objects/7dtz_mm/gMMInnChairDL                 Stock Pot Inn chair (room 2)
+  objects/7dtz_mm/gMMInnBenchDL                 the inn lobby's long bench (room 0)
+  objects/7dtz_mm/mbar_obj/gMMMilkBarChairDL    Milk Bar chair
+  objects/7dtz_mm/gMMInnBedDL                   Stock Pot Inn bed (room 2)
+  objects/7dtz_mm/gMMMayorBedDL                 the Mayor's bed (Mayor's Residence room 3)
+  objects/7dtz_mm/gMMInnDresserDL               Stock Pot Inn dresser (room 2)
+  objects/7dtz_mm/kin2_obj/gMMDrawersDL         Oceanside Spider House chest of drawers,
+  objects/7dtz_mm/kin2_obj/gMMBookshelfDL         bookshelf
+  objects/7dtz_mm/kin2_obj/gMMPaintingDL          and Skull Kid painting
+  objects/7dtz_mm/gMMMilkCanDL                  Romani Ranch milk can (house room 1)
+  objects/7dtz_mm/gMMRugDL                      the pink rug on the ranch house wall (room 2)
+  objects/7dtz_mm/taru/gMMBarrelDL              barrel
+  objects/7dtz_mm/gMMRomaniBarrelDL             Romani Ranch barrel (house room 0)
+  objects/7dtz_mm/gMMWagonWheelDL               wagon wheel (house room 0)
+  objects/7dtz_mm/tokei_turret/gMMFestivalStallDL the carnival tower's cloth-walled base
+
+and Majora's Mask player animations that OoT doesn't have. MM's Link has OoT's
+skeleton (22 limbs, same order) and the same frame layout (67 s16 per frame), so they
+play on OoT's Link as they are:
+  objects/7dtz_mm/anim/gPlayerAnim_<name>       Link animation header (frame count + data path)
+  objects/7dtz_mm/anim/gPlayerAnim_<name>_Data  the frames
+  demo_suwari1..3: sitting with his legs hanging; sirimochi(_wait): sitting on the floor;
+  okiagaru, okiagaru_wait, okiagaru_tatu: lying down, sitting up, getting up.
+
 The output is Nintendo data: never commit it or attach it to a public release. It
 ships only inside the server's soh.o2r (--o2r appends it there).
 
@@ -41,6 +66,9 @@ import z64dl
 
 MM_USA_SHA1 = "d6133ace5afaa0882cf214cf88daba39e266c078"
 DMADATA = 0x1A500
+RT_ANIMATION, RT_PLAYER_ANIMATION = 0x4F414E4D, 0x4F50414D  # SOH_Animation, SOH_PlayerAnimation
+ANIM_TYPE_LINK = 1
+PLAYER_ANIM_FRAME = 67  # s16 per frame: 22 limbs x 3 rotations + the face
 
 
 def rom_files(rom, spec):
@@ -135,12 +163,18 @@ def main():
             segs[6] = files[tex.group(1)]
         return z64dl.Ctx(segs)
 
+    room_cuts = set()
+
     def export_room_box(scene, room, lo, hi, outname, only=None):
         """Every triangle of the room inside the box lo..hi (room coordinates), from the
         room's display lists in `only` when it is given."""
         ctx = scene_ctx(scene, room)
         base = "objects/7dtz_mm/%s%d" % (scene[3:].lower(), room)
-        folders = {2: base + "/scene", 3: base + "/room"}
+        # Each cut keeps different triangles of the same room lists: a second cut from a
+        # room gets its own folder, or it overwrites the first one's lists (PHA-3962).
+        room_folder = base + "/room" if base not in room_cuts else base + "/room_" + outname
+        room_cuts.add(base)
+        folders = {2: base + "/scene", 3: room_folder}
         if 6 in ctx.segs:
             folders[6] = base + "/scenetex"
         tops, keep, kept = [], set(), []
@@ -177,6 +211,45 @@ def main():
     export_object("object_dor03", object_dl("object_dor03", "gSwampDoorDL"), "gMMSwampDoorDL")
     export_object("object_kaizoku_obj", object_dl("object_kaizoku_obj", "gPiratesFortressDoorDL"), "gMMPirateDoorDL")
     export_object("object_wdor05", object_dl("object_wdor05", "gMusicBoxHouseDoorDL"), "gMMMusicBoxDoorDL")
+
+    # PHA-3962: furniture. Room boxes are each piece's bounds, 1 unit wider.
+    export_room_box("Z2_YADOYA", 2, (-433, 209, -70), (-406, 255, -44), "gMMInnChairDL")
+    export_room_box("Z2_YADOYA", 0, (284, -1, 119), (321, 31, 271), "gMMInnBenchDL")
+    export_object("object_mbar_obj", 0x06000288, "gMMMilkBarChairDL")
+    export_room_box("Z2_YADOYA", 2, (-592, 209, -237), (-518, 235, -127), "gMMInnBedDL")
+    export_room_box("Z2_SONCHONOIE", 3, (569, -1, -52), (676, 37, 22), "gMMMayorBedDL")
+    export_room_box("Z2_YADOYA", 2, (-466, 209, -241), (-434, 256, -224), "gMMInnDresserDL")
+    export_object("object_kin2_obj", object_dl("object_kin2_obj", "gOceanSpiderHouseChestOfDrawersDL"), "gMMDrawersDL")
+    export_object("object_kin2_obj", object_dl("object_kin2_obj", "gOceanSpiderHouseBookshelfDL"), "gMMBookshelfDL")
+    export_object("object_kin2_obj", object_dl("object_kin2_obj", "gOceanSpiderHouseSkullkidPaintingDL"),
+                  "gMMPaintingDL")
+    export_room_box("Z2_OMOYA", 1, (1098, -1, -181), (1139, 54, -145), "gMMMilkCanDL")
+    export_room_box("Z2_OMOYA", 2, (783, 307, -111), (790, 332, -86), "gMMRugDL")
+    export_object("object_taru", object_dl("object_taru", "gObjTaruBarrelDL"), "gMMBarrelDL")
+    export_room_box("Z2_OMOYA", 0, (-393, -1, -199), (-334, 41, -148), "gMMRomaniBarrelDL")
+    export_room_box("Z2_OMOYA", 0, (-66, 14, 89), (1, 81, 99), "gMMWagonWheelDL")
+    export_object("object_tokei_turret", object_dl("object_tokei_turret", "gClockTownTurretPlatformBaseDL"),
+                  "gMMFestivalStallDL")
+
+    # PHA-3962: Majora's Mask Link animations (gameplay_keep's headers point into
+    # link_animetion; the frames are big-endian s16 in the ROM, little-endian in o2r).
+    anim_xml = open(os.path.join(xml_dir, "misc", "link_animetion.xml")).read()
+
+    def export_player_anim(name):
+        m = re.search(r'Name="gPlayerAnim_%s_Data" FrameCount="(\d+)" Offset="0x([0-9A-Fa-f]+)"' % name, anim_xml)
+        frames, off = int(m.group(1)), int(m.group(2), 16)
+        n = frames * PLAYER_ANIM_FRAME
+        values = struct.unpack(">%dh" % n, files["link_animetion"][off:off + n * 2])
+        data_path = "objects/7dtz_mm/anim/gPlayerAnim_%s_Data" % name
+        out[data_path] = z64dl.header(RT_PLAYER_ANIMATION) + struct.pack("<I%dh" % n, n, *values)
+        ref = ("__OTR__" + data_path).encode()
+        out["objects/7dtz_mm/anim/gPlayerAnim_" + name] = (z64dl.header(RT_ANIMATION) +
+                                                           struct.pack("<IHI", ANIM_TYPE_LINK, frames, len(ref)) + ref)
+        print("gPlayerAnim_" + name, frames, "frames")
+
+    for name in ("demo_suwari1", "demo_suwari2", "demo_suwari3", "sirimochi", "sirimochi_wait", "okiagaru",
+                 "okiagaru_wait", "okiagaru_tatu"):
+        export_player_anim(name)
 
     for path, data in out.items():
         fp = os.path.join(a.out, path)
