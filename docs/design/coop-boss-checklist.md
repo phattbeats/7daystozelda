@@ -192,6 +192,8 @@ Not exercised live: Iron Knuckle's raised shield blocking a mirror swing (the st
 
 ## Twinrova (PHA-4053)
 
+Live as `soh-web:pha4053` (`soh.js?v=ba384731`, FROM pha4055). Rollback tag `pre-pha4053` (= pha4055); the old container is kept stopped as `soh-web-pre-pha4053`.
+
 Boss_Tw: Kotake (params 0), Koume (1), Twinrova (2), the fire and ice blasts (0x64, 0x66), their pools (0x65, 0x67) and the death balls (0x68, 0x69). The room is room 3 of scene 0x17; its actors exist only on the adult layer.
 
 | Row | How | Live test (2026-10-07, two local clients) |
