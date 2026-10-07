@@ -50,7 +50,7 @@ in a two-client live test, with screenshots and logs. The rig is in
 | Barinade | PHA-4048 | **Done**, see below |
 | Phantom Ganon | PHA-4049 | Not started |
 | Volvagia | PHA-4050 | **Done**, see below |
-| Morpha | PHA-4051 | Not started |
+| Morpha | PHA-4051 | **Done**, see below |
 | Bongo Bongo | PHA-4052 | Not started |
 | Twinrova | PHA-4053 | Not started |
 | Ganondorf and Ganon | PHA-4054 | Not started |
@@ -112,3 +112,17 @@ Boss_Fd (flying) and Boss_Fd2 (hole form) are both registered. They share one he
 Known limits:
 - Fd2's emerge knockback still pushes only the authority's Link.
 - The 7DtZ mod swaps the heart container for a blueprint, so the "A blueprint!" message shows instead of a heart.
+## Morpha (PHA-4051)
+
+| Row | How | Live test (2026-10-07, two local clients, fresh room so the intro runs) |
+|---|---|---|
+| Phases | Core `csState` and hp: death cutscene or hp <= 0 is DEFEATED, an intro `csState` is PREFIGHT, battle is FIGHT. `ShouldMirror` is false until the local core is in `MO_BATTLE` and the streamed phase is FIGHT. | Both intros ran locally (~42 s) and both reached FIGHT with the mirror on. |
+| Extras | Core: hp, hit count, water level, flash, scale. Tentacles: action state, victim flags, shape and joint table (`jt`), colour and draw state. The core and tentacles are all ACTOR_BOSS_MO, so the first tentacle keeps its room-occurrence key (`OnEnemyActorSpawn` skips it: each client's core Init spawns it) and only tent2 (hit count >= 3, spawned from Update) is a dynamic spawn. Deserializers type-check every field; a wrong JSON type throws a C++ exception that kills the page (`da` is a u8, read it as a number). | Tent1 has the same static key on both clients and mirrors in lockstep; water level -63 on both. |
+| Health | Streamed as `hp`/`hc`. Mirror hits go out as ENEMY_HIT_REQUEST and the host applies them. | B's hit took 20 -> 19 on both clients; A's own hit 19 -> 17. |
+| Defeat | `BossMo_StartDeath` on the DEFEATED edge; `OnRemoteDefeat` covers a missed edge; deferred while the local intro runs. | Killing blow from B: cs 105, heart container, blue warp and clear flag on both clients. |
+| Children | Tentacle 1 is static, tentacle 2 is tracked as a dynamic spawn. No other child actors. | Tent1 duplicate (a SPAWN on top of the local one) found and fixed during the test. |
+| Aggro | Attacks aim at the nearest living player (not host-only), because the grab is a local effect on Link. The host cannot drive a remote player's Link, so the grabbed player's own client runs the hold (`MO_VictimDriver`: lift, shake, health drain) and the host waits for `MO_EVENT_ESCAPE` or its own timer. The intro stays local. | B was held, lifted and drained (48 -> 8), mashed free (ESCAPE sent, host released the tentacle to RETREAT); an un-mashed grab was released by the host timer. A saw B's held pose. |
+| Hookshot | A hookshot hit on the core while it is in ATTACK cuts tent1 and stuns it, via the normal forwarded hit. | B's hookshot-flag hit: core ATTACK -> tent CUT (100) -> core STUNNED (5) on both. Caveat: the real hookshot's pull of the core is cosmetic on a mirror, because the stream overwrites the core position. |
+| Live test | | No desync canary and no crash in either log after the fixes. |
+
+Open: defeat while a victim is held, and the bandwidth of the `jt` arrays, were not measured.

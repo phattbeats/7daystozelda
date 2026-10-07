@@ -17,6 +17,10 @@
 
 #include <string.h>
 
+s32 Anchor_BossAimTargets(PlayState* play, Actor** out, s32 max);
+u32 Anchor_PuppetClientId(Actor* actor);
+s32 Anchor_MorphaDefeatPending(Actor* actor);
+
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
      ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -69,65 +73,6 @@ void BossMo_SetupTentacle(BossMo* this, PlayState* play);
 void BossMo_Tentacle(BossMo* this, PlayState* play);
 
 void BossMo_Unknown(void);
-
-typedef enum {
-    /* 0 */ MO_FX_NONE,
-    /* 1 */ MO_FX_SMALL_RIPPLE,
-    /* 2 */ MO_FX_BIG_RIPPLE,
-    /* 3 */ MO_FX_DROPLET,
-    /* 4 */ MO_FX_SPLASH,
-    /* 5 */ MO_FX_SPLASH_TRAIL,
-    /* 6 */ MO_FX_WET_SPOT,
-    /* 7 */ MO_FX_BUBBLE
-} BossMoEffectType;
-
-typedef enum {
-    /*   0 */ MO_TENT_READY,
-    /*   1 */ MO_TENT_SWING,
-    /*   2 */ MO_TENT_ATTACK,
-    /*   3 */ MO_TENT_CURL,
-    /*   4 */ MO_TENT_GRAB,
-    /*   5 */ MO_TENT_SHAKE,
-    /*  10 */ MO_TENT_WAIT = 10,
-    /*  11 */ MO_TENT_SPAWN,
-    /* 100 */ MO_TENT_CUT = 100,
-    /* 101 */ MO_TENT_RETREAT,
-    /* 102 */ MO_TENT_DESPAWN,
-    /* 200 */ MO_TENT_DEATH_START = 200,
-    /* 201 */ MO_TENT_DEATH_1,
-    /* 202 */ MO_TENT_DEATH_2,
-    /* 203 */ MO_TENT_DEATH_3,
-    /* 205 */ MO_TENT_DEATH_5 = 205,
-    /* 206 */ MO_TENT_DEATH_6
-} BossMoTentState;
-
-typedef enum {
-    /* -11 */ MO_CORE_UNUSED = -11,
-    /*   0 */ MO_CORE_MOVE = 0,
-    /*   1 */ MO_CORE_MAKE_TENT,
-    /*   2 */ MO_CORE_UNDERWATER,
-    /*   5 */ MO_CORE_STUNNED = 5,
-    /*  10 */ MO_CORE_ATTACK = 10,
-    /*  11 */ MO_CORE_RETREAT,
-    /*  20 */ MO_CORE_INTRO_WAIT = 20,
-    /*  21 */ MO_CORE_INTRO_REVEAL
-} BossMoCoreState;
-
-typedef enum {
-    /*   0 */ MO_BATTLE,
-    /*   1 */ MO_INTRO_WAIT,
-    /*   2 */ MO_INTRO_START,
-    /*   3 */ MO_INTRO_SWIM,
-    /*   4 */ MO_INTRO_REVEAL,
-    /*   5 */ MO_INTRO_FINISH,
-    /* 100 */ MO_DEATH_START = 100,
-    /* 101 */ MO_DEATH_DRAIN_WATER_1,
-    /* 102 */ MO_DEATH_DRAIN_WATER_2,
-    /* 103 */ MO_DEATH_CEILING,
-    /* 104 */ MO_DEATH_DROPLET,
-    /* 105 */ MO_DEATH_FINISH,
-    /* 150 */ MO_DEATH_MO_CORE_BURST = 150
-} BossMoCsState;
 
 const ActorInit Boss_Mo_InitVars = {
     ACTOR_BOSS_MO,
@@ -418,6 +363,12 @@ void BossMo_Destroy(Actor* thisx, PlayState* play) {
     s32 pad;
     BossMo* this = (BossMo*)thisx;
 
+    if ((sMorphaTent1 != NULL) && (sMorphaTent1->otherTent == &this->actor)) {
+        sMorphaTent1->otherTent = NULL;
+    }
+    if (this == sMorphaTent2) {
+        sMorphaTent2 = NULL;
+    }
     if (this->actor.params >= BOSSMO_TENTACLE) {
         Collider_DestroyJntSph(play, &this->tentCollider);
     } else {
@@ -431,6 +382,160 @@ void BossMo_SetupTentacle(BossMo* this, PlayState* play) {
     this->timers[0] = 50 + (s16)Rand_ZeroFloat(20.0f);
 }
 
+BossMo* BossMo_AnchorGlobal(s32 which) {
+    return which == 0 ? sMorphaCore : (which == 1 ? sMorphaTent1 : sMorphaTent2);
+}
+
+void BossMo_AnchorSetTent2(BossMo* tent2) {
+    sMorphaTent2 = tent2;
+    if ((tent2 != NULL) && (sMorphaTent1 != NULL)) {
+        tent2->otherTent = &sMorphaTent1->actor;
+        sMorphaTent1->otherTent = &tent2->actor;
+    }
+}
+
+// The player a tentacle or the core goes after: the nearest of every living player in the room (just the
+// local Link when not in co-op). Equal to GET_PLAYER in single player.
+static Actor* BossMo_NearestTarget(BossMo* this, PlayState* play) {
+    Actor* targets[8];
+    s32 count = Anchor_BossAimTargets(play, targets, ARRAY_COUNT(targets));
+    Actor* best = targets[0];
+    f32 bestDist = Math_Vec3f_DistXZ(&this->actor.world.pos, &best->world.pos);
+    s32 i;
+
+    for (i = 1; i < count; i++) {
+        f32 dist = Math_Vec3f_DistXZ(&this->actor.world.pos, &targets[i]->world.pos);
+
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = targets[i];
+        }
+    }
+    return best;
+}
+
+// A tentacle keeps hold of the player it curled around until it lets go.
+static Actor* BossMo_TentTarget(BossMo* this, PlayState* play) {
+    if (this->anchorVictim != 0) {
+        Actor* targets[8];
+        s32 count = Anchor_BossAimTargets(play, targets, ARRAY_COUNT(targets));
+        s32 i;
+
+        for (i = 1; i < count; i++) {
+            if (Anchor_PuppetClientId(targets[i]) == this->anchorVictim) {
+                return targets[i];
+            }
+        }
+    }
+    return BossMo_NearestTarget(this, play);
+}
+
+static s32 BossMo_VictimInReach(BossMo* this, Actor* target) {
+    f32 dx = this->tentPos[22].x - target->world.pos.x;
+    f32 dy = this->tentPos[22].y - target->world.pos.y;
+    f32 dz = this->tentPos[22].z - target->world.pos.z;
+
+    return (fabsf(dy) < 60.0f) && (sqrtf(SQ(dx) + SQ(dy) + SQ(dz)) < 130.0f);
+}
+
+s32 BossMo_VictimGrab(BossMo* this, PlayState* play, Player* player) {
+    if (!play->grabPlayer(play, player)) {
+        return false;
+    }
+    player->actor.parent = &this->actor;
+    Sfx_PlaySfxAtPos(&this->tentTipPos, NA_SE_EN_MOFER_CATCH);
+    Audio_PlaySoundGeneral(NA_SE_VO_LI_DAMAGE_S, &player->actor.projectedPos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    return true;
+}
+
+void BossMo_VictimPin(BossMo* this, Player* player, s32 soft) {
+    player->av2.actionVar2 = 0xA;
+    player->actor.speedXZ = 0;
+    player->actor.velocity.y = 0;
+    if (soft) {
+        Math_ApproachF(&player->actor.world.pos.x, this->grabPosRot.pos.x, 0.5f, 20.0f);
+        Math_ApproachF(&player->actor.world.pos.y, this->grabPosRot.pos.y, 0.5f, 20.0f);
+        Math_ApproachF(&player->actor.world.pos.z, this->grabPosRot.pos.z, 0.5f, 20.0f);
+        Math_ApproachS(&player->actor.shape.rot.x, this->grabPosRot.rot.x, 2, 0x7D0);
+        Math_ApproachS(&player->actor.shape.rot.y, this->grabPosRot.rot.y, 2, 0x7D0);
+        Math_ApproachS(&player->actor.shape.rot.z, this->grabPosRot.rot.z, 2, 0x7D0);
+    } else {
+        player->actor.world.pos.x = this->grabPosRot.pos.x;
+        player->actor.world.pos.y = this->grabPosRot.pos.y;
+        player->actor.world.pos.z = this->grabPosRot.pos.z;
+        player->actor.world.rot.x = player->actor.shape.rot.x = this->grabPosRot.rot.x;
+        player->actor.world.rot.y = player->actor.shape.rot.y = this->grabPosRot.rot.y;
+        player->actor.world.rot.z = player->actor.shape.rot.z = this->grabPosRot.rot.z;
+    }
+}
+
+void BossMo_VictimShakeStart(BossMo* this, PlayState* play) {
+    Camera* camera1 = Play_GetCamera(play, MAIN_CAM);
+
+    func_80064520(play, &play->csCtx);
+    this->csCamera = Play_CreateSubCamera(play);
+    Play_ChangeCameraStatus(play, MAIN_CAM, CAM_STAT_WAIT);
+    Play_ChangeCameraStatus(play, this->csCamera, CAM_STAT_ACTIVE);
+    this->cameraEye = camera1->eye;
+    this->cameraAt = camera1->at;
+    this->cameraYaw = Math_FAtan2F(this->cameraEye.x - this->actor.world.pos.x,
+                                   this->cameraEye.z - this->actor.world.pos.z);
+    this->cameraYawRate = 0;
+}
+
+void BossMo_VictimCamera(BossMo* this, PlayState* play, Player* player) {
+    Vec3f sp138;
+    Vec3f sp12C;
+
+    if (this->csCamera != 0) {
+        sp138.x = 0;
+        sp138.y = 100.0f;
+        sp138.z = 200.0f;
+        this->cameraYaw -= this->cameraYawRate;
+        Math_ApproachF(&this->cameraYawRate, 0.01, 1.0f, 0.002f);
+        Matrix_RotateY(this->cameraYaw, MTXMODE_NEW);
+        Matrix_MultVec3f(&sp138, &sp12C);
+        Math_ApproachF(&this->cameraEye.x, this->actor.world.pos.x + sp12C.x, 0.1f, 10.0f);
+        Math_ApproachF(&this->cameraEye.y, this->actor.world.pos.y + sp12C.y, 0.1f, 10.0f);
+        Math_ApproachF(&this->cameraEye.z, this->actor.world.pos.z + sp12C.z, 0.1f, 10.0f);
+        Math_ApproachF(&this->cameraAt.x, player->actor.world.pos.x, 0.5f, 50.0f);
+        Math_ApproachF(&this->cameraAt.y, player->actor.world.pos.y, 0.5f, 50.0f);
+        Math_ApproachF(&this->cameraAt.z, player->actor.world.pos.z, 0.5f, 50.0f);
+        Play_CameraSetAtEye(play, this->csCamera, &this->cameraAt, &this->cameraEye);
+    }
+}
+
+void BossMo_VictimRelease(BossMo* this, PlayState* play, Player* player, s32 push) {
+    if (&this->actor == player->actor.parent) {
+        player->av2.actionVar2 = 0x65;
+        player->actor.parent = NULL;
+        player->csAction = 0;
+        if (push) {
+            func_8002F6D4(play, &this->actor, 20.0f, this->actor.shape.rot.y + 0x8000, 10.0f, 0);
+        }
+    }
+}
+
+void BossMo_VictimRetreatCamera(BossMo* this, PlayState* play, Player* player) {
+    if (this->csCamera != 0) {
+        Math_ApproachF(&this->cameraAt.x, player->actor.world.pos.x, 0.5f, 50.0f);
+        Math_ApproachF(&this->cameraAt.y, player->actor.world.pos.y, 0.5f, 50.0f);
+        Math_ApproachF(&this->cameraAt.z, player->actor.world.pos.z, 0.5f, 50.0f);
+        Play_CameraSetAtEye(play, this->csCamera, &this->cameraAt, &this->cameraEye);
+        if (player->actor.world.pos.y <= 42.0f) {
+            Camera* camera2 = Play_GetCamera(play, MAIN_CAM);
+
+            camera2->eye = this->cameraEye;
+            camera2->eyeNext = this->cameraEye;
+            camera2->at = this->cameraAt;
+            func_800C08AC(play, this->csCamera, 0);
+            this->csCamera = 0;
+            func_80064534(play, &play->csCtx);
+        }
+    }
+}
+
 void BossMo_Tentacle(BossMo* this, PlayState* play) {
     s16 tentXrot;
     s16 sp1B4 = 0;
@@ -438,8 +543,6 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     s16 indS0;
     s16 indS1;
-    Camera* camera1;
-    Camera* camera2;
     BossMo* otherTent = (BossMo*)this->otherTent;
     f32 maxSwingRateX;
     f32 maxSwingLagX;
@@ -477,6 +580,15 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
     Vec3f spE0;
     Vec3f spD4;
     Vec3f spC8;
+    Actor* target;
+    s32 localVictim;
+
+    if ((this->work[MO_TENT_ACTION_STATE] != MO_TENT_CURL) && (this->work[MO_TENT_ACTION_STATE] != MO_TENT_GRAB) &&
+        (this->work[MO_TENT_ACTION_STATE] != MO_TENT_SHAKE)) {
+        this->anchorVictim = 0;
+    }
+    target = BossMo_TentTarget(this, play);
+    localVictim = (this->anchorVictim == 0);
 
     if (this->work[MO_TENT_ACTION_STATE] <= MO_TENT_DEATH_3) {
         this->actor.world.pos.y = MO_WATER_LEVEL(play);
@@ -583,7 +695,7 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
             if (this == sMorphaTent2) {
                 this->work[MO_TENT_ACTION_STATE] = MO_TENT_SPAWN;
                 this->timers[0] = 70;
-                this->actor.shape.rot.y = this->actor.yawTowardsPlayer;
+                this->actor.shape.rot.y = Math_Vec3f_Yaw(&this->actor.world.pos, &target->world.pos);
             }
             break;
         case MO_TENT_SPAWN:
@@ -642,7 +754,7 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
             this->targetPos = this->actor.world.pos;
             Math_ApproachF(&this->actor.speedXZ, 0.75f, 1.0f, 0.04f);
             if (this->work[MO_TENT_ACTION_STATE] == MO_TENT_SWING) {
-                Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer + this->attackAngleMod, 0xA,
+                Math_ApproachS(&this->actor.shape.rot.y, Math_Vec3f_Yaw(&this->actor.world.pos, &target->world.pos) + this->attackAngleMod, 0xA,
                                0x1F4);
             }
             Math_ApproachF(&this->fwork[MO_TENT_MAX_STRETCH], 1.0f, 0.5f, 0.04);
@@ -688,15 +800,16 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
             Math_ApproachF(&this->tentMaxAngle, 0.5f, 1.0f, 0.01);
             Math_ApproachF(&this->tentSpeed, 160.0f, 1.0f, 50.0f);
             if ((this->timers[0] == 0) || (this->linkHitTimer != 0)) {
-                dx = this->tentPos[22].x - player->actor.world.pos.x;
-                dy = this->tentPos[22].y - player->actor.world.pos.y;
-                dz = this->tentPos[22].z - player->actor.world.pos.z;
+                dx = this->tentPos[22].x - target->world.pos.x;
+                dy = this->tentPos[22].y - target->world.pos.y;
+                dz = this->tentPos[22].z - target->world.pos.z;
                 if ((fabsf(dy) < 50.0f) && !HAS_LINK(otherTent) && (sqrtf(SQ(dx) + SQ(dy) + SQ(dz)) < 120.0f)) {
                     this->tentMaxAngle = .001f;
+                    this->anchorVictim = Anchor_PuppetClientId(target);
                     this->work[MO_TENT_ACTION_STATE] = MO_TENT_CURL;
                     this->timers[0] = 40;
                     this->tentSpeed = 0;
-                    if ((s16)(this->actor.shape.rot.y - this->actor.yawTowardsPlayer) >= 0) {
+                    if ((s16)(this->actor.shape.rot.y - Math_Vec3f_Yaw(&this->actor.world.pos, &target->world.pos)) >= 0) {
                         this->linkToLeft = false;
                     } else {
                         this->linkToLeft = true;
@@ -710,9 +823,9 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
                     this->fwork[MO_TENT_SWING_SIZE_X] = 0;
                     this->fwork[MO_TENT_SWING_SIZE_Z] = 0;
                     this->timers[0] = 30;
-                    if ((fabsf(player->actor.world.pos.x - this->actor.world.pos.x) > 300.0f) ||
-                        (player->actor.world.pos.y < MO_WATER_LEVEL(play)) || HAS_LINK(otherTent) ||
-                        (fabsf(player->actor.world.pos.z - this->actor.world.pos.z) > 300.0f)) {
+                    if ((fabsf(target->world.pos.x - this->actor.world.pos.x) > 300.0f) ||
+                        (target->world.pos.y < MO_WATER_LEVEL(play)) || HAS_LINK(otherTent) ||
+                        (fabsf(target->world.pos.z - this->actor.world.pos.z) > 300.0f)) {
 
                         this->work[MO_TENT_ACTION_STATE] = MO_TENT_RETREAT;
                         this->timers[0] = 75;
@@ -749,17 +862,18 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
             Math_ApproachF(&this->tentMaxAngle, 0.1f, 1.0f, 0.01f);
             Math_ApproachF(&this->tentSpeed, 960.0f, 1.0f, 30.0f);
             if (this->timers[0] >= 30) {
-                Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 5, 0xC8);
+                Math_ApproachS(&this->actor.shape.rot.y, Math_Vec3f_Yaw(&this->actor.world.pos, &target->world.pos), 5, 0xC8);
             }
             if (this->work[MO_TENT_ACTION_STATE] == MO_TENT_CURL) {
-                if ((this->timers[0] >= 5) && (this->linkHitTimer != 0) && (player->actor.parent == NULL)) {
-                    if (play->grabPlayer(play, player)) {
-                        player->actor.parent = &this->actor;
+                if (!localVictim) {
+                    // A remote player's own machine does the holding (see MorphaAdapter.cpp).
+                    if ((this->timers[0] >= 5) && (this->timers[0] <= 30) && BossMo_VictimInReach(this, target)) {
                         this->work[MO_TENT_ACTION_STATE] = MO_TENT_GRAB;
                         Sfx_PlaySfxAtPos(&this->tentTipPos, NA_SE_EN_MOFER_CATCH);
-                        Audio_PlaySoundGeneral(NA_SE_VO_LI_DAMAGE_S, &player->actor.projectedPos, 4,
-                                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                               &gSfxDefaultReverb);
+                    }
+                } else if ((this->timers[0] >= 5) && (this->linkHitTimer != 0) && (player->actor.parent == NULL)) {
+                    if (BossMo_VictimGrab(this, play, player)) {
+                        this->work[MO_TENT_ACTION_STATE] = MO_TENT_GRAB;
                     } else {
                         this->work[MO_TENT_ACTION_STATE] = MO_TENT_READY;
                         this->tentMaxAngle = .001f;
@@ -783,16 +897,10 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
                 }
             }
             if (this->work[MO_TENT_ACTION_STATE] == MO_TENT_GRAB) {
-                player->av2.actionVar2 = 0xA;
-                player->actor.speedXZ = player->actor.velocity.y = 0;
-                Math_ApproachF(&player->actor.world.pos.x, this->grabPosRot.pos.x, 0.5f, 20.0f);
-                Math_ApproachF(&player->actor.world.pos.y, this->grabPosRot.pos.y, 0.5f, 20.0f);
-                Math_ApproachF(&player->actor.world.pos.z, this->grabPosRot.pos.z, 0.5f, 20.0f);
-                Math_ApproachS(&player->actor.shape.rot.x, this->grabPosRot.rot.x, 2, 0x7D0);
-                Math_ApproachS(&player->actor.shape.rot.y, this->grabPosRot.rot.y, 2, 0x7D0);
-                Math_ApproachS(&player->actor.shape.rot.z, this->grabPosRot.rot.z, 2, 0x7D0);
+                if (localVictim) {
+                    BossMo_VictimPin(this, player, true);
+                }
                 if (this->timers[0] == 0) {
-                    camera1 = Play_GetCamera(play, MAIN_CAM);
                     this->work[MO_TENT_ACTION_STATE] = MO_TENT_SHAKE;
                     this->tentMaxAngle = .001f;
                     this->fwork[MO_TENT_SWING_RATE_X] = this->fwork[MO_TENT_SWING_RATE_Z] =
@@ -801,15 +909,9 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
                     this->mashCounter = 0;
                     this->sfxTimer = 30;
                     Audio_ResetIncreasingTranspose();
-                    func_80064520(play, &play->csCtx);
-                    this->csCamera = Play_CreateSubCamera(play);
-                    Play_ChangeCameraStatus(play, MAIN_CAM, CAM_STAT_WAIT);
-                    Play_ChangeCameraStatus(play, this->csCamera, CAM_STAT_ACTIVE);
-                    this->cameraEye = camera1->eye;
-                    this->cameraAt = camera1->at;
-                    this->cameraYaw = Math_FAtan2F(this->cameraEye.x - this->actor.world.pos.x,
-                                                   this->cameraEye.z - this->actor.world.pos.z);
-                    this->cameraYawRate = 0;
+                    if (localVictim) {
+                        BossMo_VictimShakeStart(this, play);
+                    }
                     goto tent_shake;
                 }
             }
@@ -820,13 +922,13 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
                 ShrinkWindow_SetVal(0);
                 Interface_ChangeAlpha(0xB);
             }
-            if ((this->timers[0] % 8) == 0) {
+            if (localVictim && ((this->timers[0] % 8) == 0)) {
                 play->damagePlayer(play, -1);
             }
             Math_ApproachF(&this->waterLevelMod, -5.0f, 0.1f, 0.4f);
             sp1B4 = this->tentRot[15].x;
             buttons = play->state.input[0].press.button;
-            if (CHECK_BTN_ALL(buttons, BTN_A) || CHECK_BTN_ALL(buttons, BTN_B)) {
+            if (localVictim && (CHECK_BTN_ALL(buttons, BTN_A) || CHECK_BTN_ALL(buttons, BTN_B))) {
                 this->mashCounter++;
             }
             for (indS1 = 0; indS1 < 41; indS1++) {
@@ -841,15 +943,9 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
                     Math_ApproachS(&this->tentRot[indS1].z, tempf2, 1.0f / this->tentMaxAngle, this->tentSpeed);
                 }
             }
-            player->av2.actionVar2 = 0xA;
-            player->actor.world.pos.x = this->grabPosRot.pos.x;
-            player->actor.world.pos.y = this->grabPosRot.pos.y;
-            player->actor.world.pos.z = this->grabPosRot.pos.z;
-            player->actor.world.rot.x = player->actor.shape.rot.x = this->grabPosRot.rot.x;
-            player->actor.world.rot.y = player->actor.shape.rot.y = this->grabPosRot.rot.y;
-            player->actor.world.rot.z = player->actor.shape.rot.z = this->grabPosRot.rot.z;
-            player->actor.velocity.y = 0;
-            player->actor.speedXZ = 0;
+            if (localVictim) {
+                BossMo_VictimPin(this, player, false);
+            }
             Math_ApproachF(&this->fwork[MO_TENT_MAX_STRETCH], 1.0f, 0.5f, 0.01);
             Math_ApproachF(&this->tentMaxAngle, 0.5f, 1.0f, 0.005f);
             Math_ApproachF(&this->tentSpeed, 480.0f, 1.0f, 10.0f);
@@ -859,32 +955,14 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
                 if ((tentXrot < 0) && (sp1B4 >= 0)) {
                     this->work[MO_TENT_ACTION_STATE] = MO_TENT_RETREAT;
                     this->work[MO_TENT_INVINC_TIMER] = 50;
-                    if (&this->actor == player->actor.parent) {
-                        player->av2.actionVar2 = 0x65;
-                        player->actor.parent = NULL;
-                        player->csAction = 0;
-                        if (this->timers[0] == 0) {
-                            func_8002F6D4(play, &this->actor, 20.0f, this->actor.shape.rot.y + 0x8000, 10.0f, 0);
-                        }
+                    if (localVictim) {
+                        BossMo_VictimRelease(this, play, player, this->timers[0] == 0);
                     }
                     this->timers[0] = 75;
                 }
             }
-            if (this->csCamera != 0) {
-                sp138.x = 0;
-                sp138.y = 100.0f;
-                sp138.z = 200.0f;
-                this->cameraYaw -= this->cameraYawRate;
-                Math_ApproachF(&this->cameraYawRate, 0.01, 1.0f, 0.002f);
-                Matrix_RotateY(this->cameraYaw, MTXMODE_NEW);
-                Matrix_MultVec3f(&sp138, &sp12C);
-                Math_ApproachF(&this->cameraEye.x, this->actor.world.pos.x + sp12C.x, 0.1f, 10.0f);
-                Math_ApproachF(&this->cameraEye.y, this->actor.world.pos.y + sp12C.y, 0.1f, 10.0f);
-                Math_ApproachF(&this->cameraEye.z, this->actor.world.pos.z + sp12C.z, 0.1f, 10.0f);
-                Math_ApproachF(&this->cameraAt.x, player->actor.world.pos.x, 0.5f, 50.0f);
-                Math_ApproachF(&this->cameraAt.y, player->actor.world.pos.y, 0.5f, 50.0f);
-                Math_ApproachF(&this->cameraAt.z, player->actor.world.pos.z, 0.5f, 50.0f);
-                Play_CameraSetAtEye(play, this->csCamera, &this->cameraAt, &this->cameraEye);
+            if (localVictim) {
+                BossMo_VictimCamera(this, play, player);
             }
             break;
         case MO_TENT_CUT:
@@ -916,21 +994,7 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
             }
             break;
         case MO_TENT_RETREAT:
-            if (this->csCamera != 0) {
-                Math_ApproachF(&this->cameraAt.x, player->actor.world.pos.x, 0.5f, 50.0f);
-                Math_ApproachF(&this->cameraAt.y, player->actor.world.pos.y, 0.5f, 50.0f);
-                Math_ApproachF(&this->cameraAt.z, player->actor.world.pos.z, 0.5f, 50.0f);
-                Play_CameraSetAtEye(play, this->csCamera, &this->cameraAt, &this->cameraEye);
-                if (player->actor.world.pos.y <= 42.0f) {
-                    camera2 = Play_GetCamera(play, MAIN_CAM);
-                    camera2->eye = this->cameraEye;
-                    camera2->eyeNext = this->cameraEye;
-                    camera2->at = this->cameraAt;
-                    func_800C08AC(play, this->csCamera, 0);
-                    this->csCamera = 0;
-                    func_80064534(play, &play->csCtx);
-                }
-            }
+            BossMo_VictimRetreatCamera(this, play, player);
             for (indS1 = 0; indS1 < 41; indS1++) {
                 sin = Math_SinS(((s16)this->fwork[MO_TENT_SWING_LAG_X] * indS1) + this->xSwing);
                 tempf1 = (indS1 * 0.025f * sin * this->fwork[MO_TENT_SWING_SIZE_X]) * this->fwork[MO_TENT_MAX_STRETCH];
@@ -953,10 +1017,10 @@ void BossMo_Tentacle(BossMo* this, PlayState* play) {
                     spFC.x = 0;
                     spFC.y = 0;
                     spFC.z = 0;
-                    Matrix_RotateY((player->actor.world.rot.y / (f32)0x8000) * M_PI, MTXMODE_NEW);
+                    Matrix_RotateY((target->world.rot.y / (f32)0x8000) * M_PI, MTXMODE_NEW);
                     Matrix_MultVec3f(&spFC, &spF0);
-                    spF0.x = player->actor.world.pos.x + spF0.x;
-                    spF0.z = player->actor.world.pos.z + spF0.z;
+                    spF0.x = target->world.pos.x + spF0.x;
+                    spF0.z = target->world.pos.z + spF0.z;
                     if ((fabsf(spF0.x - sTentSpawnPos[indS0].x) <= 320) &&
                         (fabsf(spF0.z - sTentSpawnPos[indS0].y) <= 320) &&
                         ((sMorphaTent2 == NULL) || (sMorphaTent2->tentSpawnPos != indS0))) {
@@ -1478,6 +1542,9 @@ void BossMo_IntroCs(BossMo* this, PlayState* play) {
                 this->csState = this->csCamera = MO_BATTLE;
                 func_80064534(play, &play->csCtx);
                 Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
+                if (Anchor_MorphaDefeatPending(&this->actor)) {
+                    BossMo_StartDeath(this, play);
+                }
             }
             break;
     }
@@ -1486,7 +1553,8 @@ void BossMo_IntroCs(BossMo* this, PlayState* play) {
         sMorphaTent1->actor.world.pos.z = -360.0f;
         sMorphaTent1->actor.prevPos = sMorphaTent1->actor.world.pos;
         sMorphaTent1->actor.speedXZ = 0.0f;
-        sMorphaTent1->actor.shape.rot.y = sMorphaTent1->actor.yawTowardsPlayer;
+        sMorphaTent1->actor.shape.rot.y =
+            Math_Vec3f_Yaw(&sMorphaTent1->actor.world.pos, &BossMo_NearestTarget(sMorphaTent1, play)->world.pos);
     }
     if (this->csCamera != 0) {
         if (sp9F) {
@@ -1759,6 +1827,26 @@ void BossMo_DeathCs(BossMo* this, PlayState* play) {
     }
 }
 
+void BossMo_StartDeath(BossMo* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    Enemy_StartFinishingBlow(play, &this->actor);
+    GameInteractor_ExecuteOnBossDefeat(&this->actor);
+    Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
+    this->csState = MO_DEATH_START;
+    sMorphaTent1->drawActor = false;
+    sMorphaTent1->work[MO_TENT_ACTION_STATE] = MO_TENT_DEATH_START;
+    sMorphaTent1->baseAlpha = 0.0f;
+    if (sMorphaTent2 != NULL) {
+        sMorphaTent2->tent2KillTimer = 1;
+    }
+    if (player->actor.parent != NULL) {
+        player->av2.actionVar2 = 0x65;
+        player->actor.parent = NULL;
+        player->csAction = 0;
+    }
+}
+
 void BossMo_CoreCollisionCheck(BossMo* this, PlayState* play) {
     s16 i;
     Player* player = GET_PLAYER(play);
@@ -1801,21 +1889,7 @@ void BossMo_CoreCollisionCheck(BossMo* this, PlayState* play) {
                 if ((s8)this->actor.colChkInfo.health <= 0) {
                     if (((sMorphaTent1->csCamera == 0) && (sMorphaTent2 == NULL)) ||
                         ((sMorphaTent1->csCamera == 0) && (sMorphaTent2 != NULL) && (sMorphaTent2->csCamera == 0))) {
-                        Enemy_StartFinishingBlow(play, &this->actor);
-                        GameInteractor_ExecuteOnBossDefeat(&this->actor);
-                        Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
-                        this->csState = MO_DEATH_START;
-                        sMorphaTent1->drawActor = false;
-                        sMorphaTent1->work[MO_TENT_ACTION_STATE] = MO_TENT_DEATH_START;
-                        sMorphaTent1->baseAlpha = 0.0f;
-                        if (sMorphaTent2 != NULL) {
-                            sMorphaTent2->tent2KillTimer = 1;
-                        }
-                        if (player->actor.parent != NULL) {
-                            player->av2.actionVar2 = 0x65;
-                            player->actor.parent = NULL;
-                            player->csAction = 0;
-                        }
+                        BossMo_StartDeath(this, play);
                     } else {
                         this->actor.colChkInfo.health = 1;
                     }
@@ -1867,7 +1941,7 @@ void BossMo_Core(BossMo* this, PlayState* play) {
     };
     u8 nearLand;
     s16 i;                             // not on stack
-    Player* player = GET_PLAYER(play); // not on stack
+    Actor* target = BossMo_NearestTarget(this, play);
     f32 spDC;
     f32 spD8;
     f32 spD4;
@@ -1927,7 +2001,7 @@ void BossMo_Core(BossMo* this, PlayState* play) {
     Math_ApproachF(&this->actor.scale.y, yScaleTarget, 0.2f, 0.001f);
     this->work[MO_CORE_DRAW_SHADOW] = BossMo_NearLand(&this->actor.world.pos, 15.0f);
     nearLand = BossMo_NearLand(&this->actor.world.pos, 0.0f);
-    if ((player->actor.world.pos.y < (MO_WATER_LEVEL(play) - 50.0f)) &&
+    if ((target->world.pos.y < (MO_WATER_LEVEL(play) - 50.0f)) &&
         ((this->work[MO_TENT_ACTION_STATE] == MO_CORE_MOVE) ||
          (this->work[MO_TENT_ACTION_STATE] == MO_CORE_MAKE_TENT))) {
         this->work[MO_TENT_ACTION_STATE] = MO_CORE_UNDERWATER;
@@ -1946,7 +2020,8 @@ void BossMo_Core(BossMo* this, PlayState* play) {
                 if (sMorphaTent1->work[MO_TENT_ACTION_STATE] == MO_TENT_WAIT) {
                     sMorphaTent1->work[MO_TENT_ACTION_STATE] = MO_TENT_SPAWN;
                     sMorphaTent1->timers[0] = 70;
-                    sMorphaTent1->actor.shape.rot.y = sMorphaTent1->actor.yawTowardsPlayer;
+                    sMorphaTent1->actor.shape.rot.y =
+            Math_Vec3f_Yaw(&sMorphaTent1->actor.world.pos, &BossMo_NearestTarget(sMorphaTent1, play)->world.pos);
                 }
             }
             break;
@@ -1969,7 +2044,7 @@ void BossMo_Core(BossMo* this, PlayState* play) {
             }
             break;
         case MO_CORE_UNDERWATER:
-            if (player->actor.world.pos.y >= MO_WATER_LEVEL(play)) {
+            if (target->world.pos.y >= MO_WATER_LEVEL(play)) {
                 this->work[MO_TENT_ACTION_STATE] = MO_CORE_MOVE;
                 this->actor.speedXZ = 0.0f;
             }
@@ -2129,16 +2204,16 @@ void BossMo_Core(BossMo* this, PlayState* play) {
                 } else if (this->work[MO_TENT_ACTION_STATE] == MO_CORE_UNDERWATER) {
                     switch (this->work[MO_CORE_WAIT_IN_WATER]) {
                         case false:
-                            this->targetPos = player->actor.world.pos;
+                            this->targetPos = target->world.pos;
                             this->targetPos.y += 30.0f;
                             sp70.x = 0.0f;
                             sp70.y = 0.0f;
                             sp70.z = 100.0f;
-                            Matrix_RotateY((player->actor.world.rot.y / (f32)0x8000) * M_PI, MTXMODE_NEW);
+                            Matrix_RotateY((target->world.rot.y / (f32)0x8000) * M_PI, MTXMODE_NEW);
                             Matrix_MultVec3f(&sp70, &sp64);
-                            this->targetPos.x = player->actor.world.pos.x + sp64.x;
-                            this->targetPos.y = player->actor.world.pos.y + 30.0f;
-                            this->targetPos.z = player->actor.world.pos.z + sp64.z;
+                            this->targetPos.x = target->world.pos.x + sp64.x;
+                            this->targetPos.y = target->world.pos.y + 30.0f;
+                            this->targetPos.z = target->world.pos.z + sp64.z;
                             Math_ApproachF(&this->actor.speedXZ, 10.0f, 1.0f, 1.0f);
                             if (this->timers[0] == 0) {
                                 this->work[MO_CORE_WAIT_IN_WATER] = true;
@@ -2278,30 +2353,15 @@ void BossMo_UpdateCore(Actor* thisx, PlayState* play) {
     BossMo_Unknown();
 }
 
-void BossMo_UpdateTent(Actor* thisx, PlayState* play) {
+// The part of a tentacle's update that Draw reads and that follows from its own counters and its action state.
+static void BossMo_TentHead(BossMo* this, PlayState* play, s32 scaleStreamed) {
     s16 i;
     s16 index;
-    s32 pad;
-    BossMo* this = (BossMo*)thisx;
-    Player* player = GET_PLAYER(play);
     f32 phi_f0;
-
-    if ((this == sMorphaTent2) && (this->tent2KillTimer != 0)) {
-        this->tent2KillTimer++;
-        this->actor.draw = NULL;
-        if (this->tent2KillTimer > 20) {
-            Actor_Kill(&this->actor);
-            Audio_StopSfxByPos(&this->tentTipPos);
-            sMorphaTent2 = NULL;
-        }
-        return;
-    }
 
     SkinMatrix_Vec3fMtxFMultXYZW(&play->viewProjectionMtxF, &this->tentPos[40], &this->tentTipPos,
                                  &this->actor.projectedW);
     osSyncPrintf("MO : Move mode = <%d>\n", this->work[MO_TENT_ACTION_STATE]);
-    Math_ApproachS(&player->actor.shape.rot.x, 0, 5, 0x3E8);
-    Math_ApproachS(&player->actor.shape.rot.z, 0, 5, 0x3E8);
     this->work[MO_TENT_VAR_TIMER]++;
     this->sfxTimer++;
     this->work[MO_TENT_MOVE_TIMER]++;
@@ -2313,7 +2373,9 @@ void BossMo_UpdateTent(Actor* thisx, PlayState* play) {
     index = this->widthIndex;
     this->tentWidth[index] = (Math_SinS(this->pulsePhase) * this->tentPulse) + (1.0f + this->tentPulse);
     for (i = 0; i < 41; i++) {
-        if (this->work[MO_TENT_ACTION_STATE] >= MO_TENT_DEATH_START) {
+        if (scaleStreamed) {
+            // A mirror takes the width from the stream (the core bulge into tentacle 1 is not recomputed here).
+        } else if (this->work[MO_TENT_ACTION_STATE] >= MO_TENT_DEATH_START) {
             if (this->work[MO_TENT_ACTION_STATE] >= MO_TENT_DEATH_1) {
                 if (this->work[MO_TENT_ACTION_STATE] == MO_TENT_DEATH_5) {
                     phi_f0 = (this->timers[0] != 0) ? sFlatWidth[i] : sDropletWidth[i];
@@ -2341,19 +2403,12 @@ void BossMo_UpdateTent(Actor* thisx, PlayState* play) {
 
     Math_ApproachF(&this->tentRippleSize, 0.0f, 0.1f, 0.005f);
     Math_ApproachF(&this->tentPulse, 0.2f, 0.5f, 0.01f);
-    this->actionFunc(this, play);
-    for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
-        if (this->timers[i] != 0) {
-            this->timers[i]--;
-        }
-    }
-    Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 0xA, 0xC8);
-    Actor_MoveXZGravity(&this->actor);
-    Math_ApproachF(&this->actor.speedXZ, 0.0, 1.0f, 0.02f);
+}
 
-    if (BossMo_NearLand(&this->actor.world.pos, 40)) {
-        this->actor.world.pos = this->actor.prevPos;
-    }
+// Ripples, base bubbles and the counters that tick down, for a tentacle running its own AI and for a mirror.
+static void BossMo_TentTail(BossMo* this, PlayState* play) {
+    s16 i;
+
     if ((this->work[MO_TENT_VAR_TIMER] % 8) == 0) {
         f32 rippleScale;
         Vec3f pos = this->actor.world.pos;
@@ -2407,6 +2462,43 @@ void BossMo_UpdateTent(Actor* thisx, PlayState* play) {
     if (this->linkHitTimer != 0) {
         this->linkHitTimer--;
     }
+}
+
+void BossMo_UpdateTent(Actor* thisx, PlayState* play) {
+    s16 i;
+    s32 pad;
+    BossMo* this = (BossMo*)thisx;
+    Player* player = GET_PLAYER(play);
+
+    if ((this == sMorphaTent2) && (this->tent2KillTimer != 0)) {
+        this->tent2KillTimer++;
+        this->actor.draw = NULL;
+        if (this->tent2KillTimer > 20) {
+            Actor_Kill(&this->actor);
+            Audio_StopSfxByPos(&this->tentTipPos);
+            sMorphaTent2 = NULL;
+        }
+        return;
+    }
+
+    Math_ApproachS(&player->actor.shape.rot.x, 0, 5, 0x3E8);
+    Math_ApproachS(&player->actor.shape.rot.z, 0, 5, 0x3E8);
+    BossMo_TentHead(this, play, false);
+    this->actionFunc(this, play);
+    for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
+        if (this->timers[i] != 0) {
+            this->timers[i]--;
+        }
+    }
+    Math_ApproachS(&this->actor.world.rot.y,
+                   Math_Vec3f_Yaw(&this->actor.world.pos, &BossMo_NearestTarget(this, play)->world.pos), 0xA, 0xC8);
+    Actor_MoveXZGravity(&this->actor);
+    Math_ApproachF(&this->actor.speedXZ, 0.0, 1.0f, 0.02f);
+
+    if (BossMo_NearLand(&this->actor.world.pos, 40)) {
+        this->actor.world.pos = this->actor.prevPos;
+    }
+    BossMo_TentTail(this, play);
 
     if (this->drawActor) {
         BossMo_TentCollisionCheck(this, play);
@@ -2428,6 +2520,40 @@ void BossMo_UpdateTent(Actor* thisx, PlayState* play) {
     this->work[MO_TENT_BASE_TEX2_X] -= 3;
     this->work[MO_TENT_BASE_TEX2_Y]++;
     Math_ApproachZeroF(&this->waterLevelMod, 0.1f, 0.2f);
+}
+
+void BossMo_TentVisualTick(BossMo* this, PlayState* play, s32 isMirror) {
+    if ((this == sMorphaTent2) && (this->tent2KillTimer != 0)) {
+        this->actor.draw = NULL;
+        return;
+    }
+    BossMo_TentHead(this, play, isMirror);
+    BossMo_TentTail(this, play);
+    this->work[MO_TENT_BASE_TEX1_X]++;
+    this->work[MO_TENT_BASE_TEX1_Y]++;
+    this->work[MO_TENT_BASE_TEX2_X] -= 3;
+    this->work[MO_TENT_BASE_TEX2_Y]++;
+}
+
+void BossMo_CoreVisualTick(BossMo* this, PlayState* play) {
+    this->waterTex1x += -1.0f;
+    this->waterTex1y += -1.0f;
+    this->waterTex2y++;
+    if (sMorphaTent2 == NULL) {
+        MO_WATER_LEVEL(play) = sMorphaTent1->waterLevelMod + (s16)this->waterLevel;
+    } else {
+        MO_WATER_LEVEL(play) = sMorphaTent2->waterLevelMod + ((s16)this->waterLevel + sMorphaTent1->waterLevelMod);
+    }
+    this->actor.flags |= ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR;
+    this->actor.focus.pos = this->actor.world.pos;
+    this->work[MO_TENT_VAR_TIMER]++;
+    this->work[MO_TENT_MOVE_TIMER]++;
+    this->work[MO_CORE_DRAW_SHADOW] = BossMo_NearLand(&this->actor.world.pos, 15.0f);
+    if (this->work[MO_CORE_DMG_FLASH_TIMER] != 0) {
+        this->work[MO_CORE_DMG_FLASH_TIMER]--;
+    }
+    BossMo_UpdateEffects(this, play);
+    BossMo_Unknown();
 }
 
 void BossMo_UpdateTentColliders(BossMo* this, s32 item, ColliderJntSph* tentCollider, Vec3f* center) {

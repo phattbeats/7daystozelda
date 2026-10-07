@@ -461,3 +461,17 @@ extern "C" Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from) {
     }
     return best;
 }
+
+// PHA-4051: the client id behind a puppet actor from Anchor_BossAimTargets, 0 for the local Link.
+extern "C" u32 Anchor_PuppetClientId(Actor* actor) {
+    if (Anchor::Instance == nullptr) {
+        return 0;
+    }
+    for (uint32_t cid : EnemySync::PerceptionTargets()) {
+        Player* p = ResolvePuppet(cid);
+        if (p != nullptr && &p->actor == actor) {
+            return cid;
+        }
+    }
+    return 0;
+}

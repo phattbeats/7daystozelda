@@ -53,6 +53,65 @@ typedef enum {
 #define MO_SHORT_MAX MAX((s32)MO_TENT_SHORT_MAX, (s32)MO_CORE_SHORT_MAX)
 #define MO_FLOAT_MAX MAX((s32)MO_TENT_FLOAT_MAX, (s32)MO_CORE_FLOAT_MAX)
 
+typedef enum {
+    /* 0 */ MO_FX_NONE,
+    /* 1 */ MO_FX_SMALL_RIPPLE,
+    /* 2 */ MO_FX_BIG_RIPPLE,
+    /* 3 */ MO_FX_DROPLET,
+    /* 4 */ MO_FX_SPLASH,
+    /* 5 */ MO_FX_SPLASH_TRAIL,
+    /* 6 */ MO_FX_WET_SPOT,
+    /* 7 */ MO_FX_BUBBLE
+} BossMoEffectType;
+
+typedef enum {
+    /*   0 */ MO_TENT_READY,
+    /*   1 */ MO_TENT_SWING,
+    /*   2 */ MO_TENT_ATTACK,
+    /*   3 */ MO_TENT_CURL,
+    /*   4 */ MO_TENT_GRAB,
+    /*   5 */ MO_TENT_SHAKE,
+    /*  10 */ MO_TENT_WAIT = 10,
+    /*  11 */ MO_TENT_SPAWN,
+    /* 100 */ MO_TENT_CUT = 100,
+    /* 101 */ MO_TENT_RETREAT,
+    /* 102 */ MO_TENT_DESPAWN,
+    /* 200 */ MO_TENT_DEATH_START = 200,
+    /* 201 */ MO_TENT_DEATH_1,
+    /* 202 */ MO_TENT_DEATH_2,
+    /* 203 */ MO_TENT_DEATH_3,
+    /* 205 */ MO_TENT_DEATH_5 = 205,
+    /* 206 */ MO_TENT_DEATH_6
+} BossMoTentState;
+
+typedef enum {
+    /* -11 */ MO_CORE_UNUSED = -11,
+    /*   0 */ MO_CORE_MOVE = 0,
+    /*   1 */ MO_CORE_MAKE_TENT,
+    /*   2 */ MO_CORE_UNDERWATER,
+    /*   5 */ MO_CORE_STUNNED = 5,
+    /*  10 */ MO_CORE_ATTACK = 10,
+    /*  11 */ MO_CORE_RETREAT,
+    /*  20 */ MO_CORE_INTRO_WAIT = 20,
+    /*  21 */ MO_CORE_INTRO_REVEAL
+} BossMoCoreState;
+
+typedef enum {
+    /*   0 */ MO_BATTLE,
+    /*   1 */ MO_INTRO_WAIT,
+    /*   2 */ MO_INTRO_START,
+    /*   3 */ MO_INTRO_SWIM,
+    /*   4 */ MO_INTRO_REVEAL,
+    /*   5 */ MO_INTRO_FINISH,
+    /* 100 */ MO_DEATH_START = 100,
+    /* 101 */ MO_DEATH_DRAIN_WATER_1,
+    /* 102 */ MO_DEATH_DRAIN_WATER_2,
+    /* 103 */ MO_DEATH_CEILING,
+    /* 104 */ MO_DEATH_DROPLET,
+    /* 105 */ MO_DEATH_FINISH,
+    /* 150 */ MO_DEATH_MO_CORE_BURST = 150
+} BossMoCsState;
+
 typedef struct BossMo {
     /* 0x0000 */ Actor actor;
     /* 0x014C */ Actor* otherTent;
@@ -127,9 +186,24 @@ typedef struct BossMo {
     /* 0x103C */ ColliderJntSphElement tentElements[19];
     /* 0x14FC */ ColliderCylinder coreCollider;
     /* 0x1548 */ char unk_1548[0x44];
-} BossMo; // size = 0x158C
+    // Anchor co-op: client id of the remote player this tentacle holds (0 = the local Link, or nobody).
+    u32 anchorVictim;
+    u8 anchorHeld; // mirror side: this machine's Link is held by this tentacle
+} BossMo;
 
 #define BOSSMO_CORE -1
 #define BOSSMO_TENTACLE 100
+
+BossMo* BossMo_AnchorGlobal(s32 which); // 0 core, 1 tentacle 1, 2 tentacle 2
+void BossMo_AnchorSetTent2(BossMo* tent2);
+void BossMo_TentVisualTick(BossMo* boss, PlayState* play, s32 isMirror);
+void BossMo_CoreVisualTick(BossMo* boss, PlayState* play);
+s32 BossMo_VictimGrab(BossMo* boss, PlayState* play, Player* player);
+void BossMo_VictimPin(BossMo* boss, Player* player, s32 soft);
+void BossMo_VictimShakeStart(BossMo* boss, PlayState* play);
+void BossMo_VictimCamera(BossMo* boss, PlayState* play, Player* player);
+void BossMo_VictimRelease(BossMo* boss, PlayState* play, Player* player, s32 push);
+void BossMo_VictimRetreatCamera(BossMo* boss, PlayState* play, Player* player);
+void BossMo_StartDeath(BossMo* core, PlayState* play);
 
 #endif

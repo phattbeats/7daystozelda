@@ -21,6 +21,7 @@ extern "C" {
 #include "variables.h"
 #include "functions.h"
 #include "src/overlays/actors/ovl_En_Floormas/z_en_floormas.h"
+#include "src/overlays/actors/ovl_Boss_Mo/z_boss_mo.h"
 
 extern PlayState* gPlayState;
 }
@@ -1802,6 +1803,11 @@ static void ReKeyDynamic(Actor* actor, TrackedState& st, uint64_t newKey, bool r
 static void OnEnemyActorSpawn(Actor* actor) {
     if (!(IsTrackedCategory(actor) || IsSyncedProjectile(actor)) || gPlayState == NULL || IsTrackingExcluded(actor) ||
         !MirroringEnabled()) {
+        return;
+    }
+    // Morpha's first tentacle is spawned by the core's own Init on every client, so it keeps its occurrence key;
+    // only the second one (spawned from Update) is a dynamic spawn.
+    if (actor->id == ACTOR_BOSS_MO && actor->params >= 100 && BossMo_AnchorGlobal(1) == NULL) {
         return;
     }
     if (gPlayState->numSetupActors != 0) {
