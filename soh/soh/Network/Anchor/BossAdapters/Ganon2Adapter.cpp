@@ -324,7 +324,8 @@ extern "C" {
 // cmd 0 report only; 1 land a hit on the head collider the way the collision check would
 // (arg = dmgFlags, default sword) on element 0 (front) or, with cmd 6, element 15 (tail);
 // 2 set the boss health to arg (authority); 3 un-clear this room; 4 teleport Link to (arg, y, z)
-// of the ring; 5 set csState to arg (authority).
+// of the ring; 5 set csState to arg (authority); 8 start the downed cutscene (authority);
+// 9 start the finale (authority); 10 put the Master Sword on B.
 EMSCRIPTEN_KEEPALIVE
 const char* anchor_test_gn2(int cmd, int arg) {
     static std::string out;
@@ -364,6 +365,12 @@ const char* anchor_test_gn2(int cmd, int arg) {
         Flags_UnsetClear(gPlayState, gPlayState->roomCtx.curRoom.num);
     } else if (cmd == 4) {
         player->actor.world.pos.x = (float)arg;
+    } else if (cmd == 10) {
+        // the Master Sword on B, as the finale's stab needs it
+        Item_Give(gPlayState, ITEM_SWORD_MASTER);
+        gSaveContext.equips.buttonItems[0] = ITEM_SWORD_MASTER;
+        Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_MASTER);
+        Interface_LoadItemIcon1(gPlayState, 0);
     }
     j["present"] = boss != nullptr;
     if (boss == nullptr) {
@@ -384,6 +391,12 @@ const char* anchor_test_gn2(int cmd, int arg) {
         boss->actor.colChkInfo.health = arg;
     } else if (cmd == 5 && !EnemySync::IsSuppressed(&boss->actor)) {
         boss->csState = arg;
+    } else if (cmd == 8 && !EnemySync::IsSuppressed(&boss->actor)) {
+        // what the hit path does when his health first drops under 21
+        boss->actor.colChkInfo.health = 20;
+        BossGanon2_CoopStartDownedCs(&boss->actor, gPlayState);
+    } else if (cmd == 9 && !EnemySync::IsSuppressed(&boss->actor)) {
+        BossGanon2_CoopStartDefeat(&boss->actor, gPlayState);
     }
     j["phase"] = GN2_GetPhase(&boss->actor);
     j["hp"] = boss->actor.colChkInfo.health;
