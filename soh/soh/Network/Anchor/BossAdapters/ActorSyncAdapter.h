@@ -41,6 +41,13 @@ struct ActorSyncAdapter {
     // no collider carries (King Dodongo swallowing that player's bomb). The
     // event code is the adapter's own; see EnemySync::SendAdapterEvent.
     void (*OnRemoteEvent)(Actor* actor, uint8_t event) = nullptr;
+    // Authority: a remote hit is about to be replayed on this actor. Return the
+    // actor it should see as the attacker (Barinade needs a boomerang to stun it).
+    Actor* (*RemoteHitAttacker)(Actor* actor, uint32_t dmgFlags, Actor* attacker) = nullptr;
+    // Mirror: does ENEMY_DIED for this actor mean the adapter's whole-boss
+    // defeat? Null = yes. Multi-part bosses (Barinade) return false for parts,
+    // whose deaths replay as ordinary kills.
+    bool (*HandlesDefeat)(Actor* actor) = nullptr;
 };
 
 namespace EnemySync {

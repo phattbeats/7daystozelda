@@ -47,7 +47,7 @@ in a two-client live test, with screenshots and logs. The rig is in
 |---|---|---|
 | Gohma | M3, PHA-4023 | Done (warp spot and crash handoff: PHA-4046) |
 | King Dodongo | PHA-4047 | **Done**, see below |
-| Barinade | PHA-4048 | Not started |
+| Barinade | PHA-4048 | **Done**, see below |
 | Phantom Ganon | PHA-4049 | Not started |
 | Volvagia | PHA-4050 | Not started |
 | Morpha | PHA-4051 | Not started |
@@ -74,3 +74,22 @@ Known limits:
 - A test warp into the boss room doesn't pull the partner in; boss co-entry
   needs the real door.
 - Camera shake from his roll and wall hits plays only on the host.
+
+## Barinade (PHA-4048)
+
+One actor id, 19 parts (body -1, supports 0-2, zappers 3-5, Baris 6-15, stumps 16-18, door 19) sharing file-static fight state.
+
+| Row | How | Live test (2026-10-06, two local clients) |
+|---|---|---|
+| Phases | Read from the shared statics: PREFIGHT until `sCsState` reaches BATTLE, FIGHT until the death cutscene, DEFEATED from `DEATH_START` / `PHASE_DEATH`. Every part mirrors only after its local intro and while the host is fighting. | Both intros ran locally; the mirror took over at cs 13 on both runs. |
+| Extras | Per part: shape offset, aim rotation, colour filter, pulse scales, glow, head, neck and arm vectors, dead and burst flags. Body only: the shared statics (`sCsState`, `sFightPhase`, `sBodyState`, `sPhase4HP`, `sPhase2Timer`, door, zapper rotation, Bari slots), the live-Bari and stump masks and the body collider's damage mask. The mirror ticks the shared effect array (`BossVa_UpdateEffects`). | Same pose, sparks and phase on both screens at every step. |
+| Health | There is no health field. The body's phases are driven by hits (supports cut, `sKillBari`, `sPhase4HP`), so mirror hits go to the host. The damage table's effect for the replayed flags is applied (the boomerang stun is damage effect 1), and the boomerang is replayed with a stand-in EnBoom (`RemoteHitAttacker`). | Supports cut by A and by B; Baris killed by both; B's boomerang stun dropped the body on both screens; phase 4 hits from both took `sPhase4HP` 4 -> 0. |
+| Defeat | `OnPhaseChange` FIGHT -> DEFEATED calls `BossVa_SyncStartDeath` (the body's `SetupBodyDeath` without the finishing-blow hooks the host already fired) and returns true, so every part runs its own death code. `HandlesDefeat` keeps the generic one-actor defeat handoff off the other parts. `OnRemoteDefeat` covers a missed edge. | Both clients ran the death cutscene (cs 14 -> 24), spawned one heart container and one blue warp each, and set the clear flag. |
+| Children | Baris are tracked under a key derived from their params (`BarinadeKey`): each client spawns its own, the host from the AI and the mirror from the Bari mask, so nothing is broadcast and nothing double-spawns. Supports are cut on the mirror by `BossVa_SyncCutSupport` (cut skeleton, cut action, stump), which the death cutscene's burst steps run inside. Stumps and the door are excluded (`IsTrackingExcluded`); sparks, tumours and lightning are local effects. | Bari and stump sets matched on both clients at every step. |
+| Aggro | Host-only. His AI reads the host's Link where an actor swap can't reach (`stateFlags1` DAMAGED and `invincibilityTimer` gate the zapper charge and the chase, the body turns on `yawTowardsPlayer`), the Baris orbit the body, and every damaging collider is mirrored, so each player is hurt by what they actually touch. Retargeting would make the zappers' charge and cooldown depend on whichever player is nearest from frame to frame, which the shared statics cannot hold. | Body contact hurt both players on their own screens. |
+| Resume | Parts the stream stops covering resume their own AI; a Bari the host removed quietly is killed after a grace period (`ABSENT_BARI_GRACE`). | Not hit in the test (no stale stream). |
+| Live test | | No desync canary in either log, no crash, full run intro -> fight -> defeat on both clients. |
+
+Known limits:
+- The mirror doesn't receive the host's spark, tumour and lightning-charge spawns (it ticks the shared array only).
+- A test warp into the boss room doesn't pull the partner in; boss co-entry needs the real door.

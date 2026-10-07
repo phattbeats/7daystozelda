@@ -4051,3 +4051,69 @@ void BossVa_Reset(void) {
         sBodyBari[i] = 0;
     }
 }
+
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+void BossVa_SyncGet(BossVaSyncState* out) {
+    out->csState = sCsState;
+    out->fightPhase = sFightPhase;
+    out->bodyState = sBodyState;
+    out->phase4HP = sPhase4HP;
+    out->phase2Timer = sPhase2Timer;
+    out->phase3StopMoving = sPhase3StopMoving;
+    out->doorState = sDoorState;
+    memcpy(out->bodyBari, sBodyBari, sizeof(sBodyBari));
+    out->zapperRot = sZapperRot;
+}
+
+void BossVa_SyncSet(const BossVaSyncState* in) {
+    sCsState = in->csState;
+    sFightPhase = in->fightPhase;
+    sBodyState = in->bodyState;
+    sPhase4HP = in->phase4HP;
+    sPhase2Timer = in->phase2Timer;
+    sPhase3StopMoving = in->phase3StopMoving;
+    sDoorState = in->doorState;
+    memcpy(sBodyBari, in->bodyBari, sizeof(sBodyBari));
+    sZapperRot = in->zapperRot;
+}
+
+// The body's defeat edge without the finishing-blow/boss-defeat hooks, which the
+// authority already fired for the shared kill.
+void BossVa_SyncStartDeath(BossVa* body, PlayState* play) {
+    if (sCsState >= DEATH_START) {
+        return;
+    }
+    if (sFightPhase < PHASE_DEATH) {
+        sFightPhase = PHASE_DEATH;
+    }
+    BossVa_SetupBodyDeath(body, play);
+}
+
+void BossVa_SyncSpawnBari(BossVa* body, PlayState* play, s16 params) {
+    Actor_SpawnAsChild(&play->actorCtx, &body->actor, play, ACTOR_BOSS_VA,
+                       sInitPosOffsets[params].x + body->actor.world.pos.x,
+                       sInitPosOffsets[params].y + body->actor.world.pos.y,
+                       sInitPosOffsets[params].z + body->actor.world.pos.z, sInitRot[params].x + body->actor.world.rot.x,
+                       sInitRot[params].y + body->actor.world.rot.y, sInitRot[params].z + body->actor.world.rot.z,
+                       params);
+}
+
+// What the cut does to the support itself, for a mirror that never ran the hit:
+// the stump, the swap to the cut skeleton (the stream's limb table needs it) and
+// the cut action, which the death cutscene's burst steps run inside. The shared
+// statics (phase, body state) come from the stream.
+void BossVa_SyncCutSupport(BossVa* support, PlayState* play) {
+    f32 lastFrame = Animation_GetLastFrame(&gBarinadeSupportCutAnim);
+
+    Actor_Spawn(&play->actorCtx, play, ACTOR_BOSS_VA, support->armTip.x, support->armTip.y + 20.0f, support->armTip.z, 0,
+                support->actor.shape.rot.y, 0, support->actor.params + BOSSVA_STUMP_1, true);
+    support->burst = false;
+    support->timer2 = 0;
+    support->onCeiling = false;
+    support->timer = (s32)(Rand_ZeroOne() * 10.0f) + 5;
+    SkelAnime_Free(&support->skelAnime, play);
+    SkelAnime_InitFlex(play, &support->skelAnime, &gBarinadeCutSupportSkel, &gBarinadeSupportCutAnim, NULL, NULL, 0);
+    Animation_Change(&support->skelAnime, &gBarinadeSupportCutAnim, 1.0f, 0.0f, lastFrame, ANIMMODE_ONCE, 0.0f);
+    BossVa_SetupAction(support, BossVa_SupportCut);
+}
+#endif

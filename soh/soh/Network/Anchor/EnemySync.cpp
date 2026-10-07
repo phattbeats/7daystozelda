@@ -32,6 +32,7 @@ namespace EnemySync {
 static constexpr uint8_t EXPECTED_DAMAGE_LIFETIME = 60;
 // Frames to wait for a lethal synthetic hit to play out before force-killing.
 static constexpr uint8_t REMOTE_DEATH_GRACE = 30;
+static constexpr uint16_t BARINADE_PARAM_STUMP_1 = 16;
 // Echo guard for death broadcasts. A latch would be wrong here: enemies like
 // En_Karebaba regrow from the same actor instance, so death sync must re-arm.
 static constexpr uint8_t DEATH_COOLDOWN_FRAMES = 60;
@@ -102,6 +103,7 @@ struct TrackedState {
     uint16_t broadcastParams = 0;
     bool dynamicKey = false;          // key is host-assigned (bit 63)
     bool remoteSpawned = false;       // spawned from an ENEMY_SPAWN packet
+    bool localKeyed = false;          // deterministic key; every client spawns its own copy (never broadcast)
     bool needsSpawnBroadcast = false; // authority: announce this dynamic spawn
     bool projectile = false;          // whitelisted enemy projectile: fire-and-forget replica, never streamed/mirrored
     bool reflected = false;           // projectile: bounced off a shield (here or on a peer); announced once
@@ -294,7 +296,18 @@ static s16* ProjectileTimer(Actor* actor) {
 // King Dodongo adapter), and each flame burns only that machine's own Link
 // (it checks GET_PLAYER by distance; it has no collider to mirror).
 static bool IsTrackingExcluded(Actor* actor) {
-    return (actor->id == ACTOR_EN_GOMA && (uint16_t)actor->params >= 6) || actor->id == ACTOR_EN_BDFIRE;
+    return (actor->id == ACTOR_EN_GOMA && (uint16_t)actor->params >= 6) || actor->id == ACTOR_EN_BDFIRE ||
+           (actor->id == ACTOR_BOSS_VA && actor->params >= (int16_t)BARINADE_PARAM_STUMP_1);
+}
+
+// Barinade (PHA-4048): one actor id, param-split parts. Parts spawned while
+// the room loads keep their occurrence keys. Runtime spawns (the Bari jellies)
+// are spawned by every client's own copy of the fight — the authority's from
+// its AI, a mirror's from the streamed Bari mask — so they get a key derived
+// from their params alone and are never broadcast (a broadcast would race the
+// mirror's own intro and double-spawn).
+static uint64_t BarinadeKey(Actor* actor) {
+    return DYNAMIC_KEY_BIT | (0xBA51ULL << 24) | (uint16_t)actor->params;
 }
 
 // A Floormaster is three En_Floormas actors linked into a parent/child ring by
@@ -686,6 +699,23 @@ void ApplyRemoteHit(Actor* actor, uint8_t damage, uint32_t dmgFlags, Vec3s hitPo
 
     ESYNC_LOG("[EnemySync] HIT apply id={} dmg={} viaCollider={}", actor->id, damage, state.acCollider != nullptr);
 
+    if (const ActorSyncAdapter* hitAdapter = GetAdapter(actor->id);
+        hitAdapter != nullptr && hitAdapter->RemoteHitAttacker != nullptr) {
+        attacker = hitAdapter->RemoteHitAttacker(actor, dmgFlags, attacker);
+    }
+    // A real collision check derives the damage effect (stun, freeze) from the
+    // table; the synthetic hit skips it. Barinade's boomerang stun is an effect.
+    if (actor->id == ACTOR_BOSS_VA && actor->colChkInfo.damageTable != NULL && dmgFlags != 0) {
+        uint32_t flags = dmgFlags;
+        int i = 0;
+        for (; i < 0x1F; i++, flags >>= 1) {
+            if (flags == 1) {
+                break;
+            }
+        }
+        actor->colChkInfo.damageEffect = (actor->colChkInfo.damageTable->table[i] >> 4) & 0xF;
+    }
+
     // Reconcile drift: local health should never exceed the remote pre-hit pool
     uint8_t remotePreHit = (uint8_t)std::min<int>(remoteHealth + damage, 255);
     if (actor->colChkInfo.health > remotePreHit) {
@@ -829,7 +859,8 @@ void ReleaseForDeath(Actor* actor) {
 bool HandOffRemoteDefeat(Actor* actor) {
     auto it = tracked.find(actor);
     const ActorSyncAdapter* adapter = GetAdapter(actor->id);
-    if (it == tracked.end() || adapter == nullptr || adapter->OnRemoteDefeat == nullptr) {
+    if (it == tracked.end() || adapter == nullptr || adapter->OnRemoteDefeat == nullptr ||
+        (adapter->HandlesDefeat != nullptr && !adapter->HandlesDefeat(actor))) {
         return false;
     }
     TrackedState& st = it->second;
@@ -1566,7 +1597,7 @@ static void Tick() {
             // re-announce after the other side's copy already died would resurrect it.
             // Linked keys (Floormaster hands) are never announced: every client's
             // copy of the leader spawns its own hands in Init.
-            bool rebroadcast = st.dynamicKey && !st.projectile && !st.linked &&
+            bool rebroadcast = st.dynamicKey && !st.projectile && !st.linked && !st.localKeyed &&
                                (tickCounter % SPAWN_REBROADCAST_TICKS) == 0;
             // Relax the health>0 gate for projectiles (they spawn with health 0).
             if ((st.needsSpawnBroadcast || rebroadcast) && (actor->colChkInfo.health > 0 || st.projectile)) {
@@ -1678,6 +1709,7 @@ static void OnEnemyActorInit(Actor* actor) {
         state.dynamicKey = true;
         state.remoteSpawned = pending->second.second;
         state.needsSpawnBroadcast = !state.remoteSpawned;
+        state.localKeyed = actor->id == ACTOR_BOSS_VA;
         pendingDynamicKeys.erase(pending);
     } else {
         int16_t roomNum = gPlayState->roomCtx.curRoom.num;
@@ -1775,6 +1807,15 @@ static void OnEnemyActorSpawn(Actor* actor) {
     auto it = tracked.find(actor);
     if (it != tracked.end() && it->second.linked) {
         return; // a Floormaster hand, keyed off its big hand already
+    }
+    if (actor->id == ACTOR_BOSS_VA) {
+        if (it != tracked.end()) {
+            ReKeyDynamic(actor, it->second, BarinadeKey(actor), true);
+            it->second.localKeyed = true;
+        } else {
+            pendingDynamicKeys[actor] = { BarinadeKey(actor), true };
+        }
+        return;
     }
     if (it != tracked.end()) {
         ReKeyDynamic(actor, it->second, NextDynamicKey(), false);

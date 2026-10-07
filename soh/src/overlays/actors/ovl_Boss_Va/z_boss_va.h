@@ -71,4 +71,29 @@ typedef enum {
     /* 19 */ BOSSVA_DOOR
 } BossVaParam;
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4048: co-op sync access to the file-static fight state (BarinadeAdapter.cpp).
+typedef struct BossVaSyncState {
+    s8 csState;
+    u8 fightPhase;
+    u8 bodyState;
+    s8 phase4HP;
+    u16 phase2Timer;
+    u8 phase3StopMoving;
+    s16 doorState;
+    u8 bodyBari[10];
+    Vec3s zapperRot;
+} BossVaSyncState;
+
+#define BOSSVA_SYNC_BATTLE 13
+#define BOSSVA_SYNC_DEATH_START 14
+#define BOSSVA_SYNC_PHASE_DEATH 18
+
+void BossVa_SyncGet(BossVaSyncState* out);
+void BossVa_SyncSet(const BossVaSyncState* in);
+void BossVa_SyncStartDeath(BossVa* body, PlayState* play);
+void BossVa_SyncSpawnBari(BossVa* body, PlayState* play, s16 params);
+void BossVa_SyncCutSupport(BossVa* support, PlayState* play);
+#endif
+
 #endif
