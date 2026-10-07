@@ -5,6 +5,18 @@
 #include "global.h"
 
 typedef enum {
+    /* 0x00 */ TW_KOTAKE,
+    /* 0x01 */ TW_KOUME,
+    /* 0x02 */ TW_TWINROVA,
+    /* 0x64 */ TW_FIRE_BLAST = 0x64,
+    /* 0x65 */ TW_FIRE_BLAST_GROUND,
+    /* 0x66 */ TW_ICE_BLAST,
+    /* 0x67 */ TW_ICE_BLAST_GROUND,
+    /* 0x68 */ TW_DEATHBALL_KOTAKE,
+    /* 0x69 */ TW_DEATHBALL_KOUME
+} TwinrovaType;
+
+typedef enum {
     /*  0 */ TWEFF_NONE,
     /*  1 */ TWEFF_DOT,
     /*  2 */ TWEFF_2,
@@ -175,6 +187,82 @@ typedef struct BossTw {
     /* 0x06A8 */ char unused_6A8[4];
     /* 0x06AC */ f32 subCamYaw;
     /* 0x06B0 */ f32 subCamYawStep;
-} BossTw; // size = 0x06B4
+    // Anchor co-op: who holds the mirror shield for this beam or blast (see BossTw_Anchor*).
+    u32 anchorReflector; // client id of the remote player reflecting (0 = the local Link, or nobody)
+    u8 anchorLocalReflect; // mirror side: this machine's Link is the reflector
+    u8 anchorReflectHeld;  // authority side: the remote reflector still holds R
+    s16 anchorReflectAge;  // authority side: frames since the last reflector report
+    Vec3f anchorReflectBody;
+    Vec3s anchorReflectDir;
+    u8 anchorBlastLive; // mirror side: blast copy has not been consumed locally
+} BossTw; // size = 0x06B4 plus the Anchor fields
+
+// Fight stage, shared by all three Boss_Tw actors (one per client; the authority's is streamed).
+typedef enum {
+    /* 0 */ TW_STAGE_INTRO,
+    /* 1 */ TW_STAGE_WITCHES,
+    /* 2 */ TW_STAGE_MERGE,
+    /* 3 */ TW_STAGE_TWINROVA,
+    /* 4 */ TW_STAGE_DEFEATED
+} TwStage;
+
+typedef enum {
+    /* 0 */ TW_ACT_OTHER,
+    /* 1 */ TW_ACT_CSWAIT,
+    /* 2 */ TW_ACT_FLYTO,
+    /* 3 */ TW_ACT_TURN,
+    /* 4 */ TW_ACT_SHOOTBEAM,
+    /* 5 */ TW_ACT_FINISHBEAM,
+    /* 6 */ TW_ACT_HITBYBEAM,
+    /* 7 */ TW_ACT_LAUGH,
+    /* 8 */ TW_ACT_SPIN,
+    /* 9 */ TW_ACT_MERGECS,
+    /* 10 */ TW_ACT_DEATHCS,
+    /* 11 */ TW_ACT_WAIT,
+    /* 12 */ TW_ACT_T_ARRIVE,
+    /* 13 */ TW_ACT_T_CHARGE,
+    /* 14 */ TW_ACT_T_SHOOT,
+    /* 15 */ TW_ACT_T_DONESHOOT,
+    /* 16 */ TW_ACT_T_STUN,
+    /* 17 */ TW_ACT_T_GETUP,
+    /* 18 */ TW_ACT_T_FLY,
+    /* 19 */ TW_ACT_T_SPIN,
+    /* 20 */ TW_ACT_T_LAUGH,
+    /* 21 */ TW_ACT_T_MERGECS,
+    /* 22 */ TW_ACT_T_DEATHCS,
+    /* 23 */ TW_ACT_T_INTROCS
+} TwAction;
+
+// Anchor co-op accessors (BossAdapters/TwinrovaAdapter.cpp).
+BossTw* BossTw_AnchorGlobal(s32 which); // 0 Kotake, 1 Koume, 2 Twinrova
+s32 BossTw_AnchorStage(void);
+u8 BossTw_AnchorActionCode(BossTw* tw);
+void BossTw_AnchorSetAction(BossTw* tw, u8 code);
+void BossTw_AnchorStartDefeat(BossTw* twinrova, PlayState* play);
+void BossTw_AnchorStartMerge(PlayState* play);
+void BossTw_AnchorResume(BossTw* tw, PlayState* play);
+void BossTw_AnchorMirrorTick(BossTw* tw, PlayState* play);
+// Mirror side: this machine's Link against the streamed beam. Returns 0 none, 1 reflecting (the
+// beam is clipped to the shield), 2 hit (freeze/burn applied locally), 3 diverted by a plain shield.
+s32 BossTw_AnchorBeamVictim(BossTw* tw, PlayState* play, f32* outDist);
+// Mirror side: this machine's Link against a streamed blast's shield hit. Returns 0 nothing,
+// 1 absorbed (blast consumed), 2 charged and released (blast becomes a reflect).
+s32 BossTw_AnchorBlastShield(BossTw* tw, PlayState* play);
+// Authority side: a remote reflector's per-frame state.
+void BossTw_AnchorReflectReport(BossTw* tw, s32 held, const Vec3f* body, s16 dirX, s16 dirY, u32 clientId);
+void BossTw_AnchorBeamReflected(BossTw* tw, f32 dist, const Vec3f* body, s16 dirX, s16 dirY, u32 clientId);
+void BossTw_AnchorBlastAbsorbed(BossTw* tw, s32 released, const Vec3f* body, s16 dirX, s16 dirY, u32 clientId);
+void BossTw_AnchorReleaseDone(s32 blastType);
+void BossTw_AnchorReflectSparks(BossTw* tw, PlayState* play);
+void BossTw_AnchorTwinrovaStunned(void);
+u8 BossTw_AnchorIsBlast(BossTw* tw);
+s32 BossTw_AnchorEnvType(void);
+s32 BossTw_AnchorGroundBlastType(void);
+s32 BossTw_AnchorBlastType(void);
+void BossTw_AnchorSetEnvType(s32 env, s32 groundBlastType);
+void BossTw_AnchorSetBlastType(s32 blastType);
+s32 BossTw_AnchorShieldCharge(void);
+void BossTw_AnchorSetShieldCharge(s32 charge);
+void BossTw_AnchorForceAttack(BossTw* tw, PlayState* play, s32 blastType);
 
 #endif

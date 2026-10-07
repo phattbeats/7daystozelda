@@ -1,0 +1,9 @@
+ 2.4 A 4 -1 0 0 oth hp 1 2 | B 4 -1 0 0 | A shield False 0 0 B shield False 0 0
+ 2.8 A 4 -1 0 0 oth hp 1 2 | B 4 -1 0 0 | A shield False 0 0 B shield False 0 0
+ 3.2 A 4 -1 0 0 oth hp 1 2 | B 4 -1 0 0 | A shield False 0 0 B shield False 0 0
+ 3.6 A 4 0 160 0 oth hp 1 2 | B 4 0 120 0 | A shield False 0 0 B shield False 0 0
+ 4.0 A 4 0 240 0 oth hp 1 2 | B 4 0 240 0 | A shield False 0 0 B shield False 0 1
+ 4.4 A 4 0 240 0 oth hp 1 2 | B 4 0 240 0 | A shield False 0 0 B shield False 0 1
+ 4.8 A 4 0 240 0 oth hp 1 2 | B 4 0 240 0 | A shield False 0 0 B shield False 0 1
+ 5.2 A 4 0 240 0 oth hp 1 2 | B 4 0 240 0 | A shield False 0 0 B shield False 0 1
+ 5.6 A 5 0 0 0 oth hp 1 3 | B 5 0 0 0 | A shield False 0 0 B shield False 0 1

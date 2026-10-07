@@ -52,7 +52,7 @@ in a two-client live test, with screenshots and logs. The rig is in
 | Volvagia | PHA-4050 | **Done**, see below |
 | Morpha | PHA-4051 | **Done**, see below |
 | Bongo Bongo | PHA-4052 | Not started |
-| Twinrova | PHA-4053 | Not started |
+| Twinrova | PHA-4053 | **Done**, see below |
 | Ganondorf and Ganon | PHA-4054 | Not started |
 | Minibosses (Dark Link, Iron Knuckle, Dead Hand, Big Octo, Flare Dancer, Stalfos, Lizalfos) | PHA-4055 | See the miniboss section below |
 
@@ -189,3 +189,24 @@ Hyrule Field and Kakariko, each miniboss spawned on the host through `anchor_tes
 | Flare Dancer | Action and fade identical on both, the fire ring replicated at the same positions, the core spawned on both from a mirror hit and was killed, and the dancer defeat ended on both. |
 
 Not exercised live: Iron Knuckle's raised shield blocking a mirror swing (the streamed state and colliders were checked, not a real swing), Nabooru's cutscenes, the Octo's first-fight platform, the partner's hookshot on the Flare Dancer, Dead Hand's grab on the partner, and a host leaving mid-fight. No desync canary, parse error or crash in either log from the adapters. A `null function` in `EnPeehat_Update` came from a test spawn of a Peehat with invalid params.
+
+## Twinrova (PHA-4053)
+
+Boss_Tw: Kotake (params 0), Koume (1), Twinrova (2), the fire and ice blasts (0x64, 0x66), their pools (0x65, 0x67) and the death balls (0x68, 0x69). The room is room 3 of scene 0x17; its actors exist only on the adult layer.
+
+| Row | How | Live test (2026-10-07, two local clients) |
+|---|---|---|
+| Phases | One file-static stage, set where the code changes it: INTRO, WITCHES, MERGE, TWINROVA, DEFEATED. Every Boss_Tw actor reports it as its phase. The intro, the merge and the death are cutscenes with their own camera and Link, so each client runs its own. Witches mirror only while both the stream and the local stage are WITCHES; Twinrova and the blasts only in TWINROVA. A client behind in a cutscene starts the next one itself (`OnPhaseChange` / `ShouldMirror`), then joins. | Both intros ran locally (stage 0 -> 1 on both), the merge cutscene ran on both, and B then mirrored Twinrova. |
+| Extras | Witches: action code, visible and hair flags, scepter, flame and portal fields, the beam (scale, state, reach, pitch, yaw, roll, reflected ray), pool values, fog and eye. Twinrova: action code, eyes, pool and flash values, timers, room light, pool and blast type, stun. Blasts: scale, tail alpha, state, type, timer, who holds the shield. The mirror runs the local half of Update itself (`BossTw_AnchorMirrorTick`: texture counters, the effect array, room light, scepter and crown sparks, the blast tail). Nothing that spawns from Draw is streamed. | Same pose, beam and pool on both screens. |
+| Health | Twinrova's health streams with the pose. Witch health counts beam hits and streams too (it starts the merge). A mirror's sword hit is a hit request the host applies. | A's and B's swings each took 2 (24 -> 14 -> 4, alternating, identical on both). |
+| Defeat | `BossTw_AnchorStartDefeat` (her own `SetupDeathCS`, the finishing blow, the defeat hook) on the edge, `OnRemoteDefeat` for a missed edge, deferred while the local intro or merge runs (`Anchor_TwStage`). | Killing blow from the mirror: both ran the death cutscene, each got one heart container, one blue warp and the clear flag. |
+| Children | Blasts are tracked dynamic spawns. Pools are excluded and replayed from a ring in the extras (the host retracts an entry when a shield takes its pool back). Death balls are excluded: each client's own death cutscene spawns them. The witches keep room-occurrence keys (`OnEnemyActorSpawn` skips params <= 2). | One blast and one pool per client; no double spawns. |
+| Aggro | No puppet swap. The beam's aim point and the blasts' launch direction use the nearest living player on the host (`Anchor_BossNearestTarget`). What a beam or blast does to a player is decided on that player's machine, because the mirror shield is about that machine's Link. A beam is a ray: every machine tests its own Link against the streamed ray (`BossTw_AnchorBeamVictim`), so a hit freezes or burns only that Link. A catch is reported (`EV_BEAM_REFLECT`), then the reflector reports its shield pose every frame (`EV_REFLECT_STATE`) and the host's reflect state follows it (`anchorReflector`). A blast that meets a mirror's shield is judged there (`OnLocalHit` -> `BossTw_AnchorBlastShield`): the charge is per player, and the verdict (absorbed, or charged and released) goes to the host (`EV_BLAST_ABSORB`). Because the verdict takes a round trip, the host holds a beam's tip and a blast at a remote player for up to 1.2 s / 0.6 s. | Koume's beam aimed at B: B caught it with the Mirror Shield, the host's witch went to reflect state with `refl` = B, Kotake (parked in front of B's shield) took the hit on both screens (health 0 -> 1, hit-by-beam). Same with A reflecting. Unshielded, B burned and A did not. B's charge went 2 -> 3, released, Twinrova was stunned on both, B's glow faded to 0 and A's charge stayed 0. |
+| Resume | `BossTw_AnchorResume`: a witch goes back to flying, Twinrova to her fly state, in the stage the client is in. | Hit at each merge (the witches' phase gate); not hit with a dead stream. |
+| Live test | | Intro -> witches -> beam reflected by each player -> merge -> blast, stun -> sword from both -> defeat on both clients: no desync canary and no crash in either log. Evidence: `docs/evidence/pha4053/`. Rig: `tools/harness/pha4053/`. |
+
+Known limits:
+- The reflector's stunning shot is drawn on the host (the shot's sparks are effects, not actors); the reflector's screen shows the glow and the stun, and spawns its own sparks.
+- A reflect needs the verdict to reach the host within the hold (beam about 1.2 s, blast about 0.6 s); a very slow link just lets the beam or blast through.
+- The shield-pose reports are about 20 events a second while a shield holds a reflect.
+- `OnLocalResume` after a host change in the middle of a cutscene was not exercised.

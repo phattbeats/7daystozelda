@@ -1,0 +1,2 @@
+A {'stage': 4, 'csAction': 0, 'hearts': 1, 'warps': 1, 'clear': 8, 'balls': 0, 'pools': 0, 'blasts': 0}
+B {'stage': 4, 'csAction': 0, 'hearts': 1, 'warps': 1, 'clear': 8, 'balls': 0, 'pools': 0, 'blasts': 0}

@@ -1,0 +1,8 @@
+exec(open('/tmp/z4053/t/h.py').read())
+page.mouse.click(480,270); time.sleep(1)
+cv('gSevenDays.Enabled',1)
+key('space'); time.sleep(3); key('space'); time.sleep(3); shot('/tmp/z4053/t/ev/f0.png')
+key('x'); time.sleep(2); shot('/tmp/z4053/t/ev/f1.png')
+key('x'); time.sleep(2); shot('/tmp/z4053/t/ev/f2.png')
+key('x'); time.sleep(2); shot('/tmp/z4053/t/ev/f3.png')
+print('done')

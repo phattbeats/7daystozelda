@@ -1,0 +1,4 @@
+stun act 16 hp 24
+swing by A -> hp A 22 B 22 act A 16 B 16 stage 3 3
+swing by B -> hp A 20 B 20 act A 16 B 16 stage 3 3
+swing by A -> hp A 18 B 18 act A 16 B 16 stage 3 3

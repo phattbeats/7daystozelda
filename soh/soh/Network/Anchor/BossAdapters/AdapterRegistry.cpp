@@ -17,6 +17,7 @@ void RegisterEnDhAdapter();
 void RegisterEnBigokutaAdapter();
 void RegisterEnTestAdapter();
 void RegisterEnFdAdapter();
+void RegisterTwinrovaAdapter();
 
 namespace EnemySync {
 
@@ -53,6 +54,7 @@ void RegisterBuiltInAdapters() {
     RegisterEnBigokutaAdapter();
     RegisterEnTestAdapter();
     RegisterEnFdAdapter();
+    RegisterTwinrovaAdapter();
 }
 
 } // namespace EnemySync

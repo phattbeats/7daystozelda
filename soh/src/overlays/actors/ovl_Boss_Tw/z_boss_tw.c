@@ -13,17 +13,6 @@
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
      ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
-typedef enum {
-    /* 0x00 */ TW_KOTAKE,
-    /* 0x01 */ TW_KOUME,
-    /* 0x02 */ TW_TWINROVA,
-    /* 0x64 */ TW_FIRE_BLAST = 0x64,
-    /* 0x65 */ TW_FIRE_BLAST_GROUND,
-    /* 0x66 */ TW_ICE_BLAST,
-    /* 0x67 */ TW_ICE_BLAST_GROUND,
-    /* 0x68 */ TW_DEATHBALL_KOTAKE,
-    /* 0x69 */ TW_DEATHBALL_KOUME
-} TwinrovaType;
 
 void BossTw_Init(Actor* thisx, PlayState* play);
 void BossTw_Destroy(Actor* thisx, PlayState* play);
@@ -198,6 +187,14 @@ static u8 D_8094C878;
 static s16 D_8094C87A;
 static s16 D_8094C87C;
 static u8 D_8094C87E;
+
+// Anchor co-op: soh/Network/Anchor/EnemyTargeting.cpp and BossAdapters/TwinrovaAdapter.cpp
+extern PlayState* gPlayState;
+Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
+void Anchor_TwGroundBlastSpawned(s32 blastType, Vec3f* pos, s16 timer);
+void Anchor_TwStage(s32 stage);
+void Anchor_TwGroundBlastCancelled(void);
+static s8 sTwStage = TW_STAGE_INTRO;
 BossTwEffect sTwEffects[150];
 
 void BossTw_AddDotEffect(PlayState* play, Vec3f* initalPos, Vec3f* initalSpeed, Vec3f* accel, f32 scale, s16 args,
@@ -468,6 +465,7 @@ void BossTw_Init(Actor* thisx, PlayState* play2) {
 
         D_8094C858 = D_8094C854 = 0.0f;
         sFixedBlastType = Rand_ZeroFloat(1.99f);
+        sTwStage = TW_STAGE_INTRO;
         play->specialEffects = sTwEffects;
 
         for (i = 0; i < ARRAY_COUNT(sTwEffects); i++) {
@@ -524,6 +522,7 @@ void BossTw_Init(Actor* thisx, PlayState* play2) {
         if (Flags_GetEventChkInf(EVENTCHKINF_BEGAN_TWINROVA_BATTLE)) {
             // began twinrova battle
             BossTw_SetupWait(this, play);
+            sTwStage = TW_STAGE_WITCHES;
         } else {
             BossTw_TwinrovaSetupIntroCS(this, play);
             this->actor.world.pos.x = 0.0f;
@@ -536,6 +535,7 @@ void BossTw_Init(Actor* thisx, PlayState* play2) {
 
         if (Flags_GetClear(play, play->roomCtx.curRoom.num)) {
             // twinrova has been defeated.
+            sTwStage = TW_STAGE_DEFEATED;
             Actor_Kill(&this->actor);
             if (GameInteractor_Should(VB_SPAWN_BLUE_WARP, true, this)) {
                 Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_DOOR_WARP1, 600.0f, 230.0f, 0.0f, 0, 0, 0,
@@ -680,14 +680,15 @@ void BossTw_FlyTo(BossTw* this, PlayState* play) {
 }
 
 void BossTw_SetupShootBeam(BossTw* this, PlayState* play) {
-    Player* player = GET_PLAYER(play);
+    Actor* aim = Anchor_BossNearestTarget(play, &this->actor);
 
     this->actionFunc = BossTw_ShootBeam;
     Animation_MorphToPlayOnce(&this->skelAnime, &gTwinrovaKotakeKoumeChargeUpAttackStartAnim, -5.0f);
     this->workf[ANIM_SW_TGT] = Animation_GetLastFrame(&gTwinrovaKotakeKoumeChargeUpAttackStartAnim);
     this->timers[1] = 70;
-    this->targetPos = player->actor.world.pos;
+    this->targetPos = aim->world.pos;
     this->csState1 = 0;
+    this->anchorReflectAge = 0;
     this->beamDist = 0.0f;
     this->beamReflectionDist = 0.0f;
     this->beamShootState = -1;
@@ -735,6 +736,7 @@ void BossTw_SpawnGroundBlast(BossTw* this, PlayState* play, s16 blastType) {
             sKoumePtr->workf[KM_GD_CRTR_SCL] = 0.005f;
             sKoumePtr->groundBlastPos2 = groundBlast->actor.world.pos;
             sEnvType = 4;
+            Anchor_TwGroundBlastSpawned(1, &groundBlast->actor.world.pos, groundBlast->timers[0]);
         }
     } else {
         sGroundBlastType = 2;
@@ -755,6 +757,7 @@ void BossTw_SpawnGroundBlast(BossTw* this, PlayState* play, s16 blastType) {
             sKotakePtr->workf[UNK_F16] = 70.0f;
             sKotakePtr->groundBlastPos2 = groundBlast->actor.world.pos;
             sEnvType = 3;
+            Anchor_TwGroundBlastSpawned(2, &groundBlast->actor.world.pos, groundBlast->timers[0]);
         }
     }
 }
@@ -933,6 +936,32 @@ f32 BossTw_GetFloorY(Vec3f* pos) {
     return -100.0f;
 }
 
+// Who is holding the mirror shield for this beam or blast: the local Link, or (anchorReflector != 0) the
+// remote player whose machine reports the shield pose every frame (BossTw_AnchorReflectReport).
+static s32 BossTw_ReflectorHeld(BossTw* this, PlayState* play) {
+    if (this->anchorReflector == 0) {
+        return CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_R);
+    }
+    if (this->anchorReflectAge < 100) {
+        this->anchorReflectAge++;
+    }
+    return this->anchorReflectHeld && this->anchorReflectAge < 15;
+}
+
+static void BossTw_ReflectorBody(BossTw* this, PlayState* play, Vec3f* out) {
+    *out = this->anchorReflector == 0 ? GET_PLAYER(play)->bodyPartsPos[15] : this->anchorReflectBody;
+}
+
+static void BossTw_ReflectorDir(BossTw* this, PlayState* play, Vec3s* out) {
+    if (this->anchorReflector == 0) {
+        Matrix_MtxFToYXZRotS(&GET_PLAYER(play)->shieldMf, out, 0);
+        out->y += 0x8000;
+        out->x = -out->x;
+    } else {
+        *out = this->anchorReflectDir;
+    }
+}
+
 void BossTw_ShootBeam(BossTw* this, PlayState* play) {
     s16 i;
     f32 xDiff;
@@ -943,7 +972,8 @@ void BossTw_ShootBeam(BossTw* this, PlayState* play) {
     Vec3s sp128;
     Player* player = GET_PLAYER(play);
     BossTw* otherTw = (BossTw*)this->actor.parent;
-    Input* input = &play->state.input[0];
+    Actor* aim = Anchor_BossNearestTarget(play, &this->actor);
+    s32 aimLocal = (aim == &player->actor);
 
     Math_ApproachF(&this->actor.world.pos.y, 400.0f, 0.05f, this->actor.speedXZ);
     Math_ApproachF(&this->actor.speedXZ, 5.0f, 1.0f, 0.25f);
@@ -952,16 +982,16 @@ void BossTw_ShootBeam(BossTw* this, PlayState* play) {
 
     if (this->timers[1] != 0) {
         Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 5, this->rotateSpeed);
-        if ((player->stateFlags1 & PLAYER_STATE1_SHIELDING) &&
+        if (aimLocal && (player->stateFlags1 & PLAYER_STATE1_SHIELDING) &&
             ((s16)((player->actor.shape.rot.y - this->actor.shape.rot.y) + 0x8000) < 0x2000) &&
             ((s16)((player->actor.shape.rot.y - this->actor.shape.rot.y) + 0x8000) > -0x2000)) {
             Math_ApproachF(&this->targetPos.x, player->bodyPartsPos[15].x, 1.0f, 400.0f);
             Math_ApproachF(&this->targetPos.y, player->bodyPartsPos[15].y, 1.0f, 400.0f);
             Math_ApproachF(&this->targetPos.z, player->bodyPartsPos[15].z, 1.0f, 400.0f);
         } else {
-            Math_ApproachF(&this->targetPos.x, player->actor.world.pos.x, 1.0f, 400.0f);
-            Math_ApproachF(&this->targetPos.y, player->actor.world.pos.y + 30.0f, 1.0f, 400.0f);
-            Math_ApproachF(&this->targetPos.z, player->actor.world.pos.z, 1.0f, 400.0f);
+            Math_ApproachF(&this->targetPos.x, aim->world.pos.x, 1.0f, 400.0f);
+            Math_ApproachF(&this->targetPos.y, aim->world.pos.y + 30.0f, 1.0f, 400.0f);
+            Math_ApproachF(&this->targetPos.z, aim->world.pos.z, 1.0f, 400.0f);
         }
 
         this->timers[0] = 70;
@@ -1081,6 +1111,7 @@ void BossTw_ShootBeam(BossTw* this, PlayState* play) {
                         }
 
                         this->beamShootState = 1;
+                        this->anchorReflector = 0;
                         Sfx_PlaySfxAtPos(&player->actor.projectedPos, NA_SE_IT_SHIELD_REFLECT_MG);
                         Matrix_MtxFToYXZRotS(&player->shieldMf, &sp128, 0);
                         sp128.y += 0x8000;
@@ -1096,8 +1127,20 @@ void BossTw_ShootBeam(BossTw* this, PlayState* play) {
                         BossTw_BeamHitPlayerCheck(this, play);
 
                         if (this->csState1 == 0) {
-                            Math_ApproachF(&this->beamDist, 2.0f * sqrtf(SQ(xDiff) + SQ(yDiff) + SQ(zDiff)), 1.0f,
-                                           40.0f);
+                            f32 reach = 2.0f * sqrtf(SQ(xDiff) + SQ(yDiff) + SQ(zDiff));
+
+                            // Aimed at a remote player: its own machine decides whether the shield catches the
+                            // beam, so stop the tip at the player for a moment (long enough for that report to
+                            // arrive) instead of letting it run on to the floor and start a pool behind them.
+                            if (!aimLocal) {
+                                f32 stop = (reach * 0.5f) + 40.0f;
+
+                                if (this->beamDist >= stop && this->anchorReflectAge < 24) {
+                                    this->anchorReflectAge++;
+                                    reach = stop;
+                                }
+                            }
+                            Math_ApproachF(&this->beamDist, reach, 1.0f, 40.0f);
                         }
                     }
                 }
@@ -1117,17 +1160,17 @@ void BossTw_ShootBeam(BossTw* this, PlayState* play) {
                 break;
 
             case 1:
-                if (CHECK_BTN_ALL(input->cur.button, BTN_R)) {
-                    Player* player = GET_PLAYER(play);
+                if (BossTw_ReflectorHeld(this, play)) {
+                    Vec3f reflBody;
 
+                    BossTw_ReflectorBody(this, play, &reflBody);
                     this->beamDist = sqrtf(SQ(xDiff) + SQ(yDiff) + SQ(zDiff));
                     Math_ApproachF(&this->beamReflectionDist, 2000.0f, 1.0f, 40.0f);
-                    Math_ApproachF(&this->targetPos.x, player->bodyPartsPos[15].x, 1.0f, 400.0f);
-                    Math_ApproachF(&this->targetPos.y, player->bodyPartsPos[15].y, 1.0f, 400.0f);
-                    Math_ApproachF(&this->targetPos.z, player->bodyPartsPos[15].z, 1.0f, 400.0f);
+                    Math_ApproachF(&this->targetPos.x, reflBody.x, 1.0f, 400.0f);
+                    Math_ApproachF(&this->targetPos.y, reflBody.y, 1.0f, 400.0f);
+                    Math_ApproachF(&this->targetPos.z, reflBody.z, 1.0f, 400.0f);
                     if ((this->work[CS_TIMER_1] % 4) == 0) {
-                        BossTw_AddRingEffect(play, &player->bodyPartsPos[15], 0.5f, 3.0f, 0xFF, this->actor.params, 1,
-                                             150);
+                        BossTw_AddRingEffect(play, &reflBody, 0.5f, 3.0f, 0xFF, this->actor.params, 1, 150);
                     }
                 } else {
                     this->beamShootState = 0;
@@ -1194,9 +1237,7 @@ void BossTw_ShootBeam(BossTw* this, PlayState* play) {
 
     if (this->beamShootState == 1) {
         if (this->csState1 == 0) {
-            Matrix_MtxFToYXZRotS(&player->shieldMf, &sp128, 0);
-            sp128.y += 0x8000;
-            sp128.x = -sp128.x;
+            BossTw_ReflectorDir(this, play, &sp128);
             Math_ApproachS(&this->magicDir.x, sp128.x, 5, 0x2000);
             Math_ApproachS(&this->magicDir.y, sp128.y, 5, 0x2000);
             this->beamReflectionPitch = (this->magicDir.x / 32768.0f) * M_PI;
@@ -1463,6 +1504,7 @@ void BossTw_Wait(BossTw* this, PlayState* play) {
 }
 
 void BossTw_TwinrovaSetupMergeCS(BossTw* this, PlayState* play) {
+    sTwStage = TW_STAGE_MERGE;
     this->actionFunc = BossTw_TwinrovaMergeCS;
     this->csState2 = 0;
     this->csState1 = 0;
@@ -1697,6 +1739,8 @@ void BossTw_TwinrovaMergeCS(BossTw* this, PlayState* play) {
                 Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
                 this->work[TW_PLLR_IDX] = 0;
                 this->targetPos = sTwinrovaPillarPos[0];
+                sTwStage = TW_STAGE_TWINROVA;
+                Anchor_TwStage(sTwStage);
                 BossTw_TwinrovaSetupFly(this, play);
             }
             break;
@@ -2258,6 +2302,8 @@ void BossTw_TwinrovaIntroCS(BossTw* this, PlayState* play) {
                 func_80064534(play, &play->csCtx);
                 Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
                 BossTw_SetupWait(this, play);
+                sTwStage = TW_STAGE_WITCHES;
+                Anchor_TwStage(sTwStage);
             }
             break;
     }
@@ -2346,6 +2392,7 @@ void BossTw_DeathBall(BossTw* this, PlayState* play) {
 }
 
 void BossTw_TwinrovaSetupDeathCS(BossTw* this, PlayState* play) {
+    sTwStage = TW_STAGE_DEFEATED;
     this->actionFunc = BossTw_TwinrovaDeathCS;
     Animation_MorphToLoop(&this->skelAnime, &gTwinrovaDamageAnim, -3.0f);
     this->actor.world.rot.y = this->actor.shape.rot.y;
@@ -2959,6 +3006,61 @@ void BossTw_Update(Actor* thisx, PlayState* play) {
     }
 }
 
+// The half of Twinrova's Update that only touches this machine: the room's light, the effect array, and
+// what the beams and pools did to the local Link. A mirrored Twinrova runs it too (BossTw_AnchorMirrorTick).
+static void BossTw_TwinrovaLocalTail(BossTw* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    play->envCtx.unk_DC = 2;
+
+    switch (sEnvType) {
+        case 0:
+            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.02f);
+            break;
+        case 1:
+            play->envCtx.unk_BD = 3;
+            Math_ApproachF(&play->envCtx.unk_D8, 0.5f, 1.0f, 0.05f);
+            break;
+        case 2:
+            play->envCtx.unk_BD = 2;
+            Math_ApproachF(&play->envCtx.unk_D8, (Math_SinS(this->work[CS_TIMER_1] * 0x3000) * 0.03f) + 0.5f, 1.0f,
+                           0.05f);
+            break;
+        case 3:
+            play->envCtx.unk_BD = 3;
+            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.1f);
+            break;
+        case 4:
+            play->envCtx.unk_BD = 2;
+            Math_ApproachF(&play->envCtx.unk_D8, (Math_SinS(this->work[CS_TIMER_1] * 0x3E00) * 0.05f) + 0.95f, 1.0f,
+                           0.1f);
+            break;
+        case 5:
+            play->envCtx.unk_BD = 0;
+            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.05f);
+            break;
+        case -1:
+            break;
+    }
+
+    BossTw_UpdateEffects(play);
+
+    if (sFreezeState == 1) {
+        sFreezeState = 2;
+        BossTw_AddPlayerFreezeEffect(play, NULL);
+        Sfx_PlaySfxAtPos(&player->actor.projectedPos, NA_SE_VO_LI_FREEZE);
+        Sfx_PlaySfxAtPos(&player->actor.projectedPos, NA_SE_PL_FREEZE);
+
+        if (sShieldFireCharge != 0) {
+            sShieldFireCharge = 4;
+        }
+    }
+
+    if (player->bodyIsBurning && sShieldIceCharge != 0) {
+        sShieldIceCharge = 4;
+    }
+}
+
 void BossTw_TwinrovaUpdate(Actor* thisx, PlayState* play2) {
     s16 i;
     PlayState* play = play2;
@@ -3119,54 +3221,7 @@ void BossTw_TwinrovaUpdate(Actor* thisx, PlayState* play2) {
     osSyncPrintf("OooooooooooooooooooooooooooooooooCC\n");
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
 
-    play->envCtx.unk_DC = 2;
-
-    switch (sEnvType) {
-        case 0:
-            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.02f);
-            break;
-        case 1:
-            play->envCtx.unk_BD = 3;
-            Math_ApproachF(&play->envCtx.unk_D8, 0.5f, 1.0f, 0.05f);
-            break;
-        case 2:
-            play->envCtx.unk_BD = 2;
-            Math_ApproachF(&play->envCtx.unk_D8, (Math_SinS(this->work[CS_TIMER_1] * 0x3000) * 0.03f) + 0.5f, 1.0f,
-                           0.05f);
-            break;
-        case 3:
-            play->envCtx.unk_BD = 3;
-            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.1f);
-            break;
-        case 4:
-            play->envCtx.unk_BD = 2;
-            Math_ApproachF(&play->envCtx.unk_D8, (Math_SinS(this->work[CS_TIMER_1] * 0x3E00) * 0.05f) + 0.95f, 1.0f,
-                           0.1f);
-            break;
-        case 5:
-            play->envCtx.unk_BD = 0;
-            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.05f);
-            break;
-        case -1:
-            break;
-    }
-
-    BossTw_UpdateEffects(play);
-
-    if (sFreezeState == 1) {
-        sFreezeState = 2;
-        BossTw_AddPlayerFreezeEffect(play, NULL);
-        Sfx_PlaySfxAtPos(&player->actor.projectedPos, NA_SE_VO_LI_FREEZE);
-        Sfx_PlaySfxAtPos(&player->actor.projectedPos, NA_SE_PL_FREEZE);
-
-        if (sShieldFireCharge != 0) {
-            sShieldFireCharge = 4;
-        }
-    }
-
-    if (player->bodyIsBurning && sShieldIceCharge != 0) {
-        sShieldIceCharge = 4;
-    }
+    BossTw_TwinrovaLocalTail(this, play);
 }
 
 s32 BossTw_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
@@ -3874,6 +3929,25 @@ void BossTw_TwinrovaDraw(Actor* thisx, PlayState* play2) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// A blast flying at a remote player waits just short of them for the verdict of their own machine (the
+// mirror shield is judged there, BossTw_AnchorBlastShield): otherwise it would be past the shield before
+// the report could arrive.
+static s32 BossTw_BlastHeld(BossTw* this, PlayState* play) {
+    Actor* aim = Anchor_BossNearestTarget(play, &this->actor);
+    Vec3f chest;
+
+    if (this->csState1 != 1 || aim == &GET_PLAYER(play)->actor) {
+        return false;
+    }
+    chest = aim->world.pos;
+    chest.y += 30.0f;
+    if (Math_Vec3f_DistXYZ(&this->actor.world.pos, &chest) < 46.0f && this->anchorReflectAge < 12) {
+        this->anchorReflectAge++;
+        return true;
+    }
+    return false;
+}
+
 void BossTw_BlastFire(BossTw* this, PlayState* play) {
     s16 i;
     f32 xDiff;
@@ -3881,7 +3955,7 @@ void BossTw_BlastFire(BossTw* this, PlayState* play) {
     f32 zDiff;
     f32 distXZ;
     Player* player = GET_PLAYER(play);
-    Player* player2 = player;
+    Actor* aim;
 
     switch (this->actor.params) {
         case TW_FIRE_BLAST:
@@ -3889,9 +3963,11 @@ void BossTw_BlastFire(BossTw* this, PlayState* play) {
                 case 0:
                     Actor_SetScale(&this->actor, 0.03f);
                     this->csState1 = 1;
-                    xDiff = player->actor.world.pos.x - this->actor.world.pos.x;
-                    yDiff = (player->actor.world.pos.y + 30.0f) - this->actor.world.pos.y;
-                    zDiff = player->actor.world.pos.z - this->actor.world.pos.z;
+                    aim = Anchor_BossNearestTarget(play, &this->actor);
+                    this->anchorReflectAge = 0;
+                    xDiff = aim->world.pos.x - this->actor.world.pos.x;
+                    yDiff = (aim->world.pos.y + 30.0f) - this->actor.world.pos.y;
+                    zDiff = aim->world.pos.z - this->actor.world.pos.z;
                     // yaw
                     this->actor.world.rot.y = Math_FAtan2F(xDiff, zDiff) * (32768 / M_PI);
                     // pitch
@@ -3908,26 +3984,30 @@ void BossTw_BlastFire(BossTw* this, PlayState* play) {
                 case 10:
                     this->blastActive = true;
                     if (this->timers[0] == 0) {
-                        Actor_UpdateVelocityXYZ(&this->actor);
-                        Actor_UpdatePos(&this->actor);
+                        if (!BossTw_BlastHeld(this, play)) {
+                            Actor_UpdateVelocityXYZ(&this->actor);
+                            Actor_UpdatePos(&this->actor);
+                        }
                         Audio_PlayActorSound2(&this->actor, NA_SE_EN_TWINROBA_SHOOT_FIRE & ~SFX_FLAG);
                     } else {
                         Vec3f velocity;
                         Vec3f velDir;
                         Vec3s blastDir;
+                        Vec3f reflBody;
                         s16 alpha;
 
-                        this->actor.world.pos = player2->bodyPartsPos[15];
+                        BossTw_ReflectorBody(this, play, &reflBody);
+                        this->actor.world.pos = reflBody;
                         this->actor.world.pos.y = -2000.0f;
-                        Matrix_MtxFToYXZRotS(&player2->shieldMf, &blastDir, 0);
-                        blastDir.x = -blastDir.x;
-                        blastDir.y = blastDir.y + 0x8000;
+                        BossTw_ReflectorDir(this, play, &blastDir);
                         Math_ApproachS(&this->magicDir.x, blastDir.x, 0xA, 0x800);
                         Math_ApproachS(&this->magicDir.y, blastDir.y, 0xA, 0x800);
 
                         if (this->timers[0] == 50) {
-                            D_8094C86F = 10;
-                            D_8094C872 = 7;
+                            if (this->anchorReflector == 0) {
+                                D_8094C86F = 10;
+                                D_8094C872 = 7;
+                            }
                             play->envCtx.unk_D8 = 1.0f;
                         }
 
@@ -3943,13 +4023,15 @@ void BossTw_BlastFire(BossTw* this, PlayState* play) {
                             alpha = this->timers[0] * 10;
                             alpha = CLAMP_MAX(alpha, 255);
 
-                            BossTw_AddShieldBlastEffect(play, &player2->bodyPartsPos[15], &velocity, &sZeroVector,
-                                                        10.0f, 80.0f, alpha, 1);
+                            BossTw_AddShieldBlastEffect(play, &reflBody, &velocity, &sZeroVector, 10.0f, 80.0f, alpha,
+                                                        1);
                         }
 
                         if (this->timers[0] == 1) {
                             sEnvType = 0;
-                            sShieldFireCharge++;
+                            if (this->anchorReflector == 0) {
+                                sShieldFireCharge++;
+                            }
                             Actor_Kill(&this->actor);
                         }
 
@@ -4071,7 +4153,7 @@ void BossTw_BlastIce(BossTw* this, PlayState* play) {
     f32 zDiff;
     f32 xzDist;
     Player* player = GET_PLAYER(play);
-    Player* player2 = player;
+    Actor* aim;
 
     switch (this->actor.params) {
         case TW_ICE_BLAST:
@@ -4079,9 +4161,11 @@ void BossTw_BlastIce(BossTw* this, PlayState* play) {
                 case 0:
                     Actor_SetScale(&this->actor, 0.03f);
                     this->csState1 = 1;
-                    xDiff = player->actor.world.pos.x - this->actor.world.pos.x;
-                    yDiff = (player->actor.world.pos.y + 30.0f) - this->actor.world.pos.y;
-                    zDiff = player->actor.world.pos.z - this->actor.world.pos.z;
+                    aim = Anchor_BossNearestTarget(play, &this->actor);
+                    this->anchorReflectAge = 0;
+                    xDiff = aim->world.pos.x - this->actor.world.pos.x;
+                    yDiff = (aim->world.pos.y + 30.0f) - this->actor.world.pos.y;
+                    zDiff = aim->world.pos.z - this->actor.world.pos.z;
                     this->actor.world.rot.y = Math_FAtan2F(xDiff, zDiff) * (32768 / M_PI);
                     xzDist = sqrtf(SQ(xDiff) + SQ(zDiff));
                     this->actor.world.rot.x = Math_FAtan2F(yDiff, xzDist) * (32768 / M_PI);
@@ -4097,26 +4181,30 @@ void BossTw_BlastIce(BossTw* this, PlayState* play) {
                     this->blastActive = true;
 
                     if (this->timers[0] == 0) {
-                        Actor_UpdateVelocityXYZ(&this->actor);
-                        Actor_UpdatePos(&this->actor);
+                        if (!BossTw_BlastHeld(this, play)) {
+                            Actor_UpdateVelocityXYZ(&this->actor);
+                            Actor_UpdatePos(&this->actor);
+                        }
                         Audio_PlayActorSound2(&this->actor, NA_SE_EN_TWINROBA_SHOOT_FREEZE - SFX_FLAG);
                     } else {
                         Vec3f velocity;
                         Vec3f spF4;
                         Vec3s reflDir;
+                        Vec3f reflBody;
                         s16 alpha;
 
-                        this->actor.world.pos = player2->bodyPartsPos[15];
+                        BossTw_ReflectorBody(this, play, &reflBody);
+                        this->actor.world.pos = reflBody;
                         this->actor.world.pos.y = -2000.0f;
-                        Matrix_MtxFToYXZRotS(&player2->shieldMf, &reflDir, 0);
-                        reflDir.x = -reflDir.x;
-                        reflDir.y += 0x8000;
+                        BossTw_ReflectorDir(this, play, &reflDir);
                         Math_ApproachS(&this->magicDir.x, reflDir.x, 0xA, 0x800);
                         Math_ApproachS(&this->magicDir.y, reflDir.y, 0xA, 0x800);
 
                         if (this->timers[0] == 50) {
-                            D_8094C86F = 10;
-                            D_8094C872 = 7;
+                            if (this->anchorReflector == 0) {
+                                D_8094C86F = 10;
+                                D_8094C872 = 7;
+                            }
                             play->envCtx.unk_D8 = 1.0f;
                         }
 
@@ -4132,13 +4220,15 @@ void BossTw_BlastIce(BossTw* this, PlayState* play) {
                             alpha = this->timers[0] * 10;
                             alpha = CLAMP_MAX(alpha, 255);
 
-                            BossTw_AddShieldBlastEffect(play, &player2->bodyPartsPos[15], &velocity, &sZeroVector,
-                                                        10.0f, 80.0f, alpha, 0);
+                            BossTw_AddShieldBlastEffect(play, &reflBody, &velocity, &sZeroVector, 10.0f, 80.0f, alpha,
+                                                        0);
                         }
 
                         if (this->timers[0] == 1) {
                             sEnvType = 0;
-                            sShieldIceCharge++;
+                            if (this->anchorReflector == 0) {
+                                sShieldIceCharge++;
+                            }
                             Actor_Kill(&this->actor);
                         }
 
@@ -4327,6 +4417,7 @@ s32 BossTw_BlastShieldCheck(BossTw* this, PlayState* play) {
                     if ((sShieldIceCharge >= 3) || (sShieldFireCharge >= 3)) {
                         this->timers[0] = 80;
                         this->csState1 = 10;
+                        this->anchorReflector = 0;
                         Matrix_MtxFToYXZRotS(&player->shieldMf, &this->magicDir, 0);
                         this->magicDir.y += 0x8000;
                         this->magicDir.x = -this->magicDir.x;
@@ -5459,4 +5550,404 @@ void BossTw_TwinrovaLaugh(BossTw* this, PlayState* play) {
 void BossTw_Reset(void) {
     sTwInitalized = false;
     memset(sTwEffects, 0, sizeof(sTwEffects));
+}
+
+// ---------------------------------------------------------------------------
+// Anchor co-op (PHA-4053). soh/Network/Anchor/BossAdapters/TwinrovaAdapter.cpp drives these.
+// ---------------------------------------------------------------------------
+
+BossTw* BossTw_AnchorGlobal(s32 which) {
+    return which == 0 ? sKotakePtr : (which == 1 ? sKoumePtr : sTwinrovaPtr);
+}
+
+s32 BossTw_AnchorStage(void) {
+    return sTwStage;
+}
+
+u8 BossTw_AnchorIsBlast(BossTw* this) {
+    return this->actor.params >= TW_FIRE_BLAST;
+}
+
+static struct {
+    BossTwActionFunc fn;
+    u8 code;
+} sAnchorActions[] = {
+    { BossTw_CSWait, TW_ACT_CSWAIT },
+    { BossTw_FlyTo, TW_ACT_FLYTO },
+    { BossTw_TurnToPlayer, TW_ACT_TURN },
+    { BossTw_ShootBeam, TW_ACT_SHOOTBEAM },
+    { BossTw_FinishBeamShoot, TW_ACT_FINISHBEAM },
+    { BossTw_HitByBeam, TW_ACT_HITBYBEAM },
+    { BossTw_Laugh, TW_ACT_LAUGH },
+    { BossTw_Spin, TW_ACT_SPIN },
+    { BossTw_MergeCS, TW_ACT_MERGECS },
+    { BossTw_DeathCS, TW_ACT_DEATHCS },
+    { BossTw_Wait, TW_ACT_WAIT },
+    { BossTw_TwinrovaArriveAtTarget, TW_ACT_T_ARRIVE },
+    { BossTw_TwinrovaChargeBlast, TW_ACT_T_CHARGE },
+    { BossTw_TwinrovaShootBlast, TW_ACT_T_SHOOT },
+    { BossTw_TwinrovaDoneBlastShoot, TW_ACT_T_DONESHOOT },
+    { BossTw_TwinrovaStun, TW_ACT_T_STUN },
+    { BossTw_TwinrovaGetUp, TW_ACT_T_GETUP },
+    { BossTw_TwinrovaFly, TW_ACT_T_FLY },
+    { BossTw_TwinrovaSpin, TW_ACT_T_SPIN },
+    { BossTw_TwinrovaLaugh, TW_ACT_T_LAUGH },
+    { BossTw_TwinrovaMergeCS, TW_ACT_T_MERGECS },
+    { BossTw_TwinrovaDeathCS, TW_ACT_T_DEATHCS },
+    { BossTw_TwinrovaIntroCS, TW_ACT_T_INTROCS },
+};
+
+u8 BossTw_AnchorActionCode(BossTw* this) {
+    s32 i;
+
+    for (i = 0; i < (s32)ARRAY_COUNT(sAnchorActions); i++) {
+        if (this->actionFunc == sAnchorActions[i].fn) {
+            return sAnchorActions[i].code;
+        }
+    }
+    return TW_ACT_OTHER;
+}
+
+// A mirror only labels the actor with the host's state; the pointer is never called while mirrored. It is
+// what Draw, the Wait check that starts the merge and the mirror's own checks look at.
+void BossTw_AnchorSetAction(BossTw* this, u8 code) {
+    s32 i;
+
+    for (i = 0; i < (s32)ARRAY_COUNT(sAnchorActions); i++) {
+        if (sAnchorActions[i].code == code) {
+            this->actionFunc = sAnchorActions[i].fn;
+            return;
+        }
+    }
+}
+
+void BossTw_AnchorStartDefeat(BossTw* this, PlayState* play) {
+    if (this->actionFunc == BossTw_TwinrovaDeathCS) {
+        return;
+    }
+    this->actor.colChkInfo.health = 0;
+    BossTw_TwinrovaSetupDeathCS(this, play);
+    Enemy_StartFinishingBlow(play, &this->actor);
+    GameInteractor_ExecuteOnBossDefeat(&this->actor);
+}
+
+// The merge cutscene owns the camera and Link, so every client runs its own. The host's stage says when to
+// start it if this client's Wait check has not fired yet.
+void BossTw_AnchorStartMerge(PlayState* play) {
+    if (sTwStage != TW_STAGE_WITCHES || sTwinrovaPtr == NULL || sKotakePtr == NULL || sKoumePtr == NULL) {
+        return;
+    }
+    BossTw_TwinrovaSetupMergeCS(sTwinrovaPtr, play);
+    BossTw_SetupMergeCS(sKotakePtr, play);
+    BossTw_SetupMergeCS(sKoumePtr, play);
+}
+
+// Mirroring ended without a defeat (stale stream, or this client became the host): put the actor into a
+// state its own AI can continue from.
+void BossTw_AnchorResume(BossTw* this, PlayState* play) {
+    if (this->actor.params >= TW_FIRE_BLAST) {
+        return;
+    }
+    if (this->actor.params == TW_TWINROVA) {
+        if (sTwStage == TW_STAGE_TWINROVA) {
+            BossTw_TwinrovaSetupFly(this, play);
+        } else if (sTwStage == TW_STAGE_WITCHES) {
+            BossTw_SetupWait(this, play);
+        }
+    } else if (sTwStage == TW_STAGE_WITCHES) {
+        BossTw_SetupFlyTo(this, play);
+    }
+}
+
+// The cosmetic half of each actor's Update, which a mirror never runs: counters the textures scroll by, the
+// effect array, the room light, the scepter and crown sparks, and the blast's tail.
+void BossTw_AnchorMirrorTick(BossTw* this, PlayState* play) {
+    Vec3f pos;
+    Vec3f velocity = { 0.0f, 0.0f, 0.0f };
+    Vec3f accel = { 0.0f, 0.0f, 0.0f };
+    s16 i;
+
+    if (this->actor.params >= TW_FIRE_BLAST) {
+        this->work[CS_TIMER_1]++;
+        this->work[CS_TIMER_2]++;
+        this->work[TAIL_IDX]++;
+        if (this->work[TAIL_IDX] > 29) {
+            this->work[TAIL_IDX] = 0;
+        }
+        this->blastTailPos[this->work[TAIL_IDX]] = this->actor.world.pos;
+        this->actor.focus.pos = this->actor.world.pos;
+        return;
+    }
+
+    this->work[CS_TIMER_1]++;
+    this->work[CS_TIMER_2]++;
+
+    if (this->actor.params == TW_TWINROVA) {
+        if (this->visible && this->unk_5F8 == 0) {
+            accel.y = 0.4f;
+            for (i = 0; i < 2; i++) {
+                pos = this->leftScepterPos;
+                pos.x += Rand_CenteredFloat(30.0f);
+                pos.y += Rand_CenteredFloat(30.0f);
+                pos.z += Rand_CenteredFloat(30.0f);
+                accel.x = Rand_CenteredFloat(0.5f);
+                accel.z = Rand_CenteredFloat(0.5f);
+                BossTw_AddDotEffect(play, &pos, &velocity, &accel, (s16)Rand_ZeroFloat(2.0f) + 7, 0, 75);
+            }
+            for (i = 0; i < 2; i++) {
+                pos = this->rightScepterPos;
+                pos.x += Rand_CenteredFloat(30.0f);
+                pos.y += Rand_CenteredFloat(30.0f);
+                pos.z += Rand_CenteredFloat(30.0f);
+                accel.x = Rand_CenteredFloat(0.5f);
+                accel.z = Rand_CenteredFloat(0.5f);
+                BossTw_AddDotEffect(play, &pos, &velocity, &accel, (s16)Rand_ZeroFloat(2.0f) + 7, 1, 75);
+            }
+        }
+        BossTw_TwinrovaLocalTail(this, play);
+        return;
+    }
+
+    // Kotake / Koume
+    if (this->actionFunc != BossTw_Wait) {
+        if (this->actor.params == TW_KOTAKE) {
+            this->workf[OUTR_CRWN_TX_X2] += 1.0f;
+            this->workf[OUTR_CRWN_TX_Y2] -= 7.0f;
+            this->workf[INNR_CRWN_TX_Y1] += 1.0f;
+        } else {
+            this->workf[OUTR_CRWN_TX_Y2] += -15.0f;
+            this->workf[INNR_CRWN_TX_Y2] += -10.0f;
+        }
+
+        if (this->actionFunc != BossTw_MergeCS && this->unk_5F8 != 0) {
+            if (this->scepterAlpha > 0.0f) {
+                pos = this->scepterFlamePos[0];
+                pos.x += Rand_CenteredFloat(70.0f);
+                pos.y += Rand_CenteredFloat(70.0f);
+                pos.z += Rand_CenteredFloat(70.0f);
+                accel.y = 0.4f;
+                accel.x = Rand_CenteredFloat(0.5f);
+                accel.z = Rand_CenteredFloat(0.5f);
+                BossTw_AddDotEffect(play, &pos, &velocity, &accel, (s16)Rand_ZeroFloat(2.0f) + 8,
+                                    this->actor.params, 37);
+            }
+
+            pos = this->crownPos;
+            pos.x += Rand_CenteredFloat(70.0f);
+            pos.y += Rand_CenteredFloat(70.0f);
+            pos.z += Rand_CenteredFloat(70.0f);
+            accel.y = 0.4f;
+            accel.x = Rand_CenteredFloat(0.5f);
+            accel.z = Rand_CenteredFloat(0.5f);
+            BossTw_AddDotEffect(play, &pos, &velocity, &accel, (s16)Rand_ZeroFloat(2.0f) + 8, this->actor.params, 37);
+        }
+    }
+}
+
+// This machine's Link against the streamed beam (the beam is a ray in the room: every client tests its own
+// Link). 0 none, 1 reflecting (the beam is clipped to the shield), 2 hit (freeze or burn applied here),
+// 3 diverted by a plain shield. Only while the host is firing the unreflected beam.
+s32 BossTw_AnchorBeamVictim(BossTw* this, PlayState* play, f32* outDist) {
+    s32 refl;
+    s16 cooldown;
+
+    if (this->actionFunc != BossTw_ShootBeam || this->beamShootState != 0 || this->timers[0] == 0 ||
+        this->beamDist <= 0.0f || sTwinrovaPtr == NULL) {
+        return 0;
+    }
+    refl = BossTw_CheckBeamReflection(this, play);
+    if (refl == 1) {
+        *outDist = this->beamDist;
+        return 1;
+    }
+    if (refl == 2) {
+        return 3;
+    }
+    cooldown = sTwinrovaPtr->timers[2];
+    BossTw_BeamHitPlayerCheck(this, play);
+    return (cooldown == 0 && sTwinrovaPtr->timers[2] != 0) ? 2 : 0;
+}
+
+// This machine's Link against a streamed blast's shield hit: the vanilla check, run on the machine whose shield
+// it was. 0 not a shield hit, 1 absorbed (the blast is consumed), 2 charged and released at Twinrova.
+s32 BossTw_AnchorBlastShield(BossTw* this, PlayState* play) {
+    if (this->actor.params != TW_FIRE_BLAST && this->actor.params != TW_ICE_BLAST) {
+        return 0;
+    }
+    if (!BossTw_BlastShieldCheck(this, play)) {
+        return 0;
+    }
+    return this->csState1 == 10 ? 2 : 1;
+}
+
+// A charged release finished on the reflector's machine (the blast actor's last frame): the vanilla bump that
+// lets ShieldChargeDraw fade the glow out.
+void BossTw_AnchorReleaseDone(s32 blastType) {
+    if (blastType == 1) {
+        sShieldFireCharge++;
+    } else {
+        sShieldIceCharge++;
+    }
+    sEnvType = 0;
+}
+
+// The reflector's sparks, which the host shows from its own Link only.
+void BossTw_AnchorReflectSparks(BossTw* this, PlayState* play) {
+    Vec3f velocity;
+    Vec3f velDir;
+    Vec3f body = GET_PLAYER(play)->bodyPartsPos[15];
+    Vec3s dir;
+    s16 alpha;
+
+    if (this->timers[0] == 0 || this->timers[0] > 50) {
+        return;
+    }
+    Matrix_MtxFToYXZRotS(&GET_PLAYER(play)->shieldMf, &dir, 0);
+    dir.x = -dir.x;
+    dir.y += 0x8000;
+    Matrix_RotateY((dir.y / 32678.0f) * M_PI, MTXMODE_NEW);
+    Matrix_RotateX((dir.x / 32678.0f) * M_PI, MTXMODE_APPLY);
+    velDir.x = 0.0f;
+    velDir.y = 0.0f;
+    velDir.z = 50.0f;
+    Matrix_MultVec3f(&velDir, &velocity);
+    alpha = this->timers[0] * 10;
+    alpha = CLAMP_MAX(alpha, 255);
+    BossTw_AddShieldBlastEffect(play, &body, &velocity, &sZeroVector, 10.0f, 80.0f, alpha,
+                                this->actor.params == TW_FIRE_BLAST ? 1 : 0);
+}
+
+// Host side: a remote player's mirror shield caught this beam. The reflect state then follows that player's
+// reported shield pose each frame (BossTw_AnchorReflectReport).
+void BossTw_AnchorBeamReflected(BossTw* this, f32 dist, const Vec3f* body, s16 dirX, s16 dirY, u32 clientId) {
+    if (this->actionFunc != BossTw_ShootBeam || this->beamShootState != 0 || this->timers[0] == 0) {
+        return;
+    }
+    this->beamShootState = 1;
+    this->anchorReflector = clientId;
+    this->anchorReflectHeld = true;
+    this->anchorReflectAge = 0;
+    this->anchorReflectBody = *body;
+    this->anchorReflectDir.x = dirX;
+    this->anchorReflectDir.y = dirY;
+    this->magicDir.x = dirX;
+    this->magicDir.y = dirY;
+    this->beamDist = dist;
+    this->groundBlastPos.x = 0.0f;
+    this->groundBlastPos.y = 0.0f;
+    this->groundBlastPos.z = 0.0f;
+    gPlayState->envCtx.unk_D8 = 1.0f;
+
+    // The beam kept growing until this report arrived, so it has usually already reached the floor behind the
+    // reflector and started a pool. A shield that stops the beam makes no pool: take it back (the pool actor on a
+    // mirror kills itself once the streamed fade values are zero).
+    if (this->csState1 != 0) {
+        Actor* a;
+
+        for (a = gPlayState->actorCtx.actorLists[ACTORCAT_BOSS].head; a != NULL; a = a->next) {
+            if (a->id == ACTOR_BOSS_TW && (a->params == TW_FIRE_BLAST_GROUND || a->params == TW_ICE_BLAST_GROUND)) {
+                Actor_Kill(a);
+            }
+        }
+        if (this->actor.params == TW_KOUME) {
+            sKoumePtr->workf[KM_GD_FLM_A] = sKoumePtr->workf[KM_GD_SMOKE_A] = sKoumePtr->workf[KM_GRND_CRTR_A] = 0.0f;
+            sKoumePtr->workf[KM_GD_FLM_SCL] = 0.0f;
+        } else {
+            sKotakePtr->workf[UNK_F9] = sKotakePtr->workf[UNK_F11] = 0.0f;
+        }
+        sGroundBlastType = 0;
+        sEnvType = 0;
+        this->csState1 = 0;
+        Anchor_TwGroundBlastCancelled();
+    }
+}
+
+void BossTw_AnchorReflectReport(BossTw* this, s32 held, const Vec3f* body, s16 dirX, s16 dirY, u32 clientId) {
+    if (this->anchorReflector == 0 || this->anchorReflector != clientId) {
+        return;
+    }
+    this->anchorReflectHeld = held != 0;
+    this->anchorReflectAge = 0;
+    this->anchorReflectBody = *body;
+    this->anchorReflectDir.x = dirX;
+    this->anchorReflectDir.y = dirY;
+}
+
+// Host side: a remote player's mirror shield took this blast.
+void BossTw_AnchorBlastAbsorbed(BossTw* this, s32 released, const Vec3f* body, s16 dirX, s16 dirY, u32 clientId) {
+    if (this->csState1 != 1) {
+        return;
+    }
+    gPlayState->envCtx.unk_D8 = 1.0f;
+    this->work[INVINC_TIMER] = 7;
+    this->anchorReflectAge = 0;
+    if (!released) {
+        this->csState1 = 2;
+        this->timers[0] = 20;
+        sEnvType = 0;
+        return;
+    }
+    this->timers[0] = 80;
+    this->csState1 = 10;
+    this->anchorReflector = clientId;
+    this->anchorReflectHeld = true;
+    this->anchorReflectAge = 0;
+    this->anchorReflectBody = *body;
+    this->anchorReflectDir.x = dirX;
+    this->anchorReflectDir.y = dirY;
+    this->magicDir.x = dirX;
+    this->magicDir.y = dirY;
+}
+
+// A stun landed on the host's Twinrova while a remote reflector's shot was in the air.
+void BossTw_AnchorTwinrovaStunned(void) {
+    if (sTwinrovaPtr != NULL) {
+        sTwinrovaPtr->twinrovaStun = 1;
+    }
+}
+
+s32 BossTw_AnchorEnvType(void) {
+    return sEnvType;
+}
+
+s32 BossTw_AnchorGroundBlastType(void) {
+    return sGroundBlastType;
+}
+
+s32 BossTw_AnchorBlastType(void) {
+    return sTwinrovaBlastType;
+}
+
+// The room light and the pool type are set by the host's beams and blasts; a mirror takes them from the stream.
+void BossTw_AnchorSetEnvType(s32 env, s32 groundBlastType) {
+    sEnvType = env;
+    sGroundBlastType = groundBlastType;
+}
+
+void BossTw_AnchorSetBlastType(s32 blastType) {
+    sTwinrovaBlastType = blastType;
+}
+
+s32 BossTw_AnchorShieldCharge(void) {
+    return sShieldFireCharge | (sShieldIceCharge << 4);
+}
+
+void BossTw_AnchorSetShieldCharge(s32 charge) {
+    sShieldFireCharge = charge & 0xF;
+    sShieldIceCharge = (charge >> 4) & 0xF;
+}
+
+// Test rig: start the attack the AI would choose next.
+void BossTw_AnchorForceAttack(BossTw* tw, PlayState* play, s32 blastType) {
+    if (tw->actor.params >= TW_FIRE_BLAST) {
+        return;
+    }
+    if (tw->actor.params == TW_TWINROVA) {
+        sTwinrovaBlastType = blastType;
+        BossTw_TwinrovaSetupShootBlast(tw, play);
+        return;
+    }
+    tw->work[CAN_SHOOT] = false;
+    BossTw_SetupShootBeam(tw, play);
+    tw->actor.speedXZ = 0.0f;
 }
