@@ -498,10 +498,28 @@ static void Collision_Update(Actor* thisx, PlayState* play) {
 }
 
 // PHA-3916: grow the dynamic collision lists where a base can stand
-// (BgCheck_Allocate, z_bgcheck.c). 4096 polys/vertices/nodes, about 80 KB of
-// the play arena: room for 100+ pieces next to the scene's own movers.
+// (BgCheck_Allocate, z_bgcheck.c). DYNA_BUDGET polys/vertices/nodes (8192: about 210 KB of the
+// play arena, PHA-4062 for 256 pieces) next to the scene's own movers.
 extern "C" s32 SevenDays_DynaBudget(s16 sceneNum) {
-    return BaseEnabled() && IsOutdoorScene(sceneNum) ? 4096 : 0;
+    return BaseEnabled() && IsOutdoorScene(sceneNum) ? SevenDays::DYNA_BUDGET : 0;
+}
+
+SevenDays::CollisionCost SevenDays::PieceCollisionCost(uint8_t type) {
+    if (type >= PLACEABLE_COUNT || type == PLACEABLE_GATE) {
+        return { 0, 0 }; // a gate swings open for players: it is not in the chunks (gatePassable)
+    }
+    return { (int)sShapes[type].polys.size(), (int)sShapes[type].verts.size() };
+}
+
+void SevenDays::CollisionInUse(int& polys, int& verts, int& chunks) {
+    polys = verts = chunks = 0;
+    for (const CollisionChunk& ch : sChunks) {
+        if (ChunkAlive(ch)) {
+            polys += ch.header.numPolygons;
+            verts += ch.header.numVertices;
+            chunks++;
+        }
+    }
 }
 
 // MARK: - Drawing
@@ -1880,8 +1898,23 @@ static void DrawWorn(PlayState* play, PlaceableActor* self, float hpFrac) {
     }
 }
 
+// PHA-4062: the pieces draw before the enemies, Link's gear and the effects (actor list order), so a
+// big base must not spend the display-list room they need. Below this share of the opaque or
+// translucent pool, a piece skips its draw for the frame; the engine's own reserve in Actor_Draw
+// is the hard stop behind it.
+extern "C" s32 Graph_GfxRoomBelowPercent(GraphicsContext* gfxCtx, s32 percent);
+extern "C" void Graph_GfxNoteActorSkip(s32 placeable);
+extern "C" const char* Graph_GfxStatsJson(void);
+extern "C" void Graph_GfxStatsReset(void);
+extern "C" void Graph_GfxForceOverflow(s32 frames);
+static constexpr s32 kPieceDrawFloorPercent = 35;
+
 static void Placeable_Draw(Actor* thisx, PlayState* play) {
     PlaceableActor* self = (PlaceableActor*)thisx;
+    if (!self->ghost && Graph_GfxRoomBelowPercent(play->state.gfxCtx, kPieceDrawFloorPercent)) {
+        Graph_GfxNoteActorSkip(1);
+        return;
+    }
     const Placeable* p = FindPlaceable(self->id);
     const PlaceableInfo& info = GetPlaceableInfo(self->type);
     DrawWorn(play, self, (p != nullptr && info.maxHp > 0) ? (float)p->hp / (float)info.maxHp : 1.0f);
@@ -2508,6 +2541,20 @@ bool SevenDays::OverridesVanillaText(uint16_t textId) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
+// PHA-4062: display-list pool usage. "" reads, "reset" clears the peaks, "force:N" makes the next N
+// frames count as overrun (the failsafe path), "scale" is read and set through the cvar
+// gSevenDays.GfxPoolScale.
+EMSCRIPTEN_KEEPALIVE
+const char* sevendays_test_gfx(const char* cmd) {
+    std::string c = cmd ? cmd : "";
+    if (c == "reset") {
+        Graph_GfxStatsReset();
+    } else if (c.rfind("force:", 0) == 0) {
+        Graph_GfxForceOverflow(atoi(c.c_str() + 6));
+    }
+    return Graph_GfxStatsJson();
+}
+
 EMSCRIPTEN_KEEPALIVE
 int sevendays_test_last_text() {
     return sLastTextId;

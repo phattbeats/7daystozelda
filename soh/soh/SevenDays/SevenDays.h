@@ -234,7 +234,16 @@ int16_t FurnitureSeatHeight(uint8_t type); // the seat or mattress top Link rest
 constexpr int ERA_ADULT = 0; // == gSaveContext.linkAge
 constexpr int ERA_CHILD = 1;
 constexpr int ERA_RUINS = 2; // PHA-3935: the child base after the seven-year jump, seen as an adult
-constexpr int BASE_CAP = 100; // PHA-3916: pieces share chunked collision actors (Placeables.cpp)
+// PHA-3916: pieces share chunked collision actors (Placeables.cpp). PHA-4062: the engine side (display-list
+// pools, collision lists, ids, sync) holds 256 pieces per scene and era, BASE_CAP_MAX. Frame time does not:
+// on the test rig the worst-case view fell from ~24 fps at 94 pieces to ~19 at 160 and ~6 at 192 and
+// up (docs/pha4062-render-budget.md). The cap in force is BaseCap(): BASE_CAP_DEFAULT unless the owner's
+// cvar gSevenDays.BaseCap says otherwise (up to BASE_CAP_MAX). A placement is also refused when the
+// scene's dynamic collision lists (PieceCollisionCost, DYNA_BUDGET) cannot hold the piece.
+constexpr int BASE_CAP_DEFAULT = 160;
+constexpr int BASE_CAP_MAX = 256;
+int BaseCap();
+constexpr int DYNA_BUDGET = 8192; // polys, vertices and poly nodes the play arena grows for a base (z_bgcheck.c)
 constexpr float BASE_RADIUS = 800.0f;
 constexpr float TORCH_RADIUS = 300.0f; // spec: no wave spawn point within 300 units of a torch
 // PHA-4038: torchlight. The field's own Stalchildren (En_Encount1's) sink back into the
@@ -362,6 +371,14 @@ void DamagePlaceable(uint16_t id, int amount); // owner applies; others report t
 std::vector<uint8_t> BreakPiece(uint16_t id);  // owner: break it and what stood on it; their types
 bool BaseAdoptIfNewer(const nlohmann::json& j, bool force);
 bool IsOutdoorScene(int16_t scene); // a scene a base can stand in (the raid clock's scenes)
+// PHA-4062: what a piece adds to the chunked collision lists (polygons and vertices, as FillChunk emits
+// them), and the share of DYNA_BUDGET a scene's pieces may use before a placement is refused.
+struct CollisionCost {
+    int polys;
+    int verts;
+};
+CollisionCost PieceCollisionCost(uint8_t type);
+void CollisionInUse(int& polys, int& verts, int& chunks); // the headers as built in this scene
 const char* OutdoorSceneName(int16_t scene);
 int CurrentEraNow();
 std::vector<std::pair<uint16_t, Actor*>> SpawnedPlaceables(); // id -> actor in this scene

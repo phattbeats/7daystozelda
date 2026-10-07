@@ -1,0 +1,82 @@
+##### build serve-final: soh.js?v=2e7d69b3
+##### default pool scale (no cvar set)
+scale 4 sizes 391168 131072 65536
+##### 94-piece base (fort2), 48 raiders, draw distance 4, towers
+C fps [44.5, 42, 47, 47, 36, 45.5, 40.5, 29, 36, 41, 42, 39.5, 39, 44, 46.5] scale 4 frames 614 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+C {'opa': (49736, 13608, 36128, 391168, 341432), 'xlu': (7104, 7104, 0, 131072, 123968), 'ovl': (2440, 2440, 0, 65536, 63096)} loopEnd 47856 6240
+C mem wasmHeapMB 368.8 jsHeapMB 93 arenaFree 2175504 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 2009, 'polyMax': 8192, 'polys': 1944, 'slots': 13, 'verts': 1296, 'vtxMax': 8192}
+D fps [33, 29.5, 34, 34, 24, 33.5, 26.5, 17, 22.5, 29, 28.5, 27, 29, 32, 34.5] scale 4 frames 619 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+D {'opa': (60152, 15944, 44208, 391168, 331016), 'xlu': (7400, 7400, 0, 131072, 123672), 'ovl': (2440, 2440, 0, 65536, 63096)} loopEnd 58272 6536
+D mem wasmHeapMB 368.8 jsHeapMB 104 arenaFree 2180688 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 2009, 'polyMax': 8192, 'polys': 1944, 'slots': 13, 'verts': 1296, 'vtxMax': 8192}
+B fps [8.5, 7.5, 10, 7, 6.5, 8, 4.5, 5, 5.5, 7.5, 7, 5.5, 7.5, 9.5] scale 4 frames 605 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+B {'opa': (122832, 30368, 92464, 391168, 268336), 'xlu': (10272, 10272, 0, 131072, 120800), 'ovl': (2440, 2440, 0, 65536, 63096)} loopEnd 121592 10128
+B mem wasmHeapMB 368.8 jsHeapMB 93 arenaFree 2185872 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 2009, 'polyMax': 8192, 'polys': 1944, 'slots': 13, 'verts': 1296, 'vtxMax': 8192}
+A fps [32, 33, 33.5, 31.5, 30.5, 32, 22, 19.5, 23, 37, 30, 25.5, 31, 35, 35] scale 4 frames 619 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+A {'opa': (58192, 15536, 42656, 391168, 332976), 'xlu': (7336, 7336, 0, 131072, 123736), 'ovl': (2440, 2440, 0, 65536, 63096)} loopEnd 56312 6448
+A mem wasmHeapMB 368.8 jsHeapMB 93 arenaFree 2180688 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 2009, 'polyMax': 8192, 'polys': 1944, 'slots': 13, 'verts': 1296, 'vtxMax': 8192}
+DONE
+##### default cap: try to place 256 mixed with no BaseCap cvar (expect 160)
+##### cap raised to 256 via gSevenDays.BaseCap
+##### 256-piece base, 48 raiders, draw distance 4
+C fps [31, 33, 34, 36, 37.5, 34.5, 19, 17.5, 28, 33, 26, 32.5, 31, 36, 41] scale 4 frames 616 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+C {'opa': (71312, 20656, 50656, 391168, 319856), 'xlu': (11352, 11352, 0, 131072, 119720), 'ovl': (2280, 2280, 0, 65536, 63256)} loopEnd 70072 11208
+C mem wasmHeapMB 368.8 jsHeapMB 93 arenaFree 2058224 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 5633, 'polyMax': 8192, 'polys': 5568, 'slots': 13, 'verts': 3712, 'vtxMax': 8192}
+D fps [19.5, 17.5, 18.5, 22, 22.5, 18, 7.5, 8.5, 17.5, 18.5, 17, 18.5, 17, 22, 26] scale 4 frames 636 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+D {'opa': (91040, 25040, 66000, 391168, 300128), 'xlu': (13384, 13384, 0, 131072, 117688), 'ovl': (2280, 2280, 0, 65536, 63256)} loopEnd 89160 12520
+D mem wasmHeapMB 368.8 jsHeapMB 104 arenaFree 2063408 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 5633, 'polyMax': 8192, 'polys': 5568, 'slots': 13, 'verts': 3712, 'vtxMax': 8192}
+B fps [4, 4.5, 4.5, 4.5, 4.5, 3, 3.5, 4, 4, 4.5, 4, 4.5, 4.5] scale 4 frames 488 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+B {'opa': (182608, 46112, 136496, 391168, 208560), 'xlu': (19848, 19848, 0, 131072, 111224), 'ovl': (2280, 2280, 0, 65536, 63256)} loopEnd 181368 19704
+B mem wasmHeapMB 368.8 jsHeapMB 93 arenaFree 2068592 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 5633, 'polyMax': 8192, 'polys': 5568, 'slots': 13, 'verts': 3712, 'vtxMax': 8192}
+A fps [20, 21.5, 24, 24.5, 27, 13.5, 7, 13, 20, 18.5, 21, 21, 23.5, 26.5, 29] scale 4 frames 633 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+A {'opa': (85512, 23896, 61616, 391168, 305656), 'xlu': (12944, 12944, 0, 131072, 118128), 'ovl': (2280, 2280, 0, 65536, 63256)} loopEnd 84272 12136
+A mem wasmHeapMB 368.8 jsHeapMB 93 arenaFree 2063344 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 5633, 'polyMax': 8192, 'polys': 5568, 'slots': 13, 'verts': 3712, 'vtxMax': 8192}
+DONE
+##### failsafe: force 60 overrun frames on every client
+C force 60 -> overflowFrames 60 forceLeft 0 gameFrames 6852 -> 7015 fps 17
+A force 60 -> overflowFrames 60 forceLeft 0 gameFrames 7655 -> 7819 fps 9.5
+D force 60 -> overflowFrames 60 forceLeft 0 gameFrames 6843 -> 7009 fps 9.5
+B force 60 -> overflowFrames 60 forceLeft 0 gameFrames 5951 -> 6102 fps 3.5
+##### churn: scene transitions + day/night/blood moon x3 on every client
+B rounds [(0, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 12), ('0x0', 'moonRed', 247), (1, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (2, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255)]
+Traceback (most recent call last):
+  File "/tmp/z4062/t/playd-gpu.py", line 28, in do_POST
+    try: exec(code,G)
+         ~~~~^^^^^^^^
+  File "<string>", line 4, in <module>
+  File "<string>", line 14, in <module>
+  File "<string>", line 14, in <genexpr>
+IndexError: tuple index out of range
+A rounds [(0, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (1, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (2, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255)]
+Traceback (most recent call last):
+  File "/tmp/z4062/t/playd-gpu.py", line 28, in do_POST
+    try: exec(code,G)
+         ~~~~^^^^^^^^
+  File "<string>", line 4, in <module>
+  File "<string>", line 14, in <module>
+  File "<string>", line 14, in <genexpr>
+IndexError: tuple index out of range
+D rounds [(0, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (1, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (2, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255)]
+Traceback (most recent call last):
+  File "/tmp/z4062/t/playd-gpu.py", line 28, in do_POST
+    try: exec(code,G)
+         ~~~~^^^^^^^^
+  File "<string>", line 4, in <module>
+  File "<string>", line 14, in <module>
+  File "<string>", line 14, in <genexpr>
+IndexError: tuple index out of range
+C rounds [(0, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (1, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (2, 82, 81, 256, 5568, 5633), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255)]
+Traceback (most recent call last):
+  File "/tmp/z4062/t/playd-gpu.py", line 28, in do_POST
+    try: exec(code,G)
+         ~~~~^^^^^^^^
+  File "<string>", line 4, in <module>
+  File "<string>", line 14, in <module>
+  File "<string>", line 14, in <genexpr>
+IndexError: tuple index out of range
+##### late join: fifth client joins the 256-piece room
+Pix 52 trailer
+E sees 256 pieces, actors 0 scene 52 {'chunks': 0, 'nodeMax': 500, 'nodes': 0, 'polyMax': 512, 'polys': 0, 'slots': 0, 'verts': 0, 'vtxMax': 512}
+##### save / reload: owner saves, reloads, loads the file
+before 256
+after 256 actors 256 scene 81 {'chunks': 9, 'nodeMax': 8192, 'nodes': 5633, 'polyMax': 8192, 'polys': 5568, 'slots': 13, 'verts': 3712, 'vtxMax': 8192}
+FINALDONE

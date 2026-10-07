@@ -298,6 +298,10 @@ const Placeable* FindPlaceable(uint16_t id) {
     return IsDecor(id) ? FindDecor(id) : FindPlaceableMut(id);
 }
 
+int BaseCap() {
+    return std::clamp(CVarGetInteger(CVAR_SEVEN_DAYS("BaseCap"), BASE_CAP_DEFAULT), 1, BASE_CAP_MAX);
+}
+
 static int CountEra(int era) {
     int n = 0;
     for (auto& p : sBase.placeables) {
@@ -313,6 +317,29 @@ static int CountEraIn(int era, int16_t scene) {
         n += p.era == era && p.scene == scene;
     }
     return n;
+}
+
+static std::map<std::string, int> sRefusals; // owner: why placements were refused (sevendays_test_base)
+
+// PHA-4062: the chunked collision lists (Placeables.cpp) hold DYNA_BUDGET polygons, vertices and
+// poly nodes per scene. The first two are exact sums; the nodes (one per polygon per grid cell it
+// crosses) are estimated from the polygon count, so a base of long, flat pieces cannot run them out
+// and silently lose collision (DynaSSNodeList_GetNextNodeIdx returns SS_NULL once the list is full).
+static constexpr int kCollisionNodesPerPolyQ = 5; // nodes = polys * 5 / 4: measured 1.03 per poly (mixed base), PHA-4062
+static constexpr int kCollisionBudgetPercent = 90;
+
+static bool CollisionFits(int era, int16_t scene, uint8_t type) {
+    CollisionCost add = PieceCollisionCost(type);
+    int polys = add.polys, verts = add.verts;
+    for (auto& p : sBase.placeables) {
+        if (p.era == era && p.scene == scene) {
+            CollisionCost c = PieceCollisionCost(p.type);
+            polys += c.polys;
+            verts += c.verts;
+        }
+    }
+    int cap = DYNA_BUDGET / 100 * kCollisionBudgetPercent;
+    return polys <= cap && verts <= cap && polys * kCollisionNodesPerPolyQ / 4 <= cap;
 }
 
 // PHA-4027: outposts. Away from the base's scene, a workbench starts a camp, and
@@ -541,7 +568,7 @@ void SeedVillageUpgrade() {
         }
     }
     for (auto& s : sPalisadeSeeds) {
-        if (CountEra(ERA_CHILD) >= BASE_CAP) {
+        if (CountEra(ERA_CHILD) >= BaseCap()) {
             break;
         }
         const PlaceableInfo& info = GetPlaceableInfo(s.type);
@@ -571,7 +598,7 @@ std::string BaseCountsLine() {
         return "No base yet: place a workbench outdoors to start one.";
     }
     const char* where = BaseSceneName(c.scene);
-    return fmt::format("Base: {}/{} pieces in {} | Days survived: {} | Raids survived: {}", CountEra(era), BASE_CAP,
+    return fmt::format("Base: {}/{} pieces in {} | Days survived: {} | Raids survived: {}", CountEra(era), BaseCap(),
                        where ? where : "?", sBase.daysSurvived, sBase.hordeNightsSurvived);
 }
 
@@ -717,7 +744,7 @@ static void Reply(uint32_t requester, nlohmann::json result) {
 // The owner's placement check (spec "Anywhere bases"): kit in the pool, the
 // scene's clock runs, within 800 of the era's workbench (the first one sets the
 // center), one base per era plus workbench outposts elsewhere (PHA-4027), at most
-// BASE_CAP pieces per scene.
+// BaseCap() pieces per scene.
 static void ProcessPlaceRequest(const nlohmann::json& payload, uint32_t requester) {
     nlohmann::json result;
     result["type"] = PLACE_RESULT;
@@ -725,6 +752,7 @@ static void ProcessPlaceRequest(const nlohmann::json& payload, uint32_t requeste
     uint8_t type = payload.value("ptype", (uint8_t)0xFF);
     result["ptype"] = type;
     auto refuse = [&](const std::string& reason) {
+        sRefusals[reason]++;
         result["ok"] = false;
         result["reason"] = reason;
         Reply(requester, result);
@@ -769,8 +797,11 @@ static void ProcessPlaceRequest(const nlohmann::json& payload, uint32_t requeste
             }
         }
     }
-    if (CountEraIn(era, scene) >= BASE_CAP) {
-        return refuse(fmt::format("The base is full ({} pieces)", BASE_CAP));
+    if (CountEraIn(era, scene) >= BaseCap()) {
+        return refuse(fmt::format("The base is full ({} pieces)", BaseCap()));
+    }
+    if (!CollisionFits(era, scene, type)) {
+        return refuse("The ground here cannot take more structure");
     }
 
     Placeable p;
@@ -2316,7 +2347,14 @@ const char* sevendays_test_base() {
         }
         u32 maxFree = 0, free = 0, alloc = 0;
         ZeldaArena_GetSizes(&maxFree, &free, &alloc);
+        int cPolys = 0, cVerts = 0, cChunks = 0;
+        CollisionInUse(cPolys, cVerts, cChunks);
+        j["refusals"] = sRefusals;
         j["dyna"] = { { "slots", slots },
+                      { "polys", cPolys },
+                      { "verts", cVerts },
+                      { "chunks", cChunks },
+                      { "vtxMax", dyna.vtxListMax },
                       { "polyMax", dyna.polyListMax },
                       { "nodeMax", dyna.polyNodes.max },
                       { "nodes", dyna.polyNodes.count } };

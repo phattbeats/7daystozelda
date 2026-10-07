@@ -1,0 +1,14 @@
+##### stock build: 94-piece base, heap size, save
+A stock wasmHeapMB 368.8 jsHeapMB 87
+B stock wasmHeapMB 368.8 jsHeapMB 104
+saved 94
+##### fix build loads the stock save
+fix build sees 94 pieces; scene 81 actors 94 {'chunks': 9, 'nodeMax': 8192, 'nodes': 2009, 'polyMax': 8192, 'polys': 1944, 'slots': 13, 'verts': 1296, 'vtxMax': 8192}
+A fix wasmHeapMB 368.8 jsHeapMB 104
+B fix wasmHeapMB 368.8 jsHeapMB 93
+##### vanilla pass: 7 Days to Zelda off in the same co-op room
+A vanilla fps 59.8 frames 301 overflow 0 skips 0 0 peakOpa 16744 net trailer
+B vanilla fps 59 frames 301 overflow 0 skips 0 0 peakOpa 15736 net trailer
+D vanilla fps 58.6 frames 301 overflow 0 skips 0 0 peakOpa 15752 net trailer
+C vanilla fps 59.6 frames 301 overflow 0 skips 0 0 peakOpa 15736 net trailer
+COMPATDONE

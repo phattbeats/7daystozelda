@@ -1,0 +1,13 @@
+== A
+2026-10-07T21:21:12.932Z pw:browser [pid=12740][err] [1007/172112.932213:INFO:CONSOLE:33] "[SOH] [17:21:12.931] [interpreter.cpp:4154] [critical] Unhandled OP code: 0x66, for loaded ucode: 4", source: http://127.0.0.1:18
+2026-10-07T21:21:12.933Z pw:browser [pid=12740][err] Received signal 11 SEGV_ACCERR 21c6fd030000
+17:21:13 PAGE CRASH
+== B
+2026-10-07T21:21:13.997Z pw:browser [pid=12735][err] [1007/172113.997726:INFO:CONSOLE:33] "[SOH] [17:21:13.997] [interpreter.cpp:4154] [critical] Unhandled OP code: 0x66, for loaded ucode: 4", source: http://127.0.0.1:18
+2026-10-07T21:21:13.998Z pw:browser [pid=12735][err] Received signal 11 SEGV_ACCERR 310efd030000
+17:21:14 PAGE CRASH
+== C
+2026-10-07T21:21:13.914Z pw:browser [pid=12733][err] Received signal 11 SEGV_ACCERR 267afd030000
+2026-10-07T21:21:13.915Z pw:browser [pid=12733][err] #[1007/172113.914705:INFO:CONSOLE:33] "[SOH] [17:21:13.914] [interpreter.cpp:4154] [critical] Unhandled OP code: 0x66, for loaded ucode: 4", source: http://127.0.0.1:1
+17:21:13 PAGE CRASH
+== D

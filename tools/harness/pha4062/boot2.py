@@ -1,0 +1,7 @@
+# auto-join page (hash URL) -> file 1 -> heal guard + 7DtZ cvars (no kit: the save is adult with the Master Sword)
+page.goto('http://127.0.0.1:18471/index.html?r=%d#room=trailer&name=%s&color=%s&fairy=FFFFFF-%s&tunic=%s&sevendays=1'%(time.time(),NAME,TUNIC,TUNIC,TUNIC)); time.sleep(40)
+page.mouse.click(480,270); time.sleep(2)
+key('x'); time.sleep(1.5); key('x'); time.sleep(10)
+exec(open('/tmp/z4062/t/heal.py').read())
+cv('gCheats.InfiniteHealth',1); cv('gSevenDays.Enabled',1); cv('gSevenDays.Base',1); cv('gSevenDays.TrailerQuiet',1)
+print(NAME, B().get('scene'), ev('document.querySelector("#net-text").textContent'))

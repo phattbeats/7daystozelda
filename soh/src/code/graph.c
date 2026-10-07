@@ -108,23 +108,255 @@ void Graph_UCodeFaultClient(Gfx* workBuf) {
 #endif
 }
 
+// PHA-4062: display-list pools.
+//
+// The stock pools are the N64's (POLY_OPA 0x2FC0 commands, POLY_XLU 0x1000, overlay 0x800, work 0x100).
+// The macros write into them with no bounds check, and the opaque list shares its buffer with the
+// matrices and light blocks Graph_Alloc hands out from the far end. A large base plus a raid ran the
+// list into those allocations; the frame was flagged below, but was still handed to the renderer, which
+// read the clobbered commands ("Unhandled OP code: 0x8") and crashed the tab.
+//
+// The pools here are GFX_POOL_MAX_SCALE times the stock size, fenced by guard words. The scale in use
+// is gSevenDays.GfxPoolScale (default GFX_POOL_SCALE_DEFAULT) so tests can run at stock size. Actors
+// check the remaining room before they draw (Graph_GfxRoomLow); a frame that still overruns, or
+// trips a guard, is replaced by an empty display list and counted instead of being rendered.
+#define GFX_POOL_MAX_SCALE 8
+#define GFX_POOL_SCALE_DEFAULT 4
+#define GFX_GUARD_CMDS 8 // guard words either side of a buffer, in Gfx
+#define GFX_GUARD_WORD 0xC0DEF00DC0DEF00DULL
+
+typedef struct {
+    Gfx guardHead[GFX_GUARD_CMDS];
+    Gfx buf[0x2FC0 * GFX_POOL_MAX_SCALE];
+    Gfx guardTail[GFX_GUARD_CMDS];
+} GfxPoolOpa;
+typedef struct {
+    Gfx guardHead[GFX_GUARD_CMDS];
+    Gfx buf[0x1000 * GFX_POOL_MAX_SCALE];
+    Gfx guardTail[GFX_GUARD_CMDS];
+} GfxPoolXlu;
+typedef struct {
+    Gfx guardHead[GFX_GUARD_CMDS];
+    Gfx buf[0x800 * GFX_POOL_MAX_SCALE];
+    Gfx guardTail[GFX_GUARD_CMDS];
+} GfxPoolOvl;
+typedef struct {
+    Gfx guardHead[GFX_GUARD_CMDS];
+    Gfx buf[0x100 * GFX_POOL_MAX_SCALE];
+    Gfx guardTail[GFX_GUARD_CMDS];
+} GfxPoolWork;
+
+static GfxPoolOpa sPoolOpa[2];
+static GfxPoolXlu sPoolXlu[2];
+static GfxPoolOvl sPoolOvl[2];
+static GfxPoolWork sPoolWork[2];
+static s32 sPoolScale = GFX_POOL_SCALE_DEFAULT;
+static s32 sPoolGuardsSet = 0;
+
+// Counters since the last Graph_GfxStatsReset, read by sevendays_test_gfx (Placeables.cpp).
+typedef struct {
+    u32 frames;
+    u32 overflowFrames; // frames replaced by an empty list (a pool ran over, or a guard was trampled)
+    u32 guardTrips;
+    u32 actorSkips;     // actors that did not draw because the pools were nearly full
+    u32 placeableSkips; // 7 Days pieces that did not draw (their own, earlier limit)
+    u32 peakUsed[4];    // bytes: head side + tail side, per pool (opa, xlu, overlay, work)
+    u32 peakHead[4];
+    u32 peakTail[4];
+    s32 minFree[4];     // bytes left at the end of the frame (negative: ran over)
+    u32 size[4];        // bytes in use at the current scale
+    u32 actorLoopOpaUsed; // opaque bytes used when the actor loop ended, peak
+    u32 actorLoopXluUsed;
+    u32 lastUsed[4];
+    s32 forceOverflow; // test hook: pretend the next N frames ran over
+} GfxBudgetStats;
+GfxBudgetStats gGfxBudget;
+
+void Graph_GfxStatsReset(void) {
+    s32 force = gGfxBudget.forceOverflow;
+    memset(&gGfxBudget, 0, sizeof(gGfxBudget));
+    gGfxBudget.forceOverflow = force;
+    for (s32 i = 0; i < 4; i++) {
+        gGfxBudget.minFree[i] = 0x7FFFFFFF;
+    }
+}
+
+static void Graph_GfxSetGuards(void) {
+    for (s32 i = 0; i < 2; i++) {
+        for (s32 g = 0; g < GFX_GUARD_CMDS; g++) {
+            ((u64*)&sPoolOpa[i].guardHead[g])[0] = GFX_GUARD_WORD;
+            ((u64*)&sPoolOpa[i].guardTail[g])[0] = GFX_GUARD_WORD;
+            ((u64*)&sPoolXlu[i].guardHead[g])[0] = GFX_GUARD_WORD;
+            ((u64*)&sPoolXlu[i].guardTail[g])[0] = GFX_GUARD_WORD;
+            ((u64*)&sPoolOvl[i].guardHead[g])[0] = GFX_GUARD_WORD;
+            ((u64*)&sPoolOvl[i].guardTail[g])[0] = GFX_GUARD_WORD;
+            ((u64*)&sPoolWork[i].guardHead[g])[0] = GFX_GUARD_WORD;
+            ((u64*)&sPoolWork[i].guardTail[g])[0] = GFX_GUARD_WORD;
+        }
+    }
+    sPoolGuardsSet = 1;
+}
+
+// The guard words fence the whole array. A list that only runs past the size in use (scale below the
+// maximum) lands in spare room and is caught by the free-bytes check in Graph_GfxCheckFrame instead.
+static s32 Graph_GfxGuardsOk(const Gfx* head, const Gfx* tail) {
+    for (s32 g = 0; g < GFX_GUARD_CMDS; g++) {
+        if (((const u64*)&head[g])[0] != GFX_GUARD_WORD || ((const u64*)&tail[g])[0] != GFX_GUARD_WORD) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// Bytes left in a pool: the display list grows up from the start, Graph_Alloc takes from the end.
+s32 Graph_GfxFreeBytes(GraphicsContext* gfxCtx, s32 pool) {
+    TwoHeadGfxArena* t = (pool == 0) ? &gfxCtx->polyOpa : (pool == 1) ? &gfxCtx->polyXlu : &gfxCtx->overlay;
+    return (s32)((intptr_t)t->d - (intptr_t)t->p);
+}
+
+// True when the opaque or translucent pool has less than `reserveCmds` commands of room left.
+s32 Graph_GfxRoomLow(GraphicsContext* gfxCtx, s32 reserveCmds) {
+    s32 bytes = reserveCmds * (s32)sizeof(Gfx);
+    return Graph_GfxFreeBytes(gfxCtx, 0) < bytes || Graph_GfxFreeBytes(gfxCtx, 1) < bytes;
+}
+
+// True when less than `percent` of the opaque or translucent pool is still free.
+s32 Graph_GfxRoomBelowPercent(GraphicsContext* gfxCtx, s32 percent) {
+    return Graph_GfxFreeBytes(gfxCtx, 0) < (s32)(gGfxBudget.size[0] / 100 * percent) ||
+           Graph_GfxFreeBytes(gfxCtx, 1) < (s32)(gGfxBudget.size[1] / 100 * percent);
+}
+
+// JSON for sevendays_test_gfx: pool sizes in bytes, peaks, minimum free and the skip/overflow counters.
+const char* Graph_GfxStatsJson(void) {
+    static char out[1536];
+    static const char* const names[4] = { "opa", "xlu", "ovl", "work" };
+    int n = snprintf(out, sizeof(out),
+                     "{\"cmdBytes\":%d,\"scale\":%d,\"frames\":%u,\"overflowFrames\":%u,\"guardTrips\":%u,"
+                     "\"actorSkips\":%u,\"placeableSkips\":%u,\"actorLoopOpaUsed\":%u,\"actorLoopXluUsed\":%u,"
+                     "\"forceOverflow\":%d",
+                     (int)sizeof(Gfx), sPoolScale, gGfxBudget.frames, gGfxBudget.overflowFrames, gGfxBudget.guardTrips,
+                     gGfxBudget.actorSkips, gGfxBudget.placeableSkips, gGfxBudget.actorLoopOpaUsed,
+                     gGfxBudget.actorLoopXluUsed, gGfxBudget.forceOverflow);
+    for (int i = 0; i < 4 && n < (int)sizeof(out); i++) {
+        n += snprintf(out + n, sizeof(out) - n,
+                      ",\"%s\":{\"size\":%u,\"peakUsed\":%u,\"peakHead\":%u,\"peakTail\":%u,\"minFree\":%d,\"last\":%u}",
+                      names[i], gGfxBudget.size[i], gGfxBudget.peakUsed[i], gGfxBudget.peakHead[i],
+                      gGfxBudget.peakTail[i], gGfxBudget.minFree[i] == 0x7FFFFFFF ? 0 : gGfxBudget.minFree[i],
+                      gGfxBudget.lastUsed[i]);
+    }
+    snprintf(out + n, sizeof(out) - n, "}");
+    return out;
+}
+
+void Graph_GfxForceOverflow(s32 frames) {
+    gGfxBudget.forceOverflow = frames;
+}
+
+void Graph_GfxNoteActorSkip(s32 placeable) {
+    if (placeable) {
+        gGfxBudget.placeableSkips++;
+    } else {
+        gGfxBudget.actorSkips++;
+    }
+}
+
+void Graph_GfxNoteActorLoopEnd(GraphicsContext* gfxCtx) {
+    u32 opa = (u32)((intptr_t)gfxCtx->polyOpa.p - (intptr_t)gfxCtx->polyOpa.bufp) +
+              (u32)((intptr_t)gfxCtx->polyOpa.bufp + gfxCtx->polyOpa.size - (intptr_t)gfxCtx->polyOpa.d);
+    u32 xlu = (u32)((intptr_t)gfxCtx->polyXlu.p - (intptr_t)gfxCtx->polyXlu.bufp);
+    if (opa > gGfxBudget.actorLoopOpaUsed) {
+        gGfxBudget.actorLoopOpaUsed = opa;
+    }
+    if (xlu > gGfxBudget.actorLoopXluUsed) {
+        gGfxBudget.actorLoopXluUsed = xlu;
+    }
+}
+
 void Graph_InitTHGA(GraphicsContext* gfxCtx) {
     GfxPool* pool = &gGfxPools[gfxCtx->gfxPoolIdx & 1];
+    s32 idx = gfxCtx->gfxPoolIdx & 1;
+    s32 scale = CVarGetInteger("gSevenDays.GfxPoolScale", GFX_POOL_SCALE_DEFAULT);
+
+    if (scale < 1) {
+        scale = 1;
+    } else if (scale > GFX_POOL_MAX_SCALE) {
+        scale = GFX_POOL_MAX_SCALE;
+    }
+    if (!sPoolGuardsSet) {
+        Graph_GfxSetGuards();
+        Graph_GfxStatsReset();
+    }
+    sPoolScale = scale;
 
     pool->headMagic = GFXPOOL_HEAD_MAGIC;
     pool->tailMagic = GFXPOOL_TAIL_MAGIC;
-    THGA_Ct(&gfxCtx->polyOpa, pool->polyOpaBuffer, sizeof(pool->polyOpaBuffer));
-    THGA_Ct(&gfxCtx->polyXlu, pool->polyXluBuffer, sizeof(pool->polyXluBuffer));
-    THGA_Ct(&gfxCtx->overlay, pool->overlayBuffer, sizeof(pool->overlayBuffer));
-    THGA_Ct(&gfxCtx->work, pool->workBuffer, sizeof(pool->workBuffer));
 
-    gfxCtx->polyOpaBuffer = pool->polyOpaBuffer;
-    gfxCtx->polyXluBuffer = pool->polyXluBuffer;
-    gfxCtx->overlayBuffer = pool->overlayBuffer;
-    gfxCtx->workBuffer = pool->workBuffer;
+    THGA_Ct(&gfxCtx->polyOpa, sPoolOpa[idx].buf, sizeof(Gfx) * 0x2FC0 * scale);
+    THGA_Ct(&gfxCtx->polyXlu, sPoolXlu[idx].buf, sizeof(Gfx) * 0x1000 * scale);
+    THGA_Ct(&gfxCtx->overlay, sPoolOvl[idx].buf, sizeof(Gfx) * 0x800 * scale);
+    THGA_Ct(&gfxCtx->work, sPoolWork[idx].buf, sizeof(Gfx) * 0x100 * scale);
+
+    gfxCtx->polyOpaBuffer = sPoolOpa[idx].buf;
+    gfxCtx->polyXluBuffer = sPoolXlu[idx].buf;
+    gfxCtx->overlayBuffer = sPoolOvl[idx].buf;
+    gfxCtx->workBuffer = sPoolWork[idx].buf;
+
+    gGfxBudget.size[0] = sizeof(Gfx) * 0x2FC0 * scale;
+    gGfxBudget.size[1] = sizeof(Gfx) * 0x1000 * scale;
+    gGfxBudget.size[2] = sizeof(Gfx) * 0x800 * scale;
+    gGfxBudget.size[3] = sizeof(Gfx) * 0x100 * scale;
 
     gfxCtx->curFrameBuffer = (u16*)SysCfb_GetFbPtr(gfxCtx->fbIdx % 2);
     gfxCtx->unk_014 = 0;
+}
+
+// Called once the frame's lists are built. Records the pool usage and returns true when the frame
+// must not be rendered: a pool ran into its own tail allocations or past its end, or a guard was hit.
+static s32 Graph_GfxCheckFrame(GraphicsContext* gfxCtx) {
+    TwoHeadGfxArena* arenas[4] = { &gfxCtx->polyOpa, &gfxCtx->polyXlu, &gfxCtx->overlay, &gfxCtx->work };
+    s32 idx = gfxCtx->gfxPoolIdx & 1;
+    s32 bad = 0;
+
+    gGfxBudget.frames++;
+    for (s32 i = 0; i < 4; i++) {
+        TwoHeadGfxArena* t = arenas[i];
+        u32 head = (u32)((intptr_t)t->p - (intptr_t)t->bufp);
+        u32 tail = (u32)((intptr_t)t->bufp + t->size - (intptr_t)t->d);
+        s32 freeBytes = (s32)((intptr_t)t->d - (intptr_t)t->p);
+
+        gGfxBudget.lastUsed[i] = head + tail;
+        if (head + tail > gGfxBudget.peakUsed[i]) {
+            gGfxBudget.peakUsed[i] = head + tail;
+        }
+        if (head > gGfxBudget.peakHead[i]) {
+            gGfxBudget.peakHead[i] = head;
+        }
+        if (tail > gGfxBudget.peakTail[i]) {
+            gGfxBudget.peakTail[i] = tail;
+        }
+        if (freeBytes < gGfxBudget.minFree[i]) {
+            gGfxBudget.minFree[i] = freeBytes;
+        }
+        if (freeBytes < 0) {
+            bad = 1;
+        }
+    }
+    if (!Graph_GfxGuardsOk(sPoolOpa[idx].guardHead, sPoolOpa[idx].guardTail) ||
+        !Graph_GfxGuardsOk(sPoolXlu[idx].guardHead, sPoolXlu[idx].guardTail) ||
+        !Graph_GfxGuardsOk(sPoolOvl[idx].guardHead, sPoolOvl[idx].guardTail) ||
+        !Graph_GfxGuardsOk(sPoolWork[idx].guardHead, sPoolWork[idx].guardTail)) {
+        gGfxBudget.guardTrips++;
+        bad = 1;
+        Graph_GfxSetGuards();
+    }
+    if (gGfxBudget.forceOverflow > 0) {
+        gGfxBudget.forceOverflow--;
+        bad = 1;
+    }
+    if (bad) {
+        gGfxBudget.overflowFrames++;
+    }
+    return bad;
 }
 
 GameStateOverlay* Graph_GetNextGameState(GameState* gameState) {
@@ -386,6 +618,14 @@ void Graph_Update(GraphicsContext* gfxCtx, GameState* gameState) {
         osSyncPrintf("%c", BEL);
         // "Zelda 4 is dead"
         osSyncPrintf(VT_COL(RED, WHITE) "ゼルダ4は死んでしまった(graph_alloc is empty)\n" VT_RST);
+    }
+
+    if (Graph_GfxCheckFrame(gfxCtx)) {
+        // Nothing from this frame may reach the renderer: its lists overlap their own allocations.
+        // An empty root list shows nothing for this tick; the next tick starts clean.
+        Gfx* emptyList = gfxCtx->workBuffer;
+        gSPEndDisplayList(emptyList);
+        problem = true;
     }
 
     if (!problem) {

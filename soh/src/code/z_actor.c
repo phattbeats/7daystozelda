@@ -2774,9 +2774,23 @@ void Actor_FaultPrint(Actor* actor, char* command) {
     FaultDrawer_Printf("ACTOR NAME %08x:%s", actor, name);
 }
 
+// PHA-4062: commands of room an actor needs left in the opaque and translucent pools before it may draw.
+// A frame can only overrun (and be thrown away, see Graph_Update) if one draw takes more than this, and
+// the effects, HUD and sync commands that follow the actors fit in it too.
+#define ACTOR_DRAW_RESERVE_CMDS 2048
+
+s32 Graph_GfxRoomLow(GraphicsContext* gfxCtx, s32 reserveCmds);
+void Graph_GfxNoteActorSkip(s32 placeable);
+void Graph_GfxNoteActorLoopEnd(GraphicsContext* gfxCtx);
+
 void Actor_Draw(PlayState* play, Actor* actor) {
     FaultClient faultClient;
     Lights* lights;
+
+    if (Graph_GfxRoomLow(play->state.gfxCtx, ACTOR_DRAW_RESERVE_CMDS)) {
+        Graph_GfxNoteActorSkip(0);
+        return;
+    }
 
     Fault_AddClient(&faultClient, Actor_FaultPrint, actor, "Actor_draw");
 
@@ -3149,6 +3163,8 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
             actor = actor->next;
         }
     }
+
+    Graph_GfxNoteActorLoopEnd(play->state.gfxCtx);
 
     if ((HREG(64) != 1) || (HREG(73) != 0)) {
         Effect_DrawAll(play->state.gfxCtx);
