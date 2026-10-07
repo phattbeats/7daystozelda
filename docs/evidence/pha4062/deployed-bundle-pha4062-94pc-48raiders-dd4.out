@@ -1,0 +1,9 @@
+C {'opa': (58680, 16888, 41792, 391168, 332488), 'xlu': (8984, 8984, 0, 131072, 122088), 'ovl': (2440, 2440, 0, 65536, 63096)} loopEnd 57440 8840
+C mem wasmHeapMB 368.8 jsHeapMB 93 arenaFree 2122784 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 3617, 'polyMax': 8192, 'polys': 3552, 'slots': 13, 'verts': 2368, 'vtxMax': 8192}
+B {'opa': (147864, 37480, 110384, 391168, 243304), 'xlu': (15176, 15176, 0, 131072, 115896), 'ovl': (2440, 2440, 0, 65536, 63096)} loopEnd 146624 15032
+B mem wasmHeapMB 368.8 jsHeapMB 82 arenaFree 2138336 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 3617, 'polyMax': 8192, 'polys': 3552, 'slots': 13, 'verts': 2368, 'vtxMax': 8192}
+D {'opa': (72392, 19976, 52416, 391168, 318776), 'xlu': (9680, 9680, 0, 131072, 121392), 'ovl': (2440, 2440, 0, 65536, 63096)} loopEnd 71152 9536
+D mem wasmHeapMB 368.8 jsHeapMB 117 arenaFree 2133152 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 3617, 'polyMax': 8192, 'polys': 3552, 'slots': 13, 'verts': 2368, 'vtxMax': 8192}
+A {'opa': (66784, 18672, 48112, 391168, 324384), 'xlu': (9416, 9416, 0, 131072, 121656), 'ovl': (2280, 2280, 0, 65536, 63256)} loopEnd 65544 9248
+A mem wasmHeapMB 368.8 jsHeapMB 82 arenaFree 2133120 dyna {'chunks': 9, 'nodeMax': 8192, 'nodes': 3617, 'polyMax': 8192, 'polys': 3552, 'slots': 13, 'verts': 2368, 'vtxMax': 8192}
+DONE
