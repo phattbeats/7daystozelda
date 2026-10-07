@@ -51,6 +51,12 @@ struct ActorSyncAdapter {
     // Mirror: runs right after the cylinder colliders are repositioned from the
     // streamed world.pos, for bosses whose Update offsets a collider by hand.
     void (*PositionCollider)(Actor* actor, Collider* col) = nullptr;
+    // Mirror: a hit on one of the actor's colliders is about to be forwarded to the authority as a hit request.
+    // Return true when the adapter dealt with it on this machine (Twinrova: a mirror shield took a blast, which
+    // only the machine that owns the shield can judge); nothing is forwarded then.
+    bool (*OnLocalHit)(Actor* actor) = nullptr;
+    // Authority: OnRemoteEvent with the sender's payload and client id (EnemySync::SendAdapterEvent's `data`).
+    void (*OnRemoteEventData)(Actor* actor, uint8_t event, const nlohmann::json& data, uint32_t fromClient) = nullptr;
 };
 
 namespace EnemySync {

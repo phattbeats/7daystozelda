@@ -85,7 +85,10 @@ void Anchor::HandlePacket_EnemyHitRequest(nlohmann::json payload) {
         const ActorSyncAdapter* adapter = EnemySync::GetAdapter(actor->id);
         uint8_t event = payload["event"].get<uint8_t>();
         ESYNC_LOG("[EnemySync] EVENT rx id={} event={}", actor->id, event);
-        if (adapter != nullptr && adapter->OnRemoteEvent != nullptr) {
+        if (adapter != nullptr && adapter->OnRemoteEventData != nullptr) {
+            adapter->OnRemoteEventData(actor, event, payload.contains("edata") ? payload["edata"] : nlohmann::json(),
+                                       payload.contains("clientId") ? payload["clientId"].get<uint32_t>() : 0);
+        } else if (adapter != nullptr && adapter->OnRemoteEvent != nullptr) {
             adapter->OnRemoteEvent(actor, event);
         }
         return;

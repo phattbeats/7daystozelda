@@ -22,6 +22,7 @@ extern "C" {
 #include "functions.h"
 #include "src/overlays/actors/ovl_En_Floormas/z_en_floormas.h"
 #include "src/overlays/actors/ovl_Boss_Mo/z_boss_mo.h"
+#include "src/overlays/actors/ovl_Boss_Tw/z_boss_tw.h"
 
 extern PlayState* gPlayState;
 }
@@ -296,6 +297,9 @@ static s16* ProjectileTimer(Actor* actor) {
 // (the authority from the AI, a mirror from the streamed flame count in the
 // King Dodongo adapter), and each flame burns only that machine's own Link
 // (it checks GET_PLAYER by distance; it has no collider to mirror).
+// BOSS_TW (PHA-4053): the fire and ice pools the blasts leave (params 0x65 / 0x67, spawned on the host and replayed
+// on a mirror from the stream) and the death balls (0x68 / 0x69, spawned by each client's own death cutscene).
+// The fire and ice blasts themselves (0x64 / 0x66) are tracked dynamic spawns.
 // EN_VB_BALL: Volvagia's falling rocks (spawned from Fd's update) and the bones
 // that fall from Fd's Draw during the death. Every machine spawns its own (the
 // Volvagia adapter replays the rock timer), so tracking them would double-spawn.
@@ -303,7 +307,10 @@ static bool IsTrackingExcluded(Actor* actor) {
     return (actor->id == ACTOR_EN_GOMA && (uint16_t)actor->params >= 6) || actor->id == ACTOR_EN_BDFIRE ||
            (actor->id == ACTOR_BOSS_VA && actor->params >= (int16_t)BARINADE_PARAM_STUMP_1) ||
            actor->id == ACTOR_EN_VB_BALL || (actor->id == ACTOR_BOSS_GANONDROF && (uint16_t)actor->params >= 10) ||
-           (actor->id == ACTOR_EN_FHG_FIRE && (uint16_t)actor->params != 50);
+           (actor->id == ACTOR_EN_FHG_FIRE && (uint16_t)actor->params != 50) ||
+           (actor->id == ACTOR_BOSS_TW && ((uint16_t)actor->params == TW_FIRE_BLAST_GROUND ||
+                                           (uint16_t)actor->params == TW_ICE_BLAST_GROUND ||
+                                           (uint16_t)actor->params >= TW_DEATHBALL_KOTAKE));
 }
 
 // Barinade (PHA-4048): one actor id, param-split parts. Parts spawned while
@@ -883,7 +890,7 @@ bool HandOffRemoteDefeat(Actor* actor) {
     return true;
 }
 
-void SendAdapterEvent(Actor* actor, uint8_t event) {
+void SendAdapterEvent(Actor* actor, uint8_t event, const nlohmann::json* data) {
     auto it = tracked.find(actor);
     if (it == tracked.end() || Anchor::Instance == nullptr || gPlayState == NULL || IsLocalAuthority() ||
         cachedAuthorityId == UINT32_MAX) {
@@ -900,6 +907,9 @@ void SendAdapterEvent(Actor* actor, uint8_t event) {
     payload["dmgFlags"] = 0;
     payload["hitPos"] = Vec3s{ 0, 0, 0 };
     payload["event"] = event;
+    if (data != nullptr) {
+        payload["edata"] = *data;
+    }
     payload["targetClientId"] = cachedAuthorityId;
     Anchor::Instance->SendJsonToRemote(payload);
     ESYNC_LOG("[EnemySync] EVENT tx id={} key={:#x} event={}", actor->id, it->second.key, event);
@@ -911,6 +921,10 @@ void SendAdapterEvent(Actor* actor, uint8_t event) {
 // and SFX already played via the local collision pass.
 static void DetectAndForwardLocalHits(Actor* actor, TrackedState& st) {
     if (st.lastHitReqTick == tickCounter) {
+        return;
+    }
+    if (const ActorSyncAdapter* ad = GetAdapter(actor->id); ad != nullptr && ad->OnLocalHit != nullptr &&
+                                                              ad->OnLocalHit(actor)) {
         return;
     }
 
@@ -1812,6 +1826,11 @@ static void OnEnemyActorSpawn(Actor* actor) {
     // Morpha's first tentacle is spawned by the core's own Init on every client, so it keeps its occurrence key;
     // only the second one (spawned from Update) is a dynamic spawn.
     if (actor->id == ACTOR_BOSS_MO && actor->params >= 100 && BossMo_AnchorGlobal(1) == NULL) {
+        return;
+    }
+    // Twinrova's two witches are spawned by her own Init on every client, so like her they keep their occurrence
+    // keys even when her Init runs after the room's setup list (object load). Only the blasts are dynamic.
+    if (actor->id == ACTOR_BOSS_TW && (uint16_t)actor->params <= TW_TWINROVA) {
         return;
     }
     if (gPlayState->numSetupActors != 0) {
