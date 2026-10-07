@@ -73,6 +73,27 @@ static InitChainEntry sInitChain[] = {
     ICHAIN_F32(targetArrowOffset, 0, ICHAIN_STOP),
 };
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4050: soh/Network/Anchor/EnemyTargeting.cpp
+Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
+// PHA-4050: soh/Network/Anchor/BossAdapters/VolvagiaAdapter.cpp
+void Anchor_VolvagiaIntroOver(Actor* fd);
+#endif
+
+// The player Volvagia goes after: the nearest living one in co-op, else Link.
+// Also points yawTowardsPlayer/xzDistToPlayer at it, which the attack choice reads.
+static Actor* BossFd_AimTarget(BossFd* this, PlayState* play) {
+    Actor* target = &GET_PLAYER(play)->actor;
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    target = Anchor_BossNearestTarget(play, &this->actor);
+    if (target != &GET_PLAYER(play)->actor) {
+        this->actor.yawTowardsPlayer = Math_Vec3f_Yaw(&this->actor.world.pos, &target->world.pos);
+        this->actor.xzDistToPlayer = Math_Vec3f_DistXZ(&this->actor.world.pos, &target->world.pos);
+    }
+#endif
+    return target;
+}
+
 void BossFd_SpawnEmber(BossFdEffect* effect, Vec3f* position, Vec3f* velocity, Vec3f* acceleration, f32 scale) {
     s16 i;
 
@@ -270,6 +291,95 @@ static Vec3f sCeilingTargets[] = {
     { 0.0f, 900.0f, 243.0f },  { -243.0f, 900.0f, 100.0f }, { -243.0, 900.0f, -100.0f },
 };
 
+static void BossFd_UpdateSegments(BossFd* this, PlayState* play, u8 sp1CF) {
+    s16 i4;
+    s16 i2;
+    s16 i3;
+    Vec3f spE0[3];
+    Vec3f spBC[3];
+    f32 phi_f20;
+
+    this->work[BFD_LEAD_BODY_SEG]++;
+    if (this->work[BFD_LEAD_BODY_SEG] >= 100) {
+        this->work[BFD_LEAD_BODY_SEG] = 0;
+    }
+    i4 = this->work[BFD_LEAD_BODY_SEG];
+    this->bodySegsPos[i4].x = this->actor.world.pos.x;
+    this->bodySegsPos[i4].y = this->actor.world.pos.y;
+    this->bodySegsPos[i4].z = this->actor.world.pos.z;
+    this->bodySegsRot[i4].x = (this->actor.world.rot.x / (f32)0x8000) * M_PI;
+    this->bodySegsRot[i4].y = (this->actor.world.rot.y / (f32)0x8000) * M_PI;
+    this->bodySegsRot[i4].z = (this->actor.world.rot.z / (f32)0x8000) * M_PI;
+
+    this->work[BFD_LEAD_MANE_SEG]++;
+    if (this->work[BFD_LEAD_MANE_SEG] >= 30) {
+        this->work[BFD_LEAD_MANE_SEG] = 0;
+    }
+    i4 = this->work[BFD_LEAD_MANE_SEG];
+    this->centerMane.scale[i4] = (Math_SinS(this->work[BFD_MOVE_TIMER] * 5596.0f) * 0.3f) + 1.0f;
+    this->rightMane.scale[i4] = (Math_SinS(this->work[BFD_MOVE_TIMER] * 5496.0f) * 0.3f) + 1.0f;
+    this->leftMane.scale[i4] = (Math_CosS(this->work[BFD_MOVE_TIMER] * 5696.0f) * 0.3f) + 1.0f;
+    this->centerMane.pos[i4] = this->centerMane.head;
+    this->fireManeRot[i4].x = (this->actor.world.rot.x / (f32)0x8000) * M_PI;
+    this->fireManeRot[i4].y = (this->actor.world.rot.y / (f32)0x8000) * M_PI;
+    this->fireManeRot[i4].z = (this->actor.world.rot.z / (f32)0x8000) * M_PI;
+    this->rightMane.pos[i4] = this->rightMane.head;
+    this->leftMane.pos[i4] = this->leftMane.head;
+
+    if ((0x3000 > this->actor.world.rot.x) && (this->actor.world.rot.x > -0x3000)) {
+        Math_ApproachF(&this->flattenMane, 1.0f, 1.0f, 0.05f);
+    } else {
+        Math_ApproachF(&this->flattenMane, 0.5f, 1.0f, 0.05f);
+    }
+
+    if (this->work[BFD_ACTION_STATE] < BOSSFD_SKULL_FALL) {
+        if ((this->actor.prevPos.y < 90.0f) && (90.0f <= this->actor.world.pos.y)) {
+            this->timers[4] = 80;
+            func_80033E1C(play, 1, 80, 0x5000);
+            this->work[BFD_ROAR_TIMER] = 40;
+            this->work[BFD_MANE_EMBERS_TIMER] = 30;
+            this->work[BFD_SPLASH_TIMER] = 10;
+        }
+        if ((this->actor.prevPos.y > 90.0f) && (90.0f >= this->actor.world.pos.y)) {
+            this->timers[4] = 80;
+            func_80033E1C(play, 1, 80, 0x5000);
+            this->work[BFD_MANE_EMBERS_TIMER] = 30;
+            this->work[BFD_SPLASH_TIMER] = 10;
+        }
+    }
+
+    if (!sp1CF) {
+        spE0[0].x = spE0[0].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 1500.0f) * 3000.0f;
+        spE0[1].x = Math_SinS(this->work[BFD_MOVE_TIMER] * 2000.0f) * 4000.0f;
+        spE0[1].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 2200.0f) * 4000.0f;
+        spE0[2].x = Math_SinS(this->work[BFD_MOVE_TIMER] * 1700.0f) * 2000.0f;
+        spE0[2].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 1900.0f) * 2000.0f;
+        spBC[0].x = spBC[0].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 1500.0f) * -3000.0f;
+        spBC[1].x = Math_SinS(this->work[BFD_MOVE_TIMER] * 2200.0f) * -4000.0f;
+        spBC[1].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 2000.0f) * -4000.0f;
+        spBC[2].x = Math_SinS(this->work[BFD_MOVE_TIMER] * 1900.0f) * -2000.0f;
+        spBC[2].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 1700.0f) * -2000.0f;
+
+        for (i3 = 0; i3 < 3; i3++) {
+            Math_ApproachF(&this->rightArmRot[i3].x, spE0[i3].x, 1.0f, 1000.0f);
+            Math_ApproachF(&this->rightArmRot[i3].y, spE0[i3].y, 1.0f, 1000.0f);
+            Math_ApproachF(&this->leftArmRot[i3].x, spBC[i3].x, 1.0f, 1000.0f);
+            Math_ApproachF(&this->leftArmRot[i3].y, spBC[i3].y, 1.0f, 1000.0f);
+        }
+    } else {
+        for (i2 = 0; i2 < 3; i2++) {
+            phi_f20 = 0.0f;
+            Math_ApproachZeroF(&this->rightArmRot[i2].y, 0.1f, 100.0f);
+            Math_ApproachZeroF(&this->leftArmRot[i2].y, 0.1f, 100.0f);
+            if (i2 == 0) {
+                phi_f20 = -3000.0f;
+            }
+            Math_ApproachF(&this->rightArmRot[i2].x, phi_f20, 0.1f, 100.0f);
+            Math_ApproachF(&this->leftArmRot[i2].x, -phi_f20, 0.1f, 100.0f);
+        }
+    }
+}
+
 void BossFd_Fly(BossFd* this, PlayState* play) {
     u8 sp1CF = false;
     u8 temp_rand;
@@ -280,6 +390,7 @@ void BossFd_Fly(BossFd* this, PlayState* play) {
     f32 dy;
     f32 dz;
     Player* player = GET_PLAYER(play);
+    Actor* target = BossFd_AimTarget(this, play);
     f32 angleToTarget;
     f32 pitchToTarget;
     Vec3f* holePosition1;
@@ -555,6 +666,9 @@ void BossFd_Fly(BossFd* this, PlayState* play) {
                     this->actionFunc = BossFd_Wait;
                     this->handoffSignal = FD2_SIGNAL_GROUND;
                     Flags_SetEventChkInf(EVENTCHKINF_BEGAN_VOLVAGIA_BATTLE);
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+                    Anchor_VolvagiaIntroOver(&this->actor);
+#endif
                 }
                 break;
         }
@@ -703,9 +817,9 @@ void BossFd_Fly(BossFd* this, PlayState* play) {
         case BOSSFD_FLY_CHASE:
             this->actor.flags |= ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT;
             temp_y = Math_SinS(this->work[BFD_MOVE_TIMER] * 2396.0f) * 30.0f + this->fwork[BFD_TARGET_Y_OFFSET];
-            this->targetPosition.x = player->actor.world.pos.x;
-            this->targetPosition.y = player->actor.world.pos.y + temp_y + 30.0f;
-            this->targetPosition.z = player->actor.world.pos.z;
+            this->targetPosition.x = target->world.pos.x;
+            this->targetPosition.y = target->world.pos.y + temp_y + 30.0f;
+            this->targetPosition.z = target->world.pos.z;
             this->fwork[BFD_FLY_WOBBLE_AMP] = 0.0f;
             if (((this->timers[0] % 64) == 0) && (this->timers[0] < 450)) {
                 this->work[BFD_ROAR_TIMER] = 40;
@@ -714,7 +828,7 @@ void BossFd_Fly(BossFd* this, PlayState* play) {
                 }
             }
             if ((this->work[BFD_DAMAGE_FLASH_TIMER] != 0) || (this->timers[0] == 0) ||
-                (player->actor.world.pos.y < 70.0f)) {
+                (target->world.pos.y < 70.0f)) {
                 this->work[BFD_ACTION_STATE] = BOSSFD_FLY_MAIN;
                 this->timers[0] = 0;
                 this->work[BFD_START_ATTACK] = false;
@@ -933,10 +1047,6 @@ void BossFd_Fly(BossFd* this, PlayState* play) {
     //                                 Update body segments and mane
 
     if (!this->work[BFD_STOP_FLAG]) {
-        s16 i4;
-        Vec3f spE0[3];
-        Vec3f spBC[3];
-        f32 phi_f20;
         f32 padB4;
         f32 padB0;
         f32 padAC;
@@ -958,85 +1068,7 @@ void BossFd_Fly(BossFd* this, PlayState* play) {
         }
         Actor_UpdatePos(&this->actor);
 
-        this->work[BFD_LEAD_BODY_SEG]++;
-        if (this->work[BFD_LEAD_BODY_SEG] >= 100) {
-            this->work[BFD_LEAD_BODY_SEG] = 0;
-        }
-        i4 = this->work[BFD_LEAD_BODY_SEG];
-        this->bodySegsPos[i4].x = this->actor.world.pos.x;
-        this->bodySegsPos[i4].y = this->actor.world.pos.y;
-        this->bodySegsPos[i4].z = this->actor.world.pos.z;
-        this->bodySegsRot[i4].x = (this->actor.world.rot.x / (f32)0x8000) * M_PI;
-        this->bodySegsRot[i4].y = (this->actor.world.rot.y / (f32)0x8000) * M_PI;
-        this->bodySegsRot[i4].z = (this->actor.world.rot.z / (f32)0x8000) * M_PI;
-
-        this->work[BFD_LEAD_MANE_SEG]++;
-        if (this->work[BFD_LEAD_MANE_SEG] >= 30) {
-            this->work[BFD_LEAD_MANE_SEG] = 0;
-        }
-        i4 = this->work[BFD_LEAD_MANE_SEG];
-        this->centerMane.scale[i4] = (Math_SinS(this->work[BFD_MOVE_TIMER] * 5596.0f) * 0.3f) + 1.0f;
-        this->rightMane.scale[i4] = (Math_SinS(this->work[BFD_MOVE_TIMER] * 5496.0f) * 0.3f) + 1.0f;
-        this->leftMane.scale[i4] = (Math_CosS(this->work[BFD_MOVE_TIMER] * 5696.0f) * 0.3f) + 1.0f;
-        this->centerMane.pos[i4] = this->centerMane.head;
-        this->fireManeRot[i4].x = (this->actor.world.rot.x / (f32)0x8000) * M_PI;
-        this->fireManeRot[i4].y = (this->actor.world.rot.y / (f32)0x8000) * M_PI;
-        this->fireManeRot[i4].z = (this->actor.world.rot.z / (f32)0x8000) * M_PI;
-        this->rightMane.pos[i4] = this->rightMane.head;
-        this->leftMane.pos[i4] = this->leftMane.head;
-
-        if ((0x3000 > this->actor.world.rot.x) && (this->actor.world.rot.x > -0x3000)) {
-            Math_ApproachF(&this->flattenMane, 1.0f, 1.0f, 0.05f);
-        } else {
-            Math_ApproachF(&this->flattenMane, 0.5f, 1.0f, 0.05f);
-        }
-
-        if (this->work[BFD_ACTION_STATE] < BOSSFD_SKULL_FALL) {
-            if ((this->actor.prevPos.y < 90.0f) && (90.0f <= this->actor.world.pos.y)) {
-                this->timers[4] = 80;
-                func_80033E1C(play, 1, 80, 0x5000);
-                this->work[BFD_ROAR_TIMER] = 40;
-                this->work[BFD_MANE_EMBERS_TIMER] = 30;
-                this->work[BFD_SPLASH_TIMER] = 10;
-            }
-            if ((this->actor.prevPos.y > 90.0f) && (90.0f >= this->actor.world.pos.y)) {
-                this->timers[4] = 80;
-                func_80033E1C(play, 1, 80, 0x5000);
-                this->work[BFD_MANE_EMBERS_TIMER] = 30;
-                this->work[BFD_SPLASH_TIMER] = 10;
-            }
-        }
-
-        if (!sp1CF) {
-            spE0[0].x = spE0[0].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 1500.0f) * 3000.0f;
-            spE0[1].x = Math_SinS(this->work[BFD_MOVE_TIMER] * 2000.0f) * 4000.0f;
-            spE0[1].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 2200.0f) * 4000.0f;
-            spE0[2].x = Math_SinS(this->work[BFD_MOVE_TIMER] * 1700.0f) * 2000.0f;
-            spE0[2].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 1900.0f) * 2000.0f;
-            spBC[0].x = spBC[0].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 1500.0f) * -3000.0f;
-            spBC[1].x = Math_SinS(this->work[BFD_MOVE_TIMER] * 2200.0f) * -4000.0f;
-            spBC[1].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 2000.0f) * -4000.0f;
-            spBC[2].x = Math_SinS(this->work[BFD_MOVE_TIMER] * 1900.0f) * -2000.0f;
-            spBC[2].y = Math_SinS(this->work[BFD_MOVE_TIMER] * 1700.0f) * -2000.0f;
-
-            for (i3 = 0; i3 < 3; i3++) {
-                Math_ApproachF(&this->rightArmRot[i3].x, spE0[i3].x, 1.0f, 1000.0f);
-                Math_ApproachF(&this->rightArmRot[i3].y, spE0[i3].y, 1.0f, 1000.0f);
-                Math_ApproachF(&this->leftArmRot[i3].x, spBC[i3].x, 1.0f, 1000.0f);
-                Math_ApproachF(&this->leftArmRot[i3].y, spBC[i3].y, 1.0f, 1000.0f);
-            }
-        } else {
-            for (i2 = 0; i2 < 3; i2++) {
-                phi_f20 = 0.0f;
-                Math_ApproachZeroF(&this->rightArmRot[i2].y, 0.1f, 100.0f);
-                Math_ApproachZeroF(&this->leftArmRot[i2].y, 0.1f, 100.0f);
-                if (i2 == 0) {
-                    phi_f20 = -3000.0f;
-                }
-                Math_ApproachF(&this->rightArmRot[i2].x, phi_f20, 0.1f, 100.0f);
-                Math_ApproachF(&this->leftArmRot[i2].x, -phi_f20, 0.1f, 100.0f);
-            }
-        }
+        BossFd_UpdateSegments(this, play, sp1CF);
     }
 }
 
@@ -1309,18 +1341,11 @@ void BossFd_CollisionCheck(BossFd* this, PlayState* play) {
     }
 }
 
-void BossFd_Update(Actor* thisx, PlayState* play) {
-    s32 pad;
-    BossFd* this = (BossFd*)thisx;
+static void BossFd_UpdateCommon(BossFd* this, PlayState* play, s32 isMirror) {
     f32 headGlow;
     f32 rManeGlow;
     f32 lManeGlow;
     s16 i;
-
-    osSyncPrintf("FD MOVE START \n");
-    this->work[BFD_VAR_TIMER]++;
-    this->work[BFD_MOVE_TIMER]++;
-    this->actionFunc(this, play);
 
     for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
         if (this->timers[i] != 0) {
@@ -1336,7 +1361,7 @@ void BossFd_Update(Actor* thisx, PlayState* play) {
     if (this->work[BFD_INVINC_TIMER] != 0) {
         this->work[BFD_INVINC_TIMER]--;
     }
-    if (this->work[BFD_ACTION_STATE] < BOSSFD_DEATH_START) {
+    if (!isMirror && this->work[BFD_ACTION_STATE] < BOSSFD_DEATH_START) {
         if (this->work[BFD_INVINC_TIMER] == 0) {
             BossFd_CollisionCheck(this, play);
         }
@@ -1435,6 +1460,30 @@ void BossFd_Update(Actor* thisx, PlayState* play) {
     osSyncPrintf("FD MOVE END 1\n");
     BossFd_UpdateEffects(this, play);
     osSyncPrintf("FD MOVE END 2\n");
+}
+
+void BossFd_Update(Actor* thisx, PlayState* play) {
+    s32 pad;
+    BossFd* this = (BossFd*)thisx;
+
+    osSyncPrintf("FD MOVE START \n");
+    this->work[BFD_VAR_TIMER]++;
+    this->work[BFD_MOVE_TIMER]++;
+    this->actionFunc(this, play);
+    BossFd_UpdateCommon(this, play, false);
+}
+
+// Co-op mirror tick: everything Update does for looks, from the streamed pose
+// and counters, without the AI or the damage check (see VolvagiaAdapter.cpp).
+void BossFd_MirrorUpdate(BossFd* this, PlayState* play, s32 burrowed, f32 prevY) {
+    this->actor.prevPos.y = prevY;
+    this->actionFunc = burrowed ? BossFd_Wait : BossFd_Fly;
+    if (!burrowed && !this->work[BFD_STOP_FLAG]) {
+        BossFd_UpdateSegments(this, play,
+                              this->work[BFD_ACTION_STATE] == BOSSFD_FLY_MAIN ||
+                                  this->work[BFD_ACTION_STATE] == BOSSFD_BURROW);
+    }
+    BossFd_UpdateCommon(this, play, true);
 }
 
 void BossFd_UpdateEffects(BossFd* this, PlayState* play) {

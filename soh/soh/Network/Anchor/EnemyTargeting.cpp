@@ -445,3 +445,19 @@ extern "C" s32 Anchor_BossAimTargets(PlayState* play, Actor** out, s32 max) {
     }
     return count;
 }
+
+// PHA-4050: the nearest (by XZ distance from `from`) of Anchor_BossAimTargets.
+extern "C" Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from) {
+    Actor* targets[8];
+    s32 count = Anchor_BossAimTargets(play, targets, 8);
+    Actor* best = targets[0];
+    f32 bestDist = Math_Vec3f_DistXZ(&from->world.pos, &best->world.pos);
+    for (s32 i = 1; i < count; i++) {
+        f32 d = Math_Vec3f_DistXZ(&from->world.pos, &targets[i]->world.pos);
+        if (d < bestDist) {
+            bestDist = d;
+            best = targets[i];
+        }
+    }
+    return best;
+}

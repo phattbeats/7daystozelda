@@ -1,0 +1,1 @@
+ev('''(()=>{ if(window._hg) clearInterval(window._hg); window._hg=setInterval(()=>{ try{ const s=JSON.parse(Module.ccall("sevendays_test_raid_state","string",[],[])); if(s.health>0 && s.health<48) Module.ccall("sevendays_test_raid",null,["string"],["heal"]); }catch(e){} }, 40); })()''')

@@ -49,7 +49,7 @@ in a two-client live test, with screenshots and logs. The rig is in
 | King Dodongo | PHA-4047 | **Done**, see below |
 | Barinade | PHA-4048 | **Done**, see below |
 | Phantom Ganon | PHA-4049 | Not started |
-| Volvagia | PHA-4050 | Not started |
+| Volvagia | PHA-4050 | **Done**, see below |
 | Morpha | PHA-4051 | Not started |
 | Bongo Bongo | PHA-4052 | Not started |
 | Twinrova | PHA-4053 | Not started |
@@ -93,3 +93,22 @@ One actor id, 19 parts (body -1, supports 0-2, zappers 3-5, Baris 6-15, stumps 1
 Known limits:
 - The mirror doesn't receive the host's spark, tumour and lightning-charge spawns (it ticks the shared array only).
 - A test warp into the boss room doesn't pull the partner in; boss co-entry needs the real door.
+
+## Volvagia (PHA-4050)
+
+Boss_Fd (flying) and Boss_Fd2 (hole form) are both registered. They share one health pool (Fd's `colChkInfo.health`, spent by Fd2's collision check).
+
+| Row | How | Live test (2026-10-06, two local clients) |
+|---|---|---|
+| Phases | Fd2 and Fd: health <= 0 is DEFEATED; a running intro (`introState != BFD_CS_NONE`) is PREFIGHT; otherwise FIGHT. `ShouldMirror` is false until the local intro is over and the stream says FIGHT (`Anchor_VolvagiaIntroOver` marks the end). | Both clients ran their own intro, then mirrored. |
+| Extras | Update-computed draw fields: joint and segment tables, burrow and breath state, face exposure, hit flash, scales. The mirror runs `BossFd_MirrorUpdate` / `BossFd2_MirrorUpdate` for the visual-only parts. Nothing that spawns pieces from Draw is streamed. | Fd2 pose, action and fire matched on both screens. Fd flight looked identical; sampled position error (median ~73 units) is sampling skew from the 0.45 s probe, not a visible desync. |
+| Hole | Fd2 picks its hole from the streamed state, so every client uses the authority's choice. | Same hole on both clients. |
+| Hammer stun | A mirror's hammer hit becomes a HITREQ and the host applies it through its own collider code (health -2, face exposed, stun), then streams the result. | A hammer hit from the mirror stunned and exposed the face on both. |
+| Defeat | On FIGHT -> DEFEATED the mirror runs `BossFd2_StartDeathHandoff` (the boss's own death setup) and returns true. `OnRemoteDefeat` covers a missed edge. A client still in its intro defers the defeat until the intro ends. | Killing blow from the mirror: both clients ran the death, got the blue warp and the clear flag. Late-intro deferral passed after fixing the health check. |
+| Children | Falling rocks (EN_BDFIRE-style debris) and bones are each client's own, spawned from the streamed rock timer; fire breath is respawned locally from the streamed breath state and burns only the local Link. EN_VB_BALL is excluded from tracking. | About 12 rocks on A and 11 on B in the same window. |
+| Aggro | No puppet swap. `BossFd_AimTarget` and `BossFd2_AimTarget` (via `Anchor_BossNearestTarget`) aim attacks at the nearest living player on the authority. The mirror never aims; it follows the stream. | Attacks followed the nearer player. |
+| Live test | | Intro, fight, defeat from either side: no desync, no crash, both players damage it and both are hit. Rig: `tools/harness/pha4050/`. |
+
+Known limits:
+- Fd2's emerge knockback still pushes only the authority's Link.
+- The 7DtZ mod swaps the heart container for a blueprint, so the "A blueprint!" message shows instead of a heart.

@@ -295,9 +295,13 @@ static s16* ProjectileTimer(Actor* actor) {
 // (the authority from the AI, a mirror from the streamed flame count in the
 // King Dodongo adapter), and each flame burns only that machine's own Link
 // (it checks GET_PLAYER by distance; it has no collider to mirror).
+// EN_VB_BALL: Volvagia's falling rocks (spawned from Fd's update) and the bones
+// that fall from Fd's Draw during the death. Every machine spawns its own (the
+// Volvagia adapter replays the rock timer), so tracking them would double-spawn.
 static bool IsTrackingExcluded(Actor* actor) {
     return (actor->id == ACTOR_EN_GOMA && (uint16_t)actor->params >= 6) || actor->id == ACTOR_EN_BDFIRE ||
-           (actor->id == ACTOR_BOSS_VA && actor->params >= (int16_t)BARINADE_PARAM_STUMP_1);
+           (actor->id == ACTOR_BOSS_VA && actor->params >= (int16_t)BARINADE_PARAM_STUMP_1) ||
+           actor->id == ACTOR_EN_VB_BALL;
 }
 
 // Barinade (PHA-4048): one actor id, param-split parts. Parts spawned while

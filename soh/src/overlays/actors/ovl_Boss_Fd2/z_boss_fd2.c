@@ -78,6 +78,25 @@ static InitChainEntry sInitChain[] = {
     ICHAIN_F32(targetArrowOffset, 0, ICHAIN_STOP),
 };
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4050: soh/Network/Anchor/EnemyTargeting.cpp
+Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
+#endif
+
+// The player Volvagia goes after: the nearest living one in co-op, else Link.
+// Also points yawTowardsPlayer/xzDistToPlayer at it, which the attack choice reads.
+static Actor* BossFd2_AimTarget(BossFd2* this, PlayState* play) {
+    Actor* target = &GET_PLAYER(play)->actor;
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    target = Anchor_BossNearestTarget(play, &this->actor);
+    if (target != &GET_PLAYER(play)->actor) {
+        this->actor.yawTowardsPlayer = Math_Vec3f_Yaw(&this->actor.world.pos, &target->world.pos);
+        this->actor.xzDistToPlayer = Math_Vec3f_DistXZ(&this->actor.world.pos, &target->world.pos);
+    }
+#endif
+    return target;
+}
+
 void BossFd2_SpawnDebris(PlayState* play, BossFdEffect* effect, Vec3f* position, Vec3f* velocity, Vec3f* acceleration,
                          f32 scale) {
     s16 i;
@@ -237,6 +256,7 @@ void BossFd2_Emerge(BossFd2* this, PlayState* play) {
     s8 health;
     BossFd* bossFd = (BossFd*)this->actor.parent;
     Player* player = GET_PLAYER(play);
+    Actor* target = BossFd2_AimTarget(this, play);
     s16 i;
     s16 holeTime;
 
@@ -248,7 +268,7 @@ void BossFd2_Emerge(BossFd2* this, PlayState* play) {
             osSyncPrintf("UP time %d \n", this->timers[0]);
             osSyncPrintf("PL time %x \n", player);
             osSyncPrintf("MT time %x \n", bossFd);
-            if ((this->timers[0] == 0) && (player->actor.world.pos.y > 70.0f)) {
+            if ((this->timers[0] == 0) && (target->world.pos.y > 70.0f)) {
                 osSyncPrintf("UP 1.6 \n");
                 bossFd->faceExposed = 0;
                 bossFd->holePosition.x = this->actor.world.pos.x;
@@ -341,6 +361,8 @@ void BossFd2_SetupIdle(BossFd2* this, PlayState* play) {
 void BossFd2_Idle(BossFd2* this, PlayState* play) {
     s16 prevToLink;
 
+    BossFd2_AimTarget(this, play);
+
     SkelAnime_Update(&this->skelAnime);
     prevToLink = this->work[FD2_TURN_TO_LINK];
     this->work[FD2_TURN_TO_LINK] =
@@ -404,16 +426,65 @@ void BossFd2_SetupBreatheFire(BossFd2* this, PlayState* play) {
 
 static Vec3f sUnkVec = { 0.0f, 0.0f, 50.0f }; // Unused? BossFd uses a similar array for its fire breath sfx.
 
-void BossFd2_BreatheFire(BossFd2* this, PlayState* play) {
+static void BossFd2_SpawnBreath(BossFd2* this, PlayState* play, s16 breathOpacity) {
+    BossFd* bossFd = (BossFd*)this->actor.parent;
     s16 i;
+    f32 tempX;
+    f32 tempY;
+    f32 breathScale;
+    Vec3f spawnSpeed = { 0.0f, 0.0f, 0.0f };
+    Vec3f spawnVel;
+    Vec3f spawnAccel = { 0.0f, 0.0f, 0.0f };
+    Vec3f spawnPos;
+
+    bossFd->fogMode = 2;
+    spawnSpeed.z = 30.0f;
+    spawnPos = this->headPos;
+
+    tempY = ((this->actor.shape.rot.y + this->headRot.y) / (f32)0x8000) * M_PI;
+    tempX = ((this->headRot.x / (f32)0x8000) * M_PI) + 1.0f / 2;
+    Matrix_RotateY(tempY, MTXMODE_NEW);
+    Matrix_RotateX(tempX, MTXMODE_APPLY);
+    Matrix_MultVec3f(&spawnSpeed, &spawnVel);
+
+    breathScale = 300.0f + 50.0f * Math_SinS(this->work[FD2_VAR_TIMER] * 0x2000);
+    BossFd2_SpawnFireBreath(play, bossFd->effects, &spawnPos, &spawnVel, &spawnAccel, breathScale, breathOpacity,
+                            this->actor.shape.rot.y + this->headRot.y);
+
+    spawnPos.x += spawnVel.x * 0.5f;
+    spawnPos.y += spawnVel.y * 0.5f;
+    spawnPos.z += spawnVel.z * 0.5f;
+
+    breathScale = 300.0f + 50.0f * Math_SinS(this->work[FD2_VAR_TIMER] * 0x2000);
+    BossFd2_SpawnFireBreath(play, bossFd->effects, &spawnPos, &spawnVel, &spawnAccel, breathScale, breathOpacity,
+                            this->actor.shape.rot.y + this->headRot.y);
+
+    spawnSpeed.x = 0.0f;
+    spawnSpeed.y = 17.0f;
+    spawnSpeed.z = 0.0f;
+
+    for (i = 0; i < 6; i++) {
+        tempY = Rand_ZeroFloat(2.0f * M_PI);
+        tempX = Rand_ZeroFloat(2.0f * M_PI);
+        Matrix_RotateY(tempY, MTXMODE_NEW);
+        Matrix_RotateX(tempX, MTXMODE_APPLY);
+        Matrix_MultVec3f(&spawnSpeed, &spawnVel);
+
+        spawnAccel.x = (spawnVel.x * -10.0f) / 100.0f;
+        spawnAccel.y = (spawnVel.y * -10.0f) / 100.0f;
+        spawnAccel.z = (spawnVel.z * -10.0f) / 100.0f;
+
+        BossFd2_SpawnEmber(play, bossFd->effects, &this->headPos, &spawnVel, &spawnAccel,
+                           (s16)Rand_ZeroFloat(2.0f) + 8);
+    }
+}
+
+void BossFd2_BreatheFire(BossFd2* this, PlayState* play) {
     Vec3f toLink;
     s16 angleX;
     s16 angleY;
     s16 breathOpacity = 0;
-    BossFd* bossFd = (BossFd*)this->actor.parent;
-    Player* player = GET_PLAYER(play);
-    f32 tempX;
-    f32 tempY;
+    Actor* target = BossFd2_AimTarget(this, play);
 
     SkelAnime_Update(&this->skelAnime);
     if (Animation_OnFrame(&this->skelAnime, this->fwork[FD2_END_FRAME])) {
@@ -429,9 +500,9 @@ void BossFd2_BreatheFire(BossFd2* this, PlayState* play) {
         } else {
             breathOpacity = 255;
         }
-        toLink.x = player->actor.world.pos.x - this->headPos.x;
-        toLink.y = player->actor.world.pos.y - this->headPos.y;
-        toLink.z = player->actor.world.pos.z - this->headPos.z;
+        toLink.x = target->world.pos.x - this->headPos.x;
+        toLink.y = target->world.pos.y - this->headPos.y;
+        toLink.z = target->world.pos.z - this->headPos.z;
         angleY = Math_Atan2S(toLink.z, toLink.x);
         angleX = -Math_Atan2S(sqrtf(SQ(toLink.x) + SQ(toLink.z)), toLink.y);
         angleY -= this->actor.shape.rot.y;
@@ -455,52 +526,7 @@ void BossFd2_BreatheFire(BossFd2* this, PlayState* play) {
         Math_ApproachS(&this->headRot.x, 0, 5, 0x7D0);
     }
     if (breathOpacity != 0) {
-        f32 breathScale;
-        Vec3f spawnSpeed = { 0.0f, 0.0f, 0.0f };
-        Vec3f spawnVel;
-        Vec3f spawnAccel = { 0.0f, 0.0f, 0.0f };
-        Vec3f spawnPos;
-
-        bossFd->fogMode = 2;
-        spawnSpeed.z = 30.0f;
-        spawnPos = this->headPos;
-
-        tempY = ((this->actor.shape.rot.y + this->headRot.y) / (f32)0x8000) * M_PI;
-        tempX = ((this->headRot.x / (f32)0x8000) * M_PI) + 1.0f / 2;
-        Matrix_RotateY(tempY, MTXMODE_NEW);
-        Matrix_RotateX(tempX, MTXMODE_APPLY);
-        Matrix_MultVec3f(&spawnSpeed, &spawnVel);
-
-        breathScale = 300.0f + 50.0f * Math_SinS(this->work[FD2_VAR_TIMER] * 0x2000);
-        BossFd2_SpawnFireBreath(play, bossFd->effects, &spawnPos, &spawnVel, &spawnAccel, breathScale, breathOpacity,
-                                this->actor.shape.rot.y + this->headRot.y);
-
-        spawnPos.x += spawnVel.x * 0.5f;
-        spawnPos.y += spawnVel.y * 0.5f;
-        spawnPos.z += spawnVel.z * 0.5f;
-
-        breathScale = 300.0f + 50.0f * Math_SinS(this->work[FD2_VAR_TIMER] * 0x2000);
-        BossFd2_SpawnFireBreath(play, bossFd->effects, &spawnPos, &spawnVel, &spawnAccel, breathScale, breathOpacity,
-                                this->actor.shape.rot.y + this->headRot.y);
-
-        spawnSpeed.x = 0.0f;
-        spawnSpeed.y = 17.0f;
-        spawnSpeed.z = 0.0f;
-
-        for (i = 0; i < 6; i++) {
-            tempY = Rand_ZeroFloat(2.0f * M_PI);
-            tempX = Rand_ZeroFloat(2.0f * M_PI);
-            Matrix_RotateY(tempY, MTXMODE_NEW);
-            Matrix_RotateX(tempX, MTXMODE_APPLY);
-            Matrix_MultVec3f(&spawnSpeed, &spawnVel);
-
-            spawnAccel.x = (spawnVel.x * -10.0f) / 100.0f;
-            spawnAccel.y = (spawnVel.y * -10.0f) / 100.0f;
-            spawnAccel.z = (spawnVel.z * -10.0f) / 100.0f;
-
-            BossFd2_SpawnEmber(play, bossFd->effects, &this->headPos, &spawnVel, &spawnAccel,
-                               (s16)Rand_ZeroFloat(2.0f) + 8);
-        }
+        BossFd2_SpawnBreath(this, play, breathOpacity);
     }
 }
 
@@ -623,6 +649,16 @@ void BossFd2_SetupDeath(BossFd2* this, PlayState* play) {
     this->actionFunc = BossFd2_Death;
     this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     this->deathState = DEATH_START;
+}
+
+// Co-op: the partner beat Volvagia while our own intro was still playing. Skip
+// the retreat and its camera and go straight to the hand-off to Fd's body.
+void BossFd2_StartDeathHandoff(BossFd2* this, PlayState* play) {
+    this->actionFunc = BossFd2_Death;
+    this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
+    this->deathState = DEATH_HANDOFF;
+    this->timers[0] = 0;
+    this->work[FD2_INVINC_TIMER] = 30000;
 }
 
 void BossFd2_UpdateCamera(BossFd2* this, PlayState* play) {
@@ -1000,6 +1036,42 @@ void BossFd2_Update(Actor* thisx, PlayState* play2) {
     }
 
     BossFd2_UpdateFace(this, play);
+    this->fwork[FD2_TEX1_SCROLL_X] += 4.0f;
+    this->fwork[FD2_TEX1_SCROLL_Y] = 120.0f;
+    this->fwork[FD2_TEX2_SCROLL_X] += 3.0f;
+    this->fwork[FD2_TEX2_SCROLL_Y] -= 2.0f;
+    if (this->actor.focus.pos.y < 90.0f) {
+        this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
+    } else {
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+    }
+}
+
+// Co-op mirror tick: the looks half of Update, from the streamed pose and counters,
+// without the AI or the damage check (see VolvagiaAdapter.cpp).
+void BossFd2_MirrorUpdate(BossFd2* this, PlayState* play, s32 burrowed, s32 breathing) {
+    s16 i;
+
+    this->actionFunc = burrowed ? BossFd2_Wait : BossFd2_Idle;
+    for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
+        if (this->timers[i] != 0) {
+            this->timers[i]--;
+        }
+    }
+    if (this->work[FD2_DAMAGE_FLASH_TIMER] != 0) {
+        this->work[FD2_DAMAGE_FLASH_TIMER]--;
+    }
+    if (breathing && (25.0f <= this->skelAnime.curFrame) && (this->skelAnime.curFrame < 70.0f)) {
+        s16 breathOpacity = (this->skelAnime.curFrame > 50) ? (s16)((70.0f - this->skelAnime.curFrame) * 12.0f) : 255;
+
+        if (this->skelAnime.curFrame == 25.0f) {
+            play->envCtx.unk_D8 = 0.0f;
+        }
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_VALVAISA_FIRE - SFX_FLAG);
+        if (breathOpacity != 0) {
+            BossFd2_SpawnBreath(this, play, breathOpacity);
+        }
+    }
     this->fwork[FD2_TEX1_SCROLL_X] += 4.0f;
     this->fwork[FD2_TEX1_SCROLL_Y] = 120.0f;
     this->fwork[FD2_TEX2_SCROLL_X] += 3.0f;
