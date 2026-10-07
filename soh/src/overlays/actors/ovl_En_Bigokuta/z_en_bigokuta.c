@@ -752,6 +752,21 @@ void func_809BE798(EnBigokuta* this, PlayState* play) {
     }
 }
 
+// A hit only counts from behind. The attacker's own position decides that: in co-op the
+// yaw towards "the player" belongs to whichever player the host's Octo is tracking, which
+// need not be the one swinging (a partner's hit is replayed here with the partner's puppet
+// as the attacker). Alone, the attacker is the player and this is the vanilla check.
+static s32 EnBigokuta_IsFacingAttacker(EnBigokuta* this) {
+    Actor* attacker = this->collider.base.ac;
+
+    // Only a player's own swing (the local Link, or a partner's puppet): a projectile's
+    // position is not its shooter's.
+    if (attacker == NULL || attacker->category != ACTORCAT_PLAYER) {
+        return Actor_IsFacingPlayer(&this->actor, 0x4000);
+    }
+    return Actor_ActorAIsFacingActorB(&this->actor, attacker, 0x4000);
+}
+
 void EnBigokuta_UpdateDamage(EnBigokuta* this, PlayState* play) {
     if (this->collider.base.acFlags & AC_HIT) {
         this->collider.base.acFlags &= ~AC_HIT;
@@ -762,7 +777,7 @@ void EnBigokuta_UpdateDamage(EnBigokuta* this, PlayState* play) {
                 }
             } else if (this->actor.colChkInfo.damageEffect == 0xF) {
                 func_809BD47C(this);
-            } else if (!Actor_IsFacingPlayer(&this->actor, 0x4000)) {
+            } else if (!EnBigokuta_IsFacingAttacker(this)) {
                 if (Actor_ApplyDamage(&this->actor) == 0) { // Dead
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_DAIOCTA_DEAD);
                     Enemy_StartFinishingBlow(play, &this->actor);
@@ -903,4 +918,49 @@ void EnBigokuta_Draw(Actor* thisx, PlayState* play) {
                                            this->skelAnime.dListCount, NULL, NULL, NULL, POLY_XLU_DISP);
     }
     CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// Every state of the fight is an actionFunc the suppressed mirror never leaves, and
+// Draw keys the stun flash, the hurt shake and the death squash off which one it is.
+
+static EnBigokutaActionFunc sMirrorActions[] = {
+    func_809BD84C, func_809BD8DC, func_809BDAE8, func_809BDB90, func_809BDC08, func_809BDF34, func_809BDFC8,
+    func_809BE058, func_809BE180, func_809BE26C, func_809BE3E4, func_809BE4A4, func_809BE518,
+};
+
+s32 EnBigokuta_MirrorGetAction(EnBigokuta* this) {
+    for (s32 i = 0; i < ARRAY_COUNT(sMirrorActions); i++) {
+        if (this->actionFunc == sMirrorActions[i]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void EnBigokuta_MirrorApplyAction(EnBigokuta* this, s32 action) {
+    if (action >= 0 && action < ARRAY_COUNT(sMirrorActions)) {
+        this->actionFunc = sMirrorActions[action];
+    }
+}
+
+// The collider spheres and cylinders Update places by hand (the streamed position
+// would otherwise centre the cylinders on the actor).
+void EnBigokuta_MirrorPositionColliders(EnBigokuta* this) {
+    func_809BE568(this);
+}
+
+void EnBigokuta_MirrorCamera(EnBigokuta* this, PlayState* play) {
+    Camera_ChangeSetting(play->cameraPtrs[MAIN_CAM], CAM_SET_BIG_OCTO);
+    func_8005AD1C(play->cameraPtrs[MAIN_CAM], 4);
+}
+
+// The host's Octo took its killing blow: run the local death (the hurt spin, the
+// squash, then the clear flag, camera, drop and kill). Needs the streamed health at 0.
+void EnBigokuta_MirrorBeginDeath(EnBigokuta* this, PlayState* play) {
+    if (this->actionFunc == func_809BE180 || this->actionFunc == func_809BE26C || this->actor.colChkInfo.health != 0) {
+        return;
+    }
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_DAIOCTA_DEAD);
+    func_809BD5E0(this);
 }

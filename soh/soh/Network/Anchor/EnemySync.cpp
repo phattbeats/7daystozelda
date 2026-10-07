@@ -73,6 +73,13 @@ enum SubmitMaskBit : uint8_t {
     SUBMIT_OC = 1 << 2,
 };
 
+// Streamed with each collider's on-bits ("cs", bits 3-5 and a validity bit): which of
+// AT/AC/OC the AI actually submitted for THAT collider this frame. The actor-wide mask
+// alone made a mirror submit every collider whose AC_ON flag is merely set, e.g. a
+// Stalfos's shield or an Iron Knuckle's, which only block while the AI submits them.
+constexpr int16_t COLSTATE_SUB_SHIFT = 3;
+constexpr int16_t COLSTATE_SUB_VALID = 1 << 6;
+
 struct TrackedState {
     uint64_t key;
     Vec3f spawnPos;
@@ -89,6 +96,7 @@ struct TrackedState {
     std::vector<Collider*> colliders; // captured at Collider_SetBase* time
     SkelAnime* skelAnime = nullptr;   // captured at SkelAnime_Init* time
     uint8_t submitMask = 0;           // authority: SubmitMaskBits seen this frame
+    std::vector<uint8_t> subBits;     // authority: per captured collider, SubmitMaskBits it got this frame
     bool suppressed = false;          // mirror: update currently suppressed
     bool dying = false;               // death handoff latch: never re-suppress
     bool cullForced = false;          // we set ACTOR_FLAG_UPDATE_CULLING_DISABLED
@@ -110,6 +118,7 @@ struct TrackedState {
     bool reflected = false;           // projectile: bounced off a shield (here or on a peer); announced once
     bool linked = false;              // key derived from a group leader's (LINKED_KEY_BIT): never spawn-broadcast
     uint8_t phase = 0;                // last adapter phase seen/applied
+    bool quietDeath = false;          // mirror: a defeat handed off to local simulation; never announce its end
 };
 
 // Latest streamed state per enemy key (game-thread only; written by the queued
@@ -129,6 +138,9 @@ struct RemoteEnemyState {
     // per quad, in the authority's st.colliders capture order. Empty when this
     // enemy submitted no quad class this frame (the whole Deku Tree roster).
     std::vector<Vec3f> quadVerts;
+    // Same for tris colliders (an Iron Knuckle's or Stalfos's shield): 3 Vec3f per
+    // element, element after element, collider after collider (PHA-4055).
+    std::vector<Vec3f> trisVerts;
     // Per captured collider (st.colliders order), 4 values each: AT/AC/OC on-bits
     // and the cylinder's radius, height, yShift. Empty when not streamed.
     std::vector<int16_t> colState;
@@ -254,6 +266,13 @@ static bool IsTrackedCategory(Actor* actor) {
     return actor->category == ACTORCAT_ENEMY || actor->category == ACTORCAT_BOSS;
 }
 
+// The Big Octo's first fight starts as a PROP (its Init changes category before any hook
+// sees it) and only becomes an ENEMY when the fight begins, so it is tracked by id
+// (PHA-4055). Everything else is tracked by category.
+static bool IsTrackedActor(Actor* actor) {
+    return IsTrackedCategory(actor) || actor->id == ACTOR_EN_BIGOKUTA;
+}
+
 // Whitelisted enemy projectiles, replicated via fire-and-forget spawn (never
 // streamed): both are deterministic ballistic actors after spawn — fixed
 // world.rot.y, constant speedXZ = 10, no mid-flight re-homing — so each machine
@@ -314,6 +333,31 @@ static bool IsTrackingExcluded(Actor* actor) {
 // mirror's own intro and double-spawn).
 static uint64_t BarinadeKey(Actor* actor) {
     return DYNAMIC_KEY_BIT | (0xBA51ULL << 24) | (uint16_t)actor->params;
+}
+
+// Runtime spawns that every client's own (untracked) spawner makes: each client keeps
+// its copy and the copies share a key worked out from what they are, so the host never
+// broadcasts one (a broadcast would put a second copy next to the mirror's own).
+//  - Barinade's parts (see above).
+//  - The Big Octo: its platform spawns one per client.
+//  - A runtime Stalfos (Forest Temple's Bg_Mori_Bigst fights, Ganon's tower escape's
+//    En_Zl3): the spawner runs on every client. Positioned spawns of one params value
+//    are told apart by where they appear.
+static bool IsLocalKeyedActor(Actor* actor) {
+    return actor->id == ACTOR_BOSS_VA || actor->id == ACTOR_EN_BIGOKUTA || actor->id == ACTOR_EN_TEST;
+}
+
+static uint64_t LocalKeyedKey(Actor* actor) {
+    switch (actor->id) {
+        case ACTOR_EN_BIGOKUTA:
+            return DYNAMIC_KEY_BIT | (0xB160ULL << 24) | 1;
+        case ACTOR_EN_TEST: {
+            uint32_t where = ((uint32_t)(int32_t)actor->world.pos.x * 31u + (uint32_t)(int32_t)actor->world.pos.z * 17u) & 0xFFFF;
+            return DYNAMIC_KEY_BIT | (0x57A1ULL << 24) | ((uint64_t)((uint16_t)actor->params & 0xFF) << 16) | where;
+        }
+        default:
+            return BarinadeKey(actor);
+    }
 }
 
 // A Floormaster is three En_Floormas actors linked into a parent/child ring by
@@ -571,6 +615,24 @@ static void AddCollider(Actor* actor, TrackedState& st, Collider* collider) {
     st.colliders.push_back(collider);
 }
 
+// Records that the AI submitted this collider as AT/AC/OC this frame (authority).
+static void NoteSubmit(TrackedState& st, Collider* collider, uint8_t bit) {
+    for (size_t i = 0; i < st.colliders.size(); i++) {
+        if (st.colliders[i] == collider) {
+            if (st.subBits.size() < st.colliders.size()) {
+                st.subBits.resize(st.colliders.size(), 0);
+            }
+            st.subBits[i] |= bit;
+            return;
+        }
+    }
+}
+
+static void ClearSubmit(TrackedState& st) {
+    st.submitMask = 0;
+    std::fill(st.subBits.begin(), st.subBits.end(), 0);
+}
+
 static void OnColliderSetup(Actor* actor, Collider* collider) {
     if (actor == NULL || collider == NULL) {
         return;
@@ -611,8 +673,13 @@ static void OnSkelAnimeInitCapture(SkelAnime* skelAnime) {
     skelAnimeRingIndex = (skelAnimeRingIndex + 1) % 8;
 }
 
+// Both rings are walked oldest-first (from the next write slot), so captures are
+// claimed in the order the overlay's Init made them on every client. Walking by
+// array index instead reversed two captures whenever a ring wrapped between them,
+// on a different spawn per client, and colState pairs colliders by index.
 static void ClaimPendingCaptures(Actor* actor, TrackedState& st) {
-    for (auto& pending : colliderSetupRing) {
+    for (size_t k = 0; k < std::size(colliderSetupRing); k++) {
+        auto& pending = colliderSetupRing[(colliderSetupRingIndex + k) % std::size(colliderSetupRing)];
         if (pending.actor == actor && pending.collider != nullptr) {
             AddCollider(actor, st, pending.collider);
             pending = {};
@@ -620,7 +687,8 @@ static void ClaimPendingCaptures(Actor* actor, TrackedState& st) {
     }
     size_t instanceSize = ActorDB::Instance->RetrieveEntry(actor->id).entry.instanceSize;
     uintptr_t base = (uintptr_t)actor;
-    for (auto& skel : skelAnimeRing) {
+    for (size_t k = 0; k < std::size(skelAnimeRing); k++) {
+        auto& skel = skelAnimeRing[(skelAnimeRingIndex + k) % std::size(skelAnimeRing)];
         if (skel == nullptr) {
             continue;
         }
@@ -705,13 +773,14 @@ void ApplyRemoteHit(Actor* actor, uint8_t damage, uint32_t dmgFlags, Vec3s hitPo
 
     ESYNC_LOG("[EnemySync] HIT apply id={} dmg={} viaCollider={}", actor->id, damage, state.acCollider != nullptr);
 
-    if (const ActorSyncAdapter* hitAdapter = GetAdapter(actor->id);
-        hitAdapter != nullptr && hitAdapter->RemoteHitAttacker != nullptr) {
+    const ActorSyncAdapter* hitAdapter = GetAdapter(actor->id);
+    if (hitAdapter != nullptr && hitAdapter->RemoteHitAttacker != nullptr) {
         attacker = hitAdapter->RemoteHitAttacker(actor, dmgFlags, attacker);
     }
     // A real collision check derives the damage effect (stun, freeze) from the
     // table; the synthetic hit skips it. Barinade's boomerang stun is an effect.
-    if (actor->id == ACTOR_BOSS_VA && actor->colChkInfo.damageTable != NULL && dmgFlags != 0) {
+    if ((actor->id == ACTOR_BOSS_VA || (hitAdapter != nullptr && hitAdapter->DeriveDamageEffect)) &&
+        actor->colChkInfo.damageTable != NULL && dmgFlags != 0) {
         uint32_t flags = dmgFlags;
         int i = 0;
         for (; i < 0x1F; i++, flags >>= 1) {
@@ -748,6 +817,18 @@ void ApplyRemoteHit(Actor* actor, uint8_t damage, uint32_t dmgFlags, Vec3s hitPo
     if (state.acCollider == nullptr) {
         for (Collider* col : state.colliders) {
             if (col != nullptr && col->actor == actor && (col->acFlags & AC_ON)) {
+                state.acCollider = col;
+                break;
+            }
+        }
+    }
+
+    // The last collider the AI submitted can be a shield (AC_HARD) the host's copy has
+    // up right now; a replayed hit belongs on the body, whose hit code consumes it
+    // (a shield only ever reports a bounce). Prefer any non-hard hurtbox.
+    if (state.acCollider != nullptr && (state.acCollider->acFlags & AC_HARD)) {
+        for (Collider* col : state.colliders) {
+            if (col != nullptr && col->actor == actor && (col->acFlags & AC_ON) && !(col->acFlags & AC_HARD)) {
                 state.acCollider = col;
                 break;
             }
@@ -877,6 +958,10 @@ bool HandOffRemoteDefeat(Actor* actor) {
     if (st.dying) {
         return true; // defeat already handed off (phase edge or earlier packet)
     }
+    if (adapter->QuietRemoteDefeat) {
+        st.deathCooldown = DEATH_COOLDOWN_FRAMES;
+        st.quietDeath = true;
+    }
     adapter->OnRemoteDefeat(actor);
     ESYNC_LOG("[EnemySync] remote defeat handoff key={:#x} id={}", st.key, actor->id);
     ReleaseForDeath(actor);
@@ -1005,13 +1090,24 @@ static void SubmitColliders(Actor* actor, TrackedState& st, RemoteEnemyState& r)
         return;
     }
     ApplyColliderState(actor, st, r);
+    // Which of AT/AC/OC the authority's AI submitted for each collider this frame.
+    // A peer that doesn't stream it falls back to the actor-wide mask.
+    bool perCollider = r.colState.size() == st.colliders.size() * 4 && !r.colState.empty() &&
+                       (r.colState[0] & COLSTATE_SUB_VALID) != 0;
     // Cursor into r.quadVerts (4 Vec3f per submitted quad). The authority appended
     // one 4-vertex set per quad that passed the AT/AC predicate below, in this same
     // st.colliders order, so the nth qualifying quad here pairs with the nth set.
     size_t quadCursor = 0;
-    for (Collider* col : st.colliders) {
+    size_t trisCursor = 0; // same, for trisVerts (3 Vec3f per element)
+    for (size_t ci = 0; ci < st.colliders.size(); ci++) {
+        Collider* col = st.colliders[ci];
         if (col == nullptr || col->actor != actor) {
             continue;
+        }
+        uint8_t sub = mask;
+        if (perCollider) {
+            int16_t bits = r.colState[ci * 4];
+            sub = (uint8_t)((bits >> COLSTATE_SUB_SHIFT) & 7);
         }
         if (col->shape == COLSHAPE_CYLINDER) {
             // Repositioned from the streamed world.pos (ApplyPose ran first) — accurate.
@@ -1026,8 +1122,7 @@ static void SubmitColliders(Actor* actor, TrackedState& st, RemoteEnemyState& r)
             // stale quad geometry lands false hits at old positions, worse than a
             // missing collider. (Same predicate the authority used to decide which
             // quads to stream, so cursor and quad iteration stay in lockstep.)
-            bool quadAtAc = ((mask & SUBMIT_AT) && (col->atFlags & AT_ON)) ||
-                            ((mask & SUBMIT_AC) && (col->acFlags & AC_ON));
+            bool quadAtAc = ((sub & SUBMIT_AT) && (col->atFlags & AT_ON)) || ((sub & SUBMIT_AC) && (col->acFlags & AC_ON));
             if (quadAtAc) {
                 if (quadCursor + 4 <= r.quadVerts.size()) {
                     Collider_SetQuadVertices((ColliderQuad*)col, &r.quadVerts[quadCursor],
@@ -1039,30 +1134,34 @@ static void SubmitColliders(Actor* actor, TrackedState& st, RemoteEnemyState& r)
                 }
             }
         } else if (col->shape == COLSHAPE_TRIS) {
-            // Tris vertices are likewise AI-set and NOT streamed this milestone
-            // (out of scope) — submitting them would land false hits at stale
-            // positions. Skip AT/AC/OC submission entirely; log once as a canary so
-            // a later Tris-bearing enemy surfaces instead of silently mis-hitting.
-            static bool sTrisCanary = false;
-            if (!sTrisCanary) {
-                sTrisCanary = true;
-                SPDLOG_WARN("[EnemySync] MIRROR skipping COLSHAPE_TRIS submission id={} key={:#x} "
-                            "(AI-set tris geometry not streamed)",
-                            actor->id, st.key);
+            // Tris vertices are AI-set like a quad's: drive them from the stream,
+            // and never submit a qualifying tris collider without fresh vertices
+            // (stale triangles land false hits). Same predicate as SnapshotEnemy.
+            bool trisAtAc = ((sub & SUBMIT_AT) && (col->atFlags & AT_ON)) || ((sub & SUBMIT_AC) && (col->acFlags & AC_ON));
+            if (trisAtAc) {
+                ColliderTris* tris = (ColliderTris*)col;
+                if (trisCursor + (size_t)tris->count * 3 <= r.trisVerts.size()) {
+                    for (int32_t i = 0; i < tris->count; i++) {
+                        Collider_SetTrisVertices(tris, i, &r.trisVerts[trisCursor], &r.trisVerts[trisCursor + 1],
+                                                 &r.trisVerts[trisCursor + 2]);
+                        trisCursor += 3;
+                    }
+                } else {
+                    continue;
+                }
             }
-            continue;
         }
         // JntSph world spheres refresh in the enemy's PostLimbDraw (still runs on
-        // suppressed mirrors); cylinders repositioned above; quads carry fresh
-        // streamed verts. Exposure is bounded by the authority's mask (only frames
-        // the real AI submitted that class).
-        if ((mask & SUBMIT_AC) && (col->acFlags & AC_ON)) {
+        // suppressed mirrors); cylinders repositioned above; quads and tris carry fresh
+        // streamed verts. Exposure is bounded by what the authority's AI submitted for
+        // this collider this frame.
+        if ((sub & SUBMIT_AC) && (col->acFlags & AC_ON)) {
             CollisionCheck_SetAC(gPlayState, &gPlayState->colChkCtx, col);
         }
-        if ((mask & SUBMIT_AT) && (col->atFlags & AT_ON)) {
+        if ((sub & SUBMIT_AT) && (col->atFlags & AT_ON)) {
             CollisionCheck_SetAT(gPlayState, &gPlayState->colChkCtx, col);
         }
-        if ((mask & SUBMIT_OC) && (col->ocFlags1 & OC1_ON)) {
+        if ((sub & SUBMIT_OC) && (col->ocFlags1 & OC1_ON)) {
             CollisionCheck_SetOC(gPlayState, &gPlayState->colChkCtx, col);
         }
     }
@@ -1206,6 +1305,13 @@ static void SynthesizeFloormasPuppetContact(Actor* actor, Actor* target) {
 // The mirror step. Runs in the actor's own update slot (ShouldActorUpdate hook):
 // after this frame's collision checks (so AC_HIT results are readable) and
 // before draw (so streamed positions always win over OC pushback).
+// Adapter opt-out of the nearest-player perception override (Dark Link's AI also
+// reads the local Link's Player struct, so it has to stay on one player).
+static bool KeepsLocalPerception(Actor* actor) {
+    const ActorSyncAdapter* adapter = GetAdapter(actor->id);
+    return adapter != nullptr && adapter->KeepLocalPerception != nullptr && adapter->KeepLocalPerception(actor);
+}
+
 static void OnShouldEnemyUpdate(Actor* actor, bool* should) {
     if (!SyncEnabled() || !MirroringEnabled() || gPlayState == NULL) {
         return;
@@ -1231,7 +1337,8 @@ static void OnShouldEnemyUpdate(Actor* actor, bool* should) {
     // present (implicit local + a cached puppet ⇒ the design's targets.size() > 1);
     // not mid death-handoff; not a projectile (belt-and-suspenders — the early return
     // above already excludes them).
-    if (IsLocalAuthority() && !sPerceptionTargets.empty() && !st.dying && !st.projectile) {
+    if (IsLocalAuthority() && !sPerceptionTargets.empty() && !st.dying && !st.projectile &&
+        !KeepsLocalPerception(actor)) {
         Actor* target = OverridePlayerPerception(actor);
         if (IsFloormas(actor)) {
             SynthesizeFloormasPuppetContact(actor, target);
@@ -1270,6 +1377,7 @@ static void OnShouldEnemyUpdate(Actor* actor, bool* should) {
             ApplyPose(actor, st, r); // hand off from the final streamed pose
             if (adapter->OnPhaseChange(actor, fromPhase, r.phase)) {
                 st.dying = true;
+                st.quietDeath = st.quietDeath || adapter->QuietRemoteDefeat;
                 if (st.suppressed) {
                     EndSuppression(actor, st, "phase");
                 }
@@ -1326,12 +1434,15 @@ static nlohmann::json SnapshotEnemy(Actor* actor, TrackedState& st) {
     if (!st.colliders.empty()) {
         std::vector<int> cs;
         cs.reserve(st.colliders.size() * 4);
-        for (Collider* col : st.colliders) {
+        for (size_t ci = 0; ci < st.colliders.size(); ci++) {
+            Collider* col = st.colliders[ci];
             int bits = 0;
             int radius = 0, height = 0, yShift = 0;
             if (col != nullptr && col->actor == actor) {
                 bits = ((col->atFlags & AT_ON) ? COLSTATE_AT : 0) | ((col->acFlags & AC_ON) ? COLSTATE_AC : 0) |
                        ((col->ocFlags1 & OC1_ON) ? COLSTATE_OC : 0);
+                bits |= ((ci < st.subBits.size() ? st.subBits[ci] : 0) & 7) << COLSTATE_SUB_SHIFT;
+                bits |= COLSTATE_SUB_VALID;
                 if (col->shape == COLSHAPE_CYLINDER) {
                     ColliderCylinder* cyl = (ColliderCylinder*)col;
                     radius = cyl->dim.radius;
@@ -1367,12 +1478,13 @@ static nlohmann::json SnapshotEnemy(Actor* actor, TrackedState& st) {
     // the whole Deku Tree roster (no quad AT/AC enemies).
     if (st.submitMask & (SUBMIT_AT | SUBMIT_AC)) {
         std::vector<float> qv;
-        for (Collider* col : st.colliders) {
+        for (size_t ci = 0; ci < st.colliders.size(); ci++) {
+            Collider* col = st.colliders[ci];
             if (col == nullptr || col->actor != actor || col->shape != COLSHAPE_QUAD) {
                 continue;
             }
-            bool quadAtAc = ((st.submitMask & SUBMIT_AT) && (col->atFlags & AT_ON)) ||
-                            ((st.submitMask & SUBMIT_AC) && (col->acFlags & AC_ON));
+            uint8_t sub = ci < st.subBits.size() ? st.subBits[ci] : 0;
+            bool quadAtAc = ((sub & SUBMIT_AT) && (col->atFlags & AT_ON)) || ((sub & SUBMIT_AC) && (col->acFlags & AC_ON));
             if (!quadAtAc) {
                 continue;
             }
@@ -1385,6 +1497,35 @@ static nlohmann::json SnapshotEnemy(Actor* actor, TrackedState& st) {
         }
         if (!qv.empty()) {
             e["qv"] = qv;
+        }
+    }
+    // Tris AT/AC vertices (PHA-4055): a shield's triangles are placed in
+    // PostLimbDraw, which the mirror's suppressed AI never drives, so without
+    // these the mirror's swords go through a raised Iron Knuckle / Stalfos shield.
+    // Same qualifying predicate and capture order as SubmitColliders.
+    if (st.submitMask & (SUBMIT_AT | SUBMIT_AC)) {
+        std::vector<float> tv;
+        for (size_t ci = 0; ci < st.colliders.size(); ci++) {
+            Collider* col = st.colliders[ci];
+            if (col == nullptr || col->actor != actor || col->shape != COLSHAPE_TRIS) {
+                continue;
+            }
+            uint8_t sub = ci < st.subBits.size() ? st.subBits[ci] : 0;
+            bool trisAtAc = ((sub & SUBMIT_AT) && (col->atFlags & AT_ON)) || ((sub & SUBMIT_AC) && (col->acFlags & AC_ON));
+            if (!trisAtAc) {
+                continue;
+            }
+            ColliderTris* tris = (ColliderTris*)col;
+            for (int32_t i = 0; i < tris->count; i++) {
+                for (int32_t v = 0; v < 3; v++) {
+                    tv.push_back(tris->elements[i].dim.vtx[v].x);
+                    tv.push_back(tris->elements[i].dim.vtx[v].y);
+                    tv.push_back(tris->elements[i].dim.vtx[v].z);
+                }
+            }
+        }
+        if (!tv.empty()) {
+            e["tv"] = tv;
         }
     }
     const ActorSyncAdapter* adapter = GetAdapter(actor->id);
@@ -1487,6 +1628,26 @@ void IngestEnemyState(const nlohmann::json& payload) {
                     SPDLOG_WARN("[EnemySync] Bad qv size {} for key={:#x}", n, key);
                 }
             }
+            // Tris AT/AC vertices (PHA-4055), cleared like quadVerts. Whole elements
+            // (multiple of 9 floats); two elements per tris collider, a handful of
+            // tris colliders at most.
+            r.trisVerts.clear();
+            if (e.contains("tv")) {
+                const auto& tv = e["tv"];
+                size_t n = tv.size();
+                if (n % 9 == 0 && n <= (size_t)MAX_TRACKED_COLLIDERS * 9 * 4) {
+                    r.trisVerts.reserve(n / 3);
+                    for (size_t i = 0; i + 2 < n; i += 3) {
+                        Vec3f v;
+                        v.x = tv[i + 0].get<float>();
+                        v.y = tv[i + 1].get<float>();
+                        v.z = tv[i + 2].get<float>();
+                        r.trisVerts.push_back(v);
+                    }
+                } else {
+                    SPDLOG_WARN("[EnemySync] Bad tv size {} for key={:#x}", n, key);
+                }
+            }
         }
     } catch (const std::exception& ex) {
         SPDLOG_WARN("[EnemySync] IngestEnemyState parse error: {}", ex.what());
@@ -1525,7 +1686,7 @@ static void Tick() {
             if (st.cullForced && !st.dying) {
                 RestoreCull(actor, st);
             }
-            st.submitMask = 0;
+            ClearSubmit(st);
         }
         return;
     }
@@ -1564,7 +1725,7 @@ static void Tick() {
         nlohmann::json enemies = nlohmann::json::array();
         for (auto& [actor, st] : tracked) {
             if (actor->update == NULL) {
-                st.submitMask = 0;
+                ClearSubmit(st);
                 continue;
             }
             ForceUncull(actor, st);
@@ -1583,7 +1744,7 @@ static void Tick() {
             bool leftStream = st.deathCooldown > 0 || st.dying ||
                               (actor->colChkInfo.health == 0 && GetAdapter(actor->id) == nullptr && !st.projectile);
             if (leftStream) {
-                st.submitMask = 0;
+                ClearSubmit(st);
                 continue;
             }
             // Step 3: never stream projectiles (deterministic ballistic actors run
@@ -1592,7 +1753,7 @@ static void Tick() {
             if (!st.projectile) {
                 enemies.push_back(SnapshotEnemy(actor, st));
             }
-            st.submitMask = 0;
+            ClearSubmit(st);
 
             // Announce dynamic spawns (deferred to the tick: Actor_SpawnAsChild
             // wires actor->parent only after Actor_Spawn returns, so parent
@@ -1638,7 +1799,7 @@ static void Tick() {
         }
     } else if (IsLocalAuthority() && !peerInScene) {
         for (auto& [actor, st] : tracked) {
-            st.submitMask = 0;
+            ClearSubmit(st);
             if (st.suppressed) {
                 EndSuppression(actor, st, "became-authority");
             }
@@ -1651,7 +1812,7 @@ static void Tick() {
         // distance; ones whose stream went quiet fall back to vanilla culling.
         uint64_t freshCount = 0;
         for (auto& [actor, st] : tracked) {
-            st.submitMask = 0;
+            ClearSubmit(st);
             if (actor->update == NULL || st.dying) {
                 continue;
             }
@@ -1693,7 +1854,7 @@ static void Tick() {
 // ---------------------------------------------------------------------------
 
 static void OnEnemyActorInit(Actor* actor) {
-    if (!(IsTrackedCategory(actor) || IsSyncedProjectile(actor)) || gPlayState == NULL || IsTrackingExcluded(actor)) {
+    if (!(IsTrackedActor(actor) || IsSyncedProjectile(actor)) || gPlayState == NULL || IsTrackingExcluded(actor)) {
         return;
     }
 
@@ -1718,7 +1879,7 @@ static void OnEnemyActorInit(Actor* actor) {
         state.dynamicKey = true;
         state.remoteSpawned = pending->second.second;
         state.needsSpawnBroadcast = !state.remoteSpawned;
-        state.localKeyed = actor->id == ACTOR_BOSS_VA;
+        state.localKeyed = IsLocalKeyedActor(actor);
         pendingDynamicKeys.erase(pending);
     } else {
         int16_t roomNum = gPlayState->roomCtx.curRoom.num;
@@ -1805,7 +1966,7 @@ static void ReKeyDynamic(Actor* actor, TrackedState& st, uint64_t newKey, bool r
 // after Actor_Spawn returns (this hook can't tell them apart — nested child
 // spawns during an actor's init would race a pass-through key).
 static void OnEnemyActorSpawn(Actor* actor) {
-    if (!(IsTrackedCategory(actor) || IsSyncedProjectile(actor)) || gPlayState == NULL || IsTrackingExcluded(actor) ||
+    if (!(IsTrackedActor(actor) || IsSyncedProjectile(actor)) || gPlayState == NULL || IsTrackingExcluded(actor) ||
         !MirroringEnabled()) {
         return;
     }
@@ -1822,12 +1983,13 @@ static void OnEnemyActorSpawn(Actor* actor) {
     if (it != tracked.end() && it->second.linked) {
         return; // a Floormaster hand, keyed off its big hand already
     }
-    if (actor->id == ACTOR_BOSS_VA) {
+    if (IsLocalKeyedActor(actor)) {
+        uint64_t localKey = LocalKeyedKey(actor);
         if (it != tracked.end()) {
-            ReKeyDynamic(actor, it->second, BarinadeKey(actor), true);
+            ReKeyDynamic(actor, it->second, localKey, true);
             it->second.localKeyed = true;
         } else {
-            pendingDynamicKeys[actor] = { BarinadeKey(actor), true };
+            pendingDynamicKeys[actor] = { localKey, true };
         }
         return;
     }
@@ -2142,7 +2304,7 @@ static void OnEnemyActorKill(Actor* actor) {
     // HP to reconcile. (This early return supersedes the old "Octorok rock on
     // impact" despawn branch below, which pre-dated the projectile carve-out and
     // wrongly assumed the rock was a tracked, despawn-replicated dynamic spawn.)
-    if (state.projectile) {
+    if (state.projectile || state.quietDeath) {
         return;
     }
 
@@ -2181,7 +2343,7 @@ static void OnEnemyDefeated(Actor* actor) {
         return;
     }
 
-    if (state.deathCooldown > 0) {
+    if (state.deathCooldown > 0 || state.quietDeath) {
         return; // defeat caused by a remote death we already applied — don't echo
     }
     state.deathCooldown = DEATH_COOLDOWN_FRAMES;
@@ -2225,6 +2387,7 @@ static void OnColliderSetAC(Actor* actor, Collider* collider) {
     it->second.acCollider = collider;
     it->second.submitMask |= SUBMIT_AC;
     AddCollider(actor, it->second, collider);
+    NoteSubmit(it->second, collider, SUBMIT_AC);
 }
 
 // Per-frame entry point, called by the Anchor per-frame dispatcher in explicit tick
@@ -2268,7 +2431,7 @@ void RegisterHooks(bool isConnected) {
 
     COND_HOOK(ShouldActorInit, isConnected, [](void* actorRef, bool* should) {
         Actor* actor = (Actor*)actorRef;
-        if (SyncEnabled() && (IsTrackedCategory(actor) || IsSyncedProjectile(actor))) {
+        if (SyncEnabled() && (IsTrackedActor(actor) || IsSyncedProjectile(actor))) {
             preInitParams[actor] = (uint16_t)actor->params;
         }
     });
@@ -2348,6 +2511,7 @@ void RegisterHooks(bool isConnected) {
             if (it != tracked.end()) {
                 it->second.submitMask |= SUBMIT_AT;
                 AddCollider((Actor*)actor, it->second, (Collider*)collider);
+                NoteSubmit(it->second, (Collider*)collider, SUBMIT_AT);
             }
         }
     });
@@ -2358,6 +2522,7 @@ void RegisterHooks(bool isConnected) {
             if (it != tracked.end()) {
                 it->second.submitMask |= SUBMIT_OC;
                 AddCollider((Actor*)actor, it->second, (Collider*)collider);
+                NoteSubmit(it->second, (Collider*)collider, SUBMIT_OC);
             }
         }
     });
@@ -2612,6 +2777,126 @@ const char* anchor_test_floormas(const char* cmd) {
         e["c"] = hands[1] != nullptr ? std::to_string(tracked[hands[1]].key) : "";
         e["pos"] = { (int)actor->world.pos.x, (int)actor->world.pos.y, (int)actor->world.pos.z };
         j["hands"].push_back(e);
+    }
+    out = j.dump();
+    return out.c_str();
+}
+
+
+// PHA-4055 miniboss tests. anchor_test_mini(cmd):
+//  "list"                         every tracked enemy: id, params, key (string), category,
+//                                 suppressed/dying, health, pos, its collider list (shape, AT, AC,
+//                                 hard) and the adapter's streamed extras.
+//  "spawn:id,params,x,y,z[,rotY]" Actor_Spawn it (objects load on demand). Run it on every client
+//                                 for actors that every client's own spawner makes (Stalfos, the
+//                                 Octo); on the host only for the rest (the mirror gets the spawn).
+//  "hit:<key>,<dmg>[,<dmgFlags>]" land a local hit through that enemy's first non-hard hurtbox as
+//                                 the local player's sword would (dmg 0 = remaining health; flags
+//                                 default Master sword slash); the damage effect comes from its
+//                                 damage table like a real collision check.
+//  "kill:<key>"                   Actor_Kill it.
+EMSCRIPTEN_KEEPALIVE
+const char* anchor_test_mini(const char* cmd) {
+    using namespace EnemySync;
+    static std::string out;
+    static ColliderInfo sTestToucher;
+    std::string c = cmd != nullptr ? cmd : "list";
+    nlohmann::json j;
+    j["auth"] = cachedAuthorityId;
+    j["own"] = Anchor::Instance != nullptr ? Anchor::Instance->ownClientId : 0;
+    if (gPlayState == NULL) {
+        return "{}";
+    }
+    if (c.rfind("spawn:", 0) == 0) {
+        int id = 0, params = 0, rot = 0;
+        float x = 0, y = 0, z = 0;
+        sscanf(c.c_str() + 6, "%d,%d,%f,%f,%f,%d", &id, &params, &x, &y, &z, &rot);
+        Actor* a = Actor_Spawn(&gPlayState->actorCtx, gPlayState, id, x, y, z, 0, rot, 0, (int16_t)params, false);
+        j["spawned"] = a != NULL;
+    } else if (c.rfind("kill:", 0) == 0) {
+        unsigned long long key = strtoull(c.c_str() + 5, nullptr, 10);
+        auto it = keyToActor.find((uint64_t)key);
+        j["killed"] = false;
+        if (it != keyToActor.end() && it->second->update != NULL) {
+            Actor_Kill(it->second);
+            j["killed"] = true;
+        }
+    } else if (c.rfind("hit:", 0) == 0) {
+        unsigned long long key = 0;
+        int dmg = 0;
+        unsigned int flags = DMG_SLASH_MASTER;
+        sscanf(c.c_str() + 4, "%llu,%d,%u", &key, &dmg, &flags);
+        auto it = keyToActor.find((uint64_t)key);
+        j["hit"] = false;
+        if (it != keyToActor.end() && it->second->update != NULL) {
+            Actor* a = it->second;
+            TrackedState& st = tracked[a];
+            Collider* target = nullptr;
+            for (Collider* col : st.colliders) {
+                if (col != nullptr && col->actor == a && (col->acFlags & AC_ON) && !(col->acFlags & AC_HARD)) {
+                    target = col;
+                    break;
+                }
+            }
+            if (target != nullptr) {
+                memset(&sTestToucher, 0, sizeof(sTestToucher));
+                sTestToucher.toucher.dmgFlags = flags;
+                sTestToucher.toucher.damage = 2;
+                sTestToucher.toucherFlags = TOUCH_ON | TOUCH_HIT;
+                a->colChkInfo.damage = dmg > 0 ? dmg : a->colChkInfo.health;
+                a->colChkInfo.damageEffect = 0;
+                if (a->colChkInfo.damageTable != NULL) {
+                    uint32_t f = flags;
+                    int i = 0;
+                    for (; i < 0x1F; i++, f >>= 1) {
+                        if (f == 1) {
+                            break;
+                        }
+                    }
+                    a->colChkInfo.damageEffect = (a->colChkInfo.damageTable->table[i] >> 4) & 0xF;
+                }
+                target->acFlags |= AC_HIT;
+                target->ac = &GET_PLAYER(gPlayState)->actor;
+                ForEachColliderInfo(target, [&](ColliderInfo* info) {
+                    info->bumperFlags |= BUMP_HIT;
+                    info->acHitInfo = &sTestToucher;
+                });
+                j["hit"] = true;
+            }
+        }
+    }
+    j["enemies"] = nlohmann::json::array();
+    for (auto& [actor, st] : tracked) {
+        if (actor->update == NULL) {
+            continue;
+        }
+        nlohmann::json e;
+        e["id"] = actor->id;
+        e["params"] = (uint16_t)actor->params;
+        e["key"] = std::to_string(st.key);
+        e["cat"] = actor->category;
+        e["sup"] = st.suppressed;
+        e["dying"] = st.dying;
+        e["hp"] = actor->colChkInfo.health;
+        e["pos"] = { (int)actor->world.pos.x, (int)actor->world.pos.y, (int)actor->world.pos.z };
+        e["room"] = actor->room;
+        nlohmann::json cols = nlohmann::json::array();
+        for (Collider* col : st.colliders) {
+            if (col == nullptr || col->actor != actor) {
+                continue;
+            }
+            cols.push_back({ { "shape", col->shape },
+                             { "at", (col->atFlags & AT_ON) != 0 },
+                             { "ac", (col->acFlags & AC_ON) != 0 },
+                             { "hard", (col->acFlags & AC_HARD) != 0 } });
+        }
+        e["cols"] = cols;
+        if (const ActorSyncAdapter* ad = GetAdapter(actor->id); ad != nullptr && ad->SerializeExtras != nullptr) {
+            nlohmann::json x;
+            ad->SerializeExtras(actor, x);
+            e["x"] = x;
+        }
+        j["enemies"].push_back(e);
     }
     out = j.dump();
     return out.c_str();

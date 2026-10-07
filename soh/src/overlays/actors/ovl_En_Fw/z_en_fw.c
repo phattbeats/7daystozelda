@@ -495,3 +495,53 @@ void EnFw_DrawDust(EnFw* this, PlayState* play) {
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
+
+// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+
+static EnFwActionFunc sMirrorActions[] = {
+    EnFw_Bounce, EnFw_Run, EnFw_TurnToParentInitPos, EnFw_JumpToParentInitPos,
+};
+
+s32 EnFw_MirrorGetAction(EnFw* this) {
+    for (s32 i = 0; i < ARRAY_COUNT(sMirrorActions); i++) {
+        if (this->actionFunc == sMirrorActions[i]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void EnFw_MirrorApplyAction(EnFw* this, s32 action) {
+    if (action >= 0 && action < ARRAY_COUNT(sMirrorActions)) {
+        this->actionFunc = sMirrorActions[action];
+    }
+}
+
+s32 EnFw_MirrorGetAnim(EnFw* this) {
+    for (s32 i = 0; i < ARRAY_COUNT(sAnimationInfo); i++) {
+        if (this->skelAnime.animation == sAnimationInfo[i].animation) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void EnFw_MirrorApplyAnim(EnFw* this, s32 anim) {
+    if (anim >= 0 && anim < ARRAY_COUNT(sAnimationInfo) && this->skelAnime.animation != sAnimationInfo[anim].animation) {
+        Animation_ChangeByInfo(&this->skelAnime, sAnimationInfo, anim);
+    }
+}
+
+// The host's core is gone (its explosion, or the hop home): finish it locally. Running
+// it through the explosion gives this client its own blast and drop; the hop home just ends.
+void EnFw_MirrorFinish(EnFw* this) {
+    if (this->actor.parent != NULL && this->actionFunc == EnFw_Run && this->explosionTimer == 0 &&
+        this->actor.colChkInfo.health <= 0) {
+        this->damageTimer = 0;
+        this->explosionTimer = 6;
+        return;
+    }
+    if (this->explosionTimer == 0) {
+        Actor_Kill(&this->actor);
+    }
+}

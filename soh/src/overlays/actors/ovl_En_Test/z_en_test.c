@@ -2062,3 +2062,92 @@ s32 EnTest_ReactToProjectile(PlayState* play, EnTest* this) {
 
     return false;
 }
+
+// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// The action is an actionFunc the suppressed mirror never leaves: it is streamed as an
+// index so a mirror whose stream stops resumes on a valid one, and the break-apart
+// states (types 4 and 5) are told apart by it.
+
+static EnTestActionFunc sMirrorActions[] = {
+    EnTest_WaitGround,   EnTest_WaitAbove,  EnTest_Fall,        EnTest_Land,       EnTest_Rise,
+    EnTest_Idle,         EnTest_WalkAndBlock, func_80860C24,    func_80860F84,     EnTest_SlashDown,
+    EnTest_SlashDownEnd, EnTest_SlashUp,    EnTest_JumpBack,    EnTest_Jumpslash,  EnTest_JumpUp,
+    EnTest_StopAndBlock, EnTest_IdleFromBlock, func_808621D4,   func_80862418,     EnTest_Stunned,
+    func_808628C8,       func_80862E6C,     func_80863044,      func_8086318C,     func_808633E8,
+    EnTest_Recoil,
+};
+
+#define ENTEST_MIRROR_ACTION_BROKEN 21 // func_80862E6C
+
+s32 EnTest_MirrorGetAction(EnTest* this) {
+    for (s32 i = 0; i < ARRAY_COUNT(sMirrorActions); i++) {
+        if (this->actionFunc == sMirrorActions[i]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void EnTest_MirrorApplyAction(EnTest* this, s32 action) {
+    if (action >= 0 && action < ARRAY_COUNT(sMirrorActions)) {
+        this->actionFunc = sMirrorActions[action];
+    }
+}
+
+// A type 4 or 5 Stalfos just fell apart on the host (func_80862DBC): get the bone parts
+// ready locally. They are spawned from the same BodyBreak, one frame later (the limb draw
+// has to fill it first), and fly home on their own. Without this the Stalfos simply
+// vanishes and reappears.
+void EnTest_MirrorStartBreak(EnTest* this, PlayState* play) {
+    BodyBreak_Alloc(&this->bodyBreak, 60, play);
+    this->actor.home.rot.x = 0;
+    this->actor.child = NULL;
+}
+
+// The first half of func_80862E6C: spawn the parts once the body is ready.
+void EnTest_MirrorBreakStep(EnTest* this, PlayState* play) {
+    if (this->actor.child != NULL) {
+        return;
+    }
+    if (this->bodyBreak.val == BODYBREAK_STATUS_FINISHED) {
+        // Never allocated here (the mirror joined mid-break) or already spawned.
+        this->actor.child = &this->actor;
+        return;
+    }
+    if (this->actor.home.rot.x == 0) {
+        this->actor.home.rot.x = this->bodyBreak.count;
+    }
+    if (BodyBreak_SpawnParts(&this->actor, &this->bodyBreak, play, this->actor.params + 8)) {
+        // Draw hides the skeleton while child is set (the host's own marker).
+        this->actor.child = &this->actor;
+    }
+}
+
+// The Stalfos is whole again (or never broke): Draw shows it.
+void EnTest_MirrorEndBreak(EnTest* this) {
+    this->actor.child = NULL;
+}
+
+// The invisible Stalfos (type 0) is shown by the Lens of Truth, which is a local state.
+void EnTest_MirrorLens(EnTest* this, PlayState* play) {
+    if (this->actor.params == STALFOS_TYPE_INVISIBLE) {
+        if (play->actorCtx.lensActive) {
+            this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_REACT_TO_LENS;
+            this->actor.shape.shadowDraw = ActorShadow_DrawFeet;
+        } else {
+            this->actor.flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_REACT_TO_LENS);
+            this->actor.shape.shadowDraw = NULL;
+        }
+    }
+}
+
+// The host's Stalfos took its killing blow (types 0-3 only: the others fall apart and
+// get up again): play the local fall, break, drop and kill. Facing is the host's call
+// (front or back fall); a mirror just falls backwards.
+void EnTest_MirrorBeginDeath(EnTest* this, PlayState* play) {
+    if (this->actor.colChkInfo.health != 0 || this->actionFunc == func_80863044 ||
+        this->actionFunc == func_8086318C || this->actionFunc == func_808633E8) {
+        return;
+    }
+    func_80862FA8(this, play);
+}

@@ -6,7 +6,7 @@
 
 struct EnFd;
 
-typedef void (*EnFdActionFunc)(struct EnFd* this, PlayState* play);
+typedef void (*EnFdActionFunc)(struct EnFd* en, PlayState* play);
 
 typedef enum {
     FD_EFFECT_NONE,
@@ -50,5 +50,15 @@ typedef struct EnFd {
     /* 0x057E */ Vec3s morphTable[27];
     /* 0x0620 */ EnFdEffect effects[200];
 } EnFd; // size = 0x31E0
+
+// Co-op mirroring (PHA-4055)
+s32 EnFd_MirrorGetAction(EnFd* en);
+void EnFd_MirrorApplyAction(EnFd* en, s32 action);
+s32 EnFd_MirrorGetAnim(EnFd* en);
+void EnFd_MirrorApplyAnim(EnFd* en, s32 anim);
+void EnFd_MirrorTick(EnFd* en, PlayState* play);
+void EnFd_MirrorStartMusic(EnFd* en);
+void EnFd_MirrorStartDeath(EnFd* en);
+void EnFd_MirrorHookshotHit(EnFd* en, PlayState* play);
 
 #endif

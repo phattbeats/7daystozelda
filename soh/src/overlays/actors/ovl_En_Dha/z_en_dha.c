@@ -466,3 +466,41 @@ void EnDha_Draw(Actor* thisx, PlayState* play) {
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnDha_OverrideLimbDraw, EnDha_PostLimbDraw, this);
 }
+
+// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+
+static EnDhaActionFunc sMirrorActions[] = {
+    EnDha_Wait,       // 0
+    EnDha_TakeDamage, // 1
+    EnDha_Die,        // 2
+};
+
+s32 EnDha_MirrorGetAction(EnDha* this) {
+    for (s32 i = 0; i < ARRAY_COUNT(sMirrorActions); i++) {
+        if (this->actionFunc == sMirrorActions[i]) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+void EnDha_MirrorApplyAction(EnDha* this, s32 action) {
+    if (action >= 0 && action < ARRAY_COUNT(sMirrorActions)) {
+        this->actionFunc = sMirrorActions[action];
+    }
+}
+
+// The stream stopped and the local AI takes over: find the Dead Hand again (Update
+// only looks among ENEMY actors, and a Dead Hand that is already dying has moved to
+// PROP). A hand whose Dead Hand is gone has nothing left to grab for.
+void EnDha_MirrorResume(EnDha* this, PlayState* play) {
+    Actor* dh = Actor_FindNearby(play, &this->actor, ACTOR_EN_DH, ACTORCAT_ENEMY, 10000.0f);
+
+    if (dh == NULL) {
+        dh = Actor_FindNearby(play, &this->actor, ACTOR_EN_DH, ACTORCAT_PROP, 10000.0f);
+    }
+    this->actor.parent = dh;
+    if (dh == NULL) {
+        Actor_Kill(&this->actor);
+    }
+}

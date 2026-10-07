@@ -10,6 +10,13 @@ void RegisterBarinadeAdapter();
 void RegisterVolvagiaAdapter();
 void RegisterMorphaAdapter();
 void RegisterGanondrofAdapter();
+void RegisterEnTorch2Adapter();
+void RegisterEnIkAdapter();
+void RegisterEnZfAdapter();
+void RegisterEnDhAdapter();
+void RegisterEnBigokutaAdapter();
+void RegisterEnTestAdapter();
+void RegisterEnFdAdapter();
 
 namespace EnemySync {
 
@@ -39,6 +46,13 @@ void RegisterBuiltInAdapters() {
     RegisterVolvagiaAdapter();
     RegisterMorphaAdapter();
     RegisterGanondrofAdapter();
+    RegisterEnTorch2Adapter();
+    RegisterEnIkAdapter();
+    RegisterEnZfAdapter();
+    RegisterEnDhAdapter();
+    RegisterEnBigokutaAdapter();
+    RegisterEnTestAdapter();
+    RegisterEnFdAdapter();
 }
 
 } // namespace EnemySync

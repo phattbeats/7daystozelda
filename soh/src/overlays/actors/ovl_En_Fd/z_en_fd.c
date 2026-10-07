@@ -952,3 +952,83 @@ void EnFd_DrawDots(EnFd* this, PlayState* play) {
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
+
+// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// The dancer's body is hidden while its action is EnFd_Reappear (the Init state), and
+// its fire and flame particles are aged only by Update, so a suppressed mirror needs
+// the action, the animation and a per-frame tick of its own.
+
+static EnFdActionFunc sMirrorActions[] = {
+    EnFd_Reappear, EnFd_SpinAndGrow, EnFd_JumpToGround, EnFd_Land, EnFd_SpinAndSpawnFire, EnFd_Run, EnFd_WaitForCore,
+};
+
+s32 EnFd_MirrorGetAction(EnFd* this) {
+    for (s32 i = 0; i < ARRAY_COUNT(sMirrorActions); i++) {
+        if (this->actionFunc == sMirrorActions[i]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void EnFd_MirrorApplyAction(EnFd* this, s32 action) {
+    if (action >= 0 && action < ARRAY_COUNT(sMirrorActions)) {
+        this->actionFunc = sMirrorActions[action];
+    }
+}
+
+s32 EnFd_MirrorGetAnim(EnFd* this) {
+    for (s32 i = 0; i < ARRAY_COUNT(sAnimationInfo); i++) {
+        if (this->skelAnime.animation == sAnimationInfo[i].animation) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Only on a change: the mirror's skeleton starts with no animation, and the local AI
+// (which updates it every frame) needs one if the stream ever stops.
+void EnFd_MirrorApplyAnim(EnFd* this, s32 anim) {
+    if (anim >= 0 && anim < ARRAY_COUNT(sAnimationInfo) && this->skelAnime.animation != sAnimationInfo[anim].animation) {
+        Animation_ChangeByInfo(&this->skelAnime, sAnimationInfo, anim);
+    }
+}
+
+// What Update does for the particles every frame.
+void EnFd_MirrorTick(EnFd* this, PlayState* play) {
+    if (this->actionFunc != EnFd_Reappear) {
+        EnFd_SpawnDot(this, play);
+    }
+    EnFd_UpdateDots(this);
+    EnFd_UpdateFlames(this);
+}
+
+void EnFd_MirrorStartMusic(EnFd* this) {
+    if (this->firstUpdateFlag) {
+        func_800F5ACC(NA_BGM_MINI_BOSS);
+        this->firstUpdateFlag = false;
+    }
+}
+
+// The host's dancer lost its last core: the local count-down to its removal (what
+// EnFd_WaitForCore does once the core has exploded), without another core.
+void EnFd_MirrorStartDeath(EnFd* this) {
+    if (this->actionFunc == EnFd_WaitForCore && this->spinTimer != 0) {
+        return;
+    }
+    this->actionFunc = EnFd_WaitForCore;
+    this->invincibilityTimer = 0;
+    this->actor.params = 0;
+    this->spinTimer = 30;
+}
+
+// A mirror's hookshot caught the dancer (the host's copy never feels it): the hookshot
+// branch of EnFd_Update, as if the host's own hookshot had.
+void EnFd_MirrorHookshotHit(EnFd* this, PlayState* play) {
+    if (EnFd_SpawnCore(this, play)) {
+        this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
+        this->invincibilityTimer = 30;
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FLAME_DAMAGE);
+        Enemy_StartFinishingBlow(play, &this->actor);
+    }
+}

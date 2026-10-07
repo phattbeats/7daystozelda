@@ -139,7 +139,10 @@ static ColliderQuadInit sSwordQuadInit = {
     {
         COLTYPE_NONE,
         AT_ON | AT_TYPE_ENEMY,
-        AC_ON | AC_HARD | AC_TYPE_PLAYER,
+        // The vanilla AI only ever submits this quad as AT, never AC, so the AC bits
+        // do nothing there. Co-op mirrors stream the on-bits and a quad with AC_ON would
+        // be submitted as a hard, sword-bouncing hurtbox (PHA-4055).
+        AC_NONE,
         OC1_NONE,
         OC2_NONE,
         COLSHAPE_QUAD,
@@ -2431,4 +2434,53 @@ s32 EnZf_DodgeRangedWaiting(PlayState* play, EnZf* this) {
 void EnZf_Reset(void) {
     D_80B4A1B0 = 0;
     D_80B4A1B4 = 1;
+}
+// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+
+// The mirror's copy never runs Update, so the action number is only a record of
+// the host's; the real state machine starts from a sane action when it resumes.
+s32 EnZf_MirrorGetAction(EnZf* this) {
+    return this->action;
+}
+
+void EnZf_MirrorSetAction(EnZf* this, s32 action) {
+    this->action = action;
+}
+
+// The mirror's copy of the host's Lizalfos died: play the local death (animation,
+// fade, clear switch for the last of a miniboss pair) and roll this client's own
+// drop, as the host's killing blow did. EnZf_SetupDie reaches for the tag-team
+// partner through the actor list's prev/next, so only trust those when they are
+// really Lizalfos; a lone copy is treated as the last of its pair.
+void EnZf_MirrorBeginDeath(EnZf* this, PlayState* play) {
+    s16 dropParams = 0x40;
+
+    if (this->action == ENZF_ACTION_DIE) {
+        return;
+    }
+    if (D_80B4A1B4 != -1) {
+        Actor* prev = this->actor.prev;
+        Actor* next = this->actor.next;
+        if ((prev == NULL || prev->id != ACTOR_EN_ZF) && (next == NULL || next->id != ACTOR_EN_ZF)) {
+            D_80B4A1B4 = -1;
+        }
+    }
+    EnZf_SetupDie(this);
+    if (this->actor.params == ENZF_TYPE_DINOLFOS) {
+        dropParams = 0xE0;
+    }
+    Item_DropCollectibleRandom(play, &this->actor, &this->actor.world.pos, dropParams);
+}
+
+// The stream stopped and the local AI takes over from the last streamed pose.
+void EnZf_MirrorResume(EnZf* this, PlayState* play) {
+    if (this->alpha == 0 || this->action == ENZF_ACTION_DROP_IN) {
+        this->alpha = 255;
+        this->actor.shape.shadowAlpha = 255;
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+    }
+    if (this->action == ENZF_ACTION_DIE) {
+        return;
+    }
+    EnZf_SetupApproachPlayer(this, play);
 }

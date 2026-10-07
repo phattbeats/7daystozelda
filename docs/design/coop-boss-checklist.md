@@ -54,6 +54,7 @@ in a two-client live test, with screenshots and logs. The rig is in
 | Bongo Bongo | PHA-4052 | Not started |
 | Twinrova | PHA-4053 | Not started |
 | Ganondorf and Ganon | PHA-4054 | Not started |
+| Minibosses (Dark Link, Iron Knuckle, Dead Hand, Big Octo, Flare Dancer, Stalfos, Lizalfos) | PHA-4055 | See the miniboss section below |
 
 ## King Dodongo (PHA-4047)
 
@@ -148,3 +149,43 @@ Known limits:
 - A mirror's reflect needs the ball to still be in flight when the request reaches the host; with a very short throw distance and rig latency (about 0.6 s) it can land too late. At normal arena distances it worked.
 - Not exercised live: a killing blow landed by the mirror (the same forwarded-hit and edge paths as above), and a host leaving mid-fight.
 - Warping Link outside the arena floor reloads the room and restarts the intro, as in the vanilla game.
+
+## Minibosses (PHA-4055)
+
+Seven minibosses, each with an adapter in `BossAdapters/` (`EnTorch2`, `EnIk`, `EnZf`, `EnTest`, `EnDh` (body and hands), `EnBigokuta`, `EnFd` (dancer, core and fire ring)). Plain mirroring fell short for all of them: a suppressed mirror never runs Update, so every draw-state field, state machine and spawn that only Update drives was stale.
+
+Changes that cover every enemy, found along the way:
+- **Per-collider submit bits.** The stream now says which of AT/AC/OC the host's AI really submitted for each collider this frame (`cs` bits 3-6). The old actor-wide mask made a mirror submit every collider whose AC_ON flag was merely set, so a Stalfos or Iron Knuckle shield blocked all the time on the partner's screen, and a Lizalfos's sword hit as a hurtbox.
+- **Tris streaming.** Tris collider vertices (Iron Knuckle's shield) are streamed like quads (`tv`).
+- **Damage effect on replayed hits.** An adapter can set `DeriveDamageEffect`: the host looks the effect up in the damage table for the replayed flags, as a real collision check does. Dead Hand, Big Octo and Iron Knuckle drop effect-0 hits and ignored every mirror hit before.
+- **Hits land on the body.** A replay prefers a non-hard hurtbox over the last collider submitted (the shield).
+- **Capture order.** Collider and skeleton captures are claimed oldest-first, so a ring wrap can't swap two colliders on one client.
+- **Local keys for runtime spawns every client makes.** Stalfos spawned by Bg_Mori_Bigst / En_Zl3 and the Big Octo get a key from their params and position and are never broadcast (the broadcast left an orphan beside the replica).
+- **Quiet defeat.** `QuietRemoteDefeat`: a defeat the mirror plays locally never announces itself back.
+- **Tracking by id for the Big Octo**, whose first fight starts as a PROP.
+
+| Miniboss | Verdict | How, and what is left |
+|---|---|---|
+| Dark Link (`EN_TORCH2`) | **Adapter added** | One duel belongs to one player: the host's Link, because his AI copies that player's Player struct (sword animations, the jump onto the blade). A partner can still hit him (forwarded hits). He is out of the puppet swap and keeps the host's perception once awake; asleep, either player can wake him. Extras: action, fade-in alpha, counter state, sword-jump offset. His skeleton goes through `SkelAnime_InitLink`, which has no capture hook, so `EnTorch2_Init` announces it. Death is the generic handoff (the mirror fades him out). No finishing-blow camera on the partner. |
+| Iron Knuckle, Nabooru (`EN_IK`) | **Adapter added** | Extras: animation state, armour flags (the armour pieces fly off locally from the same BodyBreak), axe-swing flag. Shield triangles stream, so mirror swings bounce off a raised shield. Nabooru's cutscenes swap `actor.update`: PRE (cutscene, runs locally), FIGHT (mirrored), DEFEATED (health 10: releases to the local fight update, which starts the defeat cutscene). Out of the puppet swap. |
+| Dead Hand (`EN_DH`, `EN_DHA`) | **Adapter added** | The body starts buried, lens-only and in WAIT; extras carry action, depth, lens/target flags, dirt wave and the bite's AT toucher. Hands: arm angles, depth, action; the hand's drop is rolled on the streamed edge; a hand whose body is gone ends on resume. Bomb hits get an EXPLOSIVE stand-in attacker. Grabs go through the existing EnemyTargeting grab routing. Debris (EffectSsHahen) is not replayed on the partner. |
+| Big Octo (`EN_BIGOKUTA`) | **Adapter added** | Action, both timers, platform spin rate, hand-placed colliders and the fight camera. The first fight (params 0, PROP until it starts) is now tracked from Init under a deterministic key. A hit only counts from behind: the check uses the attacking player (a partner's puppet), not the host's tracked target. Arrow hits from the partner are still judged against the host's tracked player. Death runs the Octo's own death on the mirror from the streamed pose. |
+| Flare Dancer (`EN_FD`, `EN_FW`, `EN_FD_FIRE`) | **Adapter added** | Dancer: action, animation, fade, timers and the particle tick (it was invisible on a mirror). The core and the fire ring replicate as ordinary dynamic spawns with their parent. A partner's hookshot is reported to the host as an adapter event. The core's explosion plays locally on the mirror (own blast and drop). The partner's hookshot does not transfer onto the core. |
+| Stalfos (`EN_TEST`) | **Adapter added** | Action and state fields, head turn, blur, ice, the shield cylinder (position streamed, submitted only while the host raises it), the Lens of Truth for the invisible one. Types 4 and 5 (the Forest Temple pair, the Ganon's tower pair) fall apart and get up again: the mirror follows the action stream, spawns the bone parts locally and hides the body meanwhile; type 5's ENEMY/PROP flip is applied. Types 0-3 die for good: health 0 hands off to the Stalfos's own fall, bone burst, drop and kill. Runtime pair spawns use local keys. |
+| Lizalfos / Dinolfos (`EN_ZF`) | **Adapter added** | A lone Lizalfos and the miniboss pair start at alpha 0 and only `EnZf_DropIn` fades them in, so the mirror's copy was invisible: alpha, shadow, target flag, sword sheathing, head turn, ice and hit flash are streamed. Death: the host's `ENEMY_DIED` plays the local death (which sets the pair's clear switch for the last one). The sword quad no longer carries AC bits (`z_en_zf.c`), so the mirror stopped bouncing off it. |
+
+### Live test (2026-10-07, two local clients, rig `tools/harness/pha4055`)
+
+Hyrule Field and Kakariko, each miniboss spawned on the host through `anchor_test_mini("spawn:...")` (on both clients for the locally keyed ones), hit from the mirror through `anchor_test_mini("hit:...")`. Evidence is in `docs/evidence/pha4055`.
+
+| Miniboss | Result |
+|---|---|
+| Lizalfos | Alpha 255 on both after the drop-in, visible on the partner's screen; mirror hits took it from 6 to 0; the partner ran its own death and both cleared. |
+| Iron Knuckle | State, armour flags and axe flag identical on both at every step; mirror hits took 30 to 0 with the armour flags set at 10; death on both. |
+| Dark Link | Alpha ramp and state identical; posed with sword and shield on the partner; mirror hits killed him on both. |
+| Stalfos pair | Both clients keep the pair under the same keys, no orphan; a mirror hit broke one apart on both (bones flew on the partner's screen) and it got up again with 10 health on both; the last one died on both. |
+| Dead Hand | Emerged and walked on both, the hand reached on the partner's screen, mirror hits killed the body and the hands vanished on both. |
+| Big Octo | Same key on both, mirrored; one mirror hit from behind killed it on both. |
+| Flare Dancer | Action and fade identical on both, the fire ring replicated at the same positions, the core spawned on both from a mirror hit and was killed, and the dancer defeat ended on both. |
+
+Not exercised live: Iron Knuckle's raised shield blocking a mirror swing (the streamed state and colliders were checked, not a real swing), Nabooru's cutscenes, the Octo's first-fight platform, the partner's hookshot on the Flare Dancer, Dead Hand's grab on the partner, and a host leaving mid-fight. No desync canary, parse error or crash in either log from the adapters. A `null function` in `EnPeehat_Update` came from a test spawn of a Peehat with invalid params.

@@ -141,6 +141,10 @@ void EnTorch2_Init(Actor* thisx, PlayState* play2) {
     this->heldItemAction = this->heldItemId = PLAYER_IA_SWORD_MASTER;
     Player_SetModelGroup(this, PLAYER_MODELGROUP_SWORD_AND_SHIELD);
     play->playerInit(this, play, &gDarkLinkSkel);
+    // Player_InitCommon sets its skeleton up through SkelAnime_InitLink, which has no
+    // skeleton-init hook: tell co-op EnemySync which joint table is Dark Link's
+    // so his pose can be streamed (PHA-4055).
+    GameInteractor_ExecuteOnSkelAnimeInit(&this->skelAnime);
     this->actor.naviEnemyId = 0x26;
     this->cylinder.base.acFlags = AC_ON | AC_TYPE_PLAYER;
     this->meleeWeaponQuads[0].base.atFlags = this->meleeWeaponQuads[1].base.atFlags = AT_ON | AT_TYPE_ENEMY;
@@ -815,4 +819,35 @@ void EnTorch2_Draw(Actor* thisx, PlayState* play2) {
                                EnTorch2_OverrideLimbDraw, EnTorch2_PostLimbDraw, this, POLY_XLU_DISP);
     }
     CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// Dark Link's state machine lives in file statics that only his Update writes, and
+// Draw reads sAlpha (the fade-in, the fade-out of the death). A suppressed mirror
+// never runs Update, so EnemySync's Dark Link adapter carries these across.
+// One duel, one player: the whole AI reads GET_PLAYER (the sword animation it
+// copies, the jump onto the blade), so it duels the host's Link.
+
+s32 EnTorch2_MirrorGetState(void) {
+    return sActionState;
+}
+
+s32 EnTorch2_MirrorGetAlpha(void) {
+    return sAlpha;
+}
+
+s32 EnTorch2_MirrorGetCounter(void) {
+    return sCounterState;
+}
+
+void EnTorch2_MirrorApply(Player* this, s32 state, s32 alpha, s32 counter, f32 swordJump) {
+    sActionState = state;
+    sAlpha = alpha;
+    sCounterState = counter;
+    sSwordJumpHeight = swordJump;
+    this->actor.shape.yOffset = swordJump;
+}
+
+f32 EnTorch2_MirrorGetSwordJump(void) {
+    return sSwordJumpHeight;
 }

@@ -51,6 +51,21 @@ struct ActorSyncAdapter {
     // Mirror: runs right after the cylinder colliders are repositioned from the
     // streamed world.pos, for bosses whose Update offsets a collider by hand.
     void (*PositionCollider)(Actor* actor, Collider* col) = nullptr;
+    // Authority: true = leave this frame's xzDistToPlayer / yawTowardsPlayer on the
+    // local Link instead of re-pointing them at the nearest player. For enemies
+    // whose whole AI also reads GET_PLAYER's struct (Dark Link copies that
+    // player's sword animations), so the two can't be split between players.
+    bool (*KeepLocalPerception)(Actor* actor) = nullptr;
+    // Authority: a remote hit about to be replayed should also carry the damage
+    // effect the actor's own damage table gives those flags (stun, fire, bomb).
+    // A real collision check derives it; the synthetic hit would leave
+    // colChkInfo.damageEffect at whatever it was, and enemies whose hit code
+    // drops effect-0 hits (Dead Hand, Big Octo) would ignore the request.
+    bool DeriveDamageEffect = false;
+    // Mirror: the local defeat that OnRemoteDefeat starts must not announce itself
+    // again (a miniboss's death setup runs the OnEnemyDefeat hook, which would
+    // send the authority's own ENEMY_DIED straight back to everyone).
+    bool QuietRemoteDefeat = false;
 };
 
 namespace EnemySync {

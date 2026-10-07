@@ -27,4 +27,9 @@ typedef struct EnDha {
     /* 0x0220 */ ColliderJntSphElement colliderItem[5];
 } EnDha; // size = 0x0360
 
+// Co-op mirroring (PHA-4055)
+s32 EnDha_MirrorGetAction(EnDha* en);
+void EnDha_MirrorApplyAction(EnDha* en, s32 action);
+void EnDha_MirrorResume(EnDha* en, PlayState* play);
+
 #endif

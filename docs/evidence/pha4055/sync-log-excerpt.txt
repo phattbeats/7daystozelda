@@ -1,0 +1,20 @@
+074959.191115:INFO:CONSOLE:33] "[SOH] [07:49:59.190] [EnemyDied.cpp:57] [info] [EnemySync] DIED rx id=198
+075321.730840:INFO:CONSOLE:33] "[SOH] [07:53:21.730] [EnemyHitRequest.cpp:56] [info] [EnemySync] HITREQ tx key=0x800001000000000b dmg=1 flags=0x8
+075341.229523:INFO:CONSOLE:33] "[SOH] [07:53:41.229] [EnemyHitRequest.cpp:56] [info] [EnemySync] HITREQ tx key=0x8000010000000024 dmg=10 flags=0x8
+075344.181800:INFO:CONSOLE:33] "[SOH] [07:53:44.181] [EnemyDied.cpp:57] [info] [EnemySync] DIED rx id=171
+075344.182180:INFO:CONSOLE:33] "[SOH] [07:53:44.182] [EnemySync.cpp:966] [info] [EnemySync] remote defeat handoff key=0x8000010000000024 id=171
+075409.380655:INFO:CONSOLE:33] "[SOH] [07:54:09.380] [EnemyHitRequest.cpp:56] [info] [EnemySync] HITREQ tx key=0x800001000000000b dmg=1 flags=0x8
+075411.428569:INFO:CONSOLE:33] "[SOH] [07:54:11.428] [EnemyHitRequest.cpp:56] [info] [EnemySync] HITREQ tx key=0x800001000000003d dmg=7 flags=0x8
+075413.478885:INFO:CONSOLE:33] "[SOH] [07:54:13.478] [EnemyHitRequest.cpp:56] [info] [EnemySync] HITREQ tx key=0x800001000000003d dmg=9 flags=0x8
+075415.528437:INFO:CONSOLE:33] "[SOH] [07:54:15.527] [EnemyHitRequest.cpp:56] [info] [EnemySync] HITREQ tx key=0x800001000000003d dmg=0 flags=0x8
+075416.531691:INFO:CONSOLE:33] "[SOH] [07:54:16.531] [EnemyDied.cpp:57] [info] [EnemySync] DIED rx id=171
+075416.531954:INFO:CONSOLE:33] "[SOH] [07:54:16.531] [EnemySync.cpp:966] [info] [EnemySync] remote defeat handoff key=0x800001000000003d id=171
+075421.679576:INFO:CONSOLE:33] "[SOH] [07:54:21.678] [EnemyHitRequest.cpp:56] [info] [EnemySync] HITREQ tx key=0x800001000000000b dmg=1 flags=0x8
+075423.727739:INFO:CONSOLE:33] "[SOH] [07:54:23.727] [EnemyHitRequest.cpp:56] [info] [EnemySync] HITREQ tx key=0x800001000000003e dmg=6 flags=0x8
+075425.777851:INFO:CONSOLE:33] "[SOH] [07:54:25.777] [EnemyHitRequest.cpp:56] [info] [EnemySync] HITREQ tx key=0x800001000000003e dmg=8 flags=0x8
+075427.103419:INFO:CONSOLE:33] "[SOH] [07:54:27.099] [EnemyDied.cpp:57] [info] [EnemySync] DIED rx id=171
+075427.103793:INFO:CONSOLE:33] "[SOH] [07:54:27.100] [EnemySync.cpp:966] [info] [EnemySync] remote defeat handoff key=0x800001000000003e id=171
+075427.104158:INFO:CONSOLE:33] "[SOH] [07:54:27.102] [EnemyDied.cpp:57] [info] [EnemySync] DIED rx id=153
+075427.104321:INFO:CONSOLE:33] "[SOH] [07:54:27.103] [EnemySync.cpp:966] [info] [EnemySync] remote defeat handoff key=0x800001000000000b id=153
+075727.954441:INFO:CONSOLE:33] "[SOH] [07:57:27.953] [EnemyHitRequest.cpp:56] [info] [EnemySync] HITREQ tx key=0x8000010000000002 dmg=3 flags=0x200
+075728.706964:INFO:CONSOLE:33] "[SOH] [07:57:28.706] [EnemyDied.cpp:57] [info] [EnemySync] DIED rx id=19

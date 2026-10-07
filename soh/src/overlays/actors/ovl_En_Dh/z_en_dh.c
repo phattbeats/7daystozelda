@@ -584,3 +584,35 @@ void EnDh_Draw(Actor* thisx, PlayState* play) {
     }
     CLOSE_DISPS(play->state.gfxCtx);
 }
+
+// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// The mirror's copy never runs Update, so it adopts the host's action (and with it
+// a valid actionFunc, in case the stream stops and the local AI takes over).
+
+static EnDhActionFunc sMirrorActions[] = {
+    EnDh_Wait,   // DH_WAIT
+    EnDh_Retreat, // DH_RETREAT
+    EnDh_Burrow, // DH_BURROW
+    EnDh_Walk,   // DH_WALK
+    EnDh_Attack, // DH_ATTACK
+    EnDh_Death,  // DH_DEATH
+    EnDh_Damage, // DH_DAMAGE
+};
+
+void EnDh_MirrorApplyAction(EnDh* this, s32 action) {
+    if (action < 0 || action >= ARRAY_COUNT(sMirrorActions)) {
+        return;
+    }
+    this->curAction = action;
+    this->actionFunc = sMirrorActions[action];
+}
+
+// The host's Dead Hand died: play the local death (the fall, the fade, the kill)
+// and roll this client's own drop, as the host's killing blow did.
+void EnDh_MirrorBeginDeath(EnDh* this, PlayState* play) {
+    if (this->curAction == DH_DEATH) {
+        return;
+    }
+    EnDh_SetupDeath(this);
+    Item_DropCollectibleRandom(play, &this->actor, &this->actor.world.pos, 0x90);
+}

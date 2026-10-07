@@ -1480,3 +1480,54 @@ const ActorInit En_Ik_InitVars = {
     (ActorFunc)EnIk_Draw,
     NULL,
 };
+
+// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// A suppressed mirror never runs the fight update, so the fields Draw and the
+// armour break read are streamed: the animation state (unk_2F8: 9 = shield up),
+// the armour flags (unk_2FB = armour off, unk_2FA = last frame's), and the axe
+// swing flag (unk_2FE, which drives the blur trail). The armour pieces that fly
+// off are spawned from the same BodyBreak the authority uses; a mirror that joins
+// after the armour came off skips them (unk_4D8[0] marks the first frame seen).
+
+// Nabooru's cutscenes swap actor.update; the fight is func_80A75FA0.
+s32 EnIk_MirrorIsFight(EnIk* this) {
+    return this->actor.update == func_80A75FA0;
+}
+
+s32 EnIk_MirrorGetState(EnIk* this) {
+    return this->unk_2F8;
+}
+
+s32 EnIk_MirrorGetArmor(EnIk* this) {
+    return this->unk_2FB;
+}
+
+s32 EnIk_MirrorGetPrevArmor(EnIk* this) {
+    return this->unk_2FA;
+}
+
+s32 EnIk_MirrorGetAxe(EnIk* this) {
+    return this->unk_2FE;
+}
+
+void EnIk_MirrorApply(EnIk* this, PlayState* play, s32 state, s32 prevArmor, s32 armor, s32 axe) {
+    u8 firstSeen = (this->unk_4D8[0] == 0);
+
+    this->unk_4D8[0] = 1;
+    this->unk_2F8 = state;
+    this->unk_2FA = prevArmor;
+    this->unk_2FE = axe;
+    if ((armor & 1) && !(this->unk_2FB & 1)) {
+        if (firstSeen) {
+            this->bodyBreak.val = BODYBREAK_STATUS_FINISHED;
+        } else {
+            BodyBreak_Alloc(&this->bodyBreak, 3, play);
+        }
+    }
+    this->unk_2FB = armor;
+    if ((this->unk_2FB & 1) && (this->bodyBreak.val != BODYBREAK_STATUS_FINISHED)) {
+        if (BodyBreak_SpawnParts(&this->actor, &this->bodyBreak, play, this->actor.params + 4)) {
+            this->bodyBreak.val = BODYBREAK_STATUS_FINISHED;
+        }
+    }
+}

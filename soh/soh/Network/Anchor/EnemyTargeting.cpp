@@ -65,7 +65,13 @@ bool IsSwapBlocked(Actor* actor) {
     if (actor->category != ACTORCAT_ENEMY) {
         return true; // bosses: cameras + player cutscenes run off GET_PLAYER
     }
+    // Nabooru (Iron Knuckle params 0) flips between the ENEMY and BOSS lists as she is
+    // hurt, but her intro and her defeat cutscene read GET_PLAYER the whole time.
+    if (actor->id == ACTOR_EN_IK && actor->params == 0) {
+        return true;
+    }
     switch (actor->id) {
+        case ACTOR_EN_TORCH2:     // Dark Link copies the local Link's Player struct
         case ACTOR_EN_WALLMAS:    // grab -> Play_TriggerRespawn (would warp the host)
         case ACTOR_EN_RR:         // Like-Like: Inventory_DeleteEquipment on the host's save
         case ACTOR_EN_GELDB:      // Gerudo fighter: jail transition + player cutscene

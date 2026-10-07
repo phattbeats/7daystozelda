@@ -6,7 +6,7 @@
 
 struct EnFw;
 
-typedef void (*EnFwActionFunc)(struct EnFw* this, PlayState* play);
+typedef void (*EnFwActionFunc)(struct EnFw* en, PlayState* play);
 
 typedef struct {
     /* 0x0000 */ u8 type;
@@ -45,5 +45,12 @@ typedef struct EnFw {
     /* 0x025E */ Vec3s morphTable[11];
     /* 0x02A0 */ EnFwEffect effects[20];
 } EnFw; // size = 0x0700
+
+// Co-op mirroring (PHA-4055)
+s32 EnFw_MirrorGetAction(EnFw* en);
+void EnFw_MirrorApplyAction(EnFw* en, s32 action);
+s32 EnFw_MirrorGetAnim(EnFw* en);
+void EnFw_MirrorApplyAnim(EnFw* en, s32 anim);
+void EnFw_MirrorFinish(EnFw* en);
 
 #endif
