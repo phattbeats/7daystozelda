@@ -676,6 +676,11 @@ void EnfHG_Done(EnfHG* this, PlayState* play) {
     this->bossGndInPainting = false;
 }
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4049: soh/Network/Anchor/BossAdapters/GanondrofAdapter.cpp
+s32 Anchor_GanondrofHorseMirrored(Actor* horse);
+#endif
+
 void EnfHG_Update(Actor* thisx, PlayState* play) {
     s32 pad;
     EnfHG* this = (EnfHG*)thisx;
@@ -685,6 +690,12 @@ void EnfHG_Update(Actor* thisx, PlayState* play) {
         Actor_Kill(&this->actor);
         return;
     }
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    // The adapter streams the horse's pose from the client that runs the fight.
+    if (Anchor_GanondrofHorseMirrored(&this->actor)) {
+        return;
+    }
+#endif
     this->gallopTimer++;
     this->bossGndInPainting = true;
     for (i = 0; i < 5; i++) {
@@ -714,6 +725,10 @@ void EnfHG_Draw(Actor* thisx, PlayState* play) {
     EnfHG* this = (EnfHG*)thisx;
     BossGanondrof* bossGnd = (BossGanondrof*)this->actor.parent;
     s32 pad;
+
+    if (bossGnd == NULL) {
+        return;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);

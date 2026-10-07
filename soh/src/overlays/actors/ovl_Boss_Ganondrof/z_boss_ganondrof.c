@@ -18,6 +18,28 @@
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
      ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4049: soh/Network/Anchor/EnemyTargeting.cpp
+Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
+// PHA-4049: soh/Network/Anchor/BossAdapters/GanondrofAdapter.cpp
+void Anchor_GanondrofIntroOver(Actor* boss);
+void Anchor_GanondrofSpawned(Actor* spawned);
+#endif
+
+// The player Phantom Ganon goes after: the nearest living one in co-op, else Link.
+// Also points yawTowardsPlayer/xzDistToPlayer at it, which the attack facing reads.
+static Actor* BossGanondrof_AimTarget(BossGanondrof* this, PlayState* play) {
+    Actor* target = &GET_PLAYER(play)->actor;
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    target = Anchor_BossNearestTarget(play, &this->actor);
+    if (target != &GET_PLAYER(play)->actor) {
+        this->actor.yawTowardsPlayer = Math_Vec3f_Yaw(&this->actor.world.pos, &target->world.pos);
+        this->actor.xzDistToPlayer = Math_Vec3f_DistXZ(&this->actor.world.pos, &target->world.pos);
+    }
+#endif
+    return target;
+}
+
 typedef enum {
     /* 0 */ THROW_NORMAL,
     /* 1 */ THROW_SLOW
@@ -228,6 +250,9 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     } else {
         BossGanondrof_SetupPaintings(this);
     }
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    Anchor_GanondrofSpawned(&this->actor);
+#endif
 
     Collider_InitCylinder(play, &this->colliderBody);
     Collider_InitCylinder(play, &this->colliderSpear);
@@ -447,7 +472,7 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
     f32 targetY;
     f32 targetZ;
     Player* player = GET_PLAYER(play);
-    Actor* playerx = &player->actor;
+    Actor* playerx = BossGanondrof_AimTarget(this, play);
     Actor* thisx = &this->actor;
     f32 rand01;
     s16 i;
@@ -758,7 +783,7 @@ void BossGanondrof_SetupCharge(BossGanondrof* this, PlayState* play) {
 
 void BossGanondrof_Charge(BossGanondrof* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
-    Actor* playerx = &player->actor;
+    Actor* playerx = BossGanondrof_AimTarget(this, play);
     Actor* thisx = &this->actor;
     f32 dxCenter = thisx->world.pos.x - GND_BOSSROOM_CENTER_X;
     f32 dzCenter = thisx->world.pos.z - GND_BOSSROOM_CENTER_Z;
@@ -895,6 +920,20 @@ void BossGanondrof_SetupDeath(BossGanondrof* this, PlayState* play) {
     this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     this->work[GND_VARIANCE_TIMER] = 0;
     this->shockTimer = 50;
+}
+
+// Co-op: the same three calls the hit path makes when the killing blow lands, for a defeat
+// that was decided on another client.
+void BossGanondrof_StartDefeat(Actor* thisx, PlayState* play) {
+    BossGanondrof* this = (BossGanondrof*)thisx;
+
+    if (this->actionFunc == BossGanondrof_Death) {
+        return;
+    }
+    this->actor.colChkInfo.health = 0;
+    BossGanondrof_SetupDeath(this, play);
+    Enemy_StartFinishingBlow(play, &this->actor);
+    GameInteractor_ExecuteOnBossDefeat(&this->actor);
 }
 
 void BossGanondrof_Death(BossGanondrof* this, PlayState* play) {
@@ -1274,6 +1313,17 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     horse = (EnfHG*)this->actor.child;
     osSyncPrintf("MOVE START EEEEEEEEEEEEEEEEEEEEEE%d\n", this->actor.params);
 
+    // The horse releases the cutscene camera a while after START_FIGHT; only then is the
+    // local intro really over and the boss safe to mirror.
+    if (!this->introOver && this->actionFunc != BossGanondrof_Intro && horse != NULL && horse->cutsceneCamera == 0) {
+        this->introOver = true;
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+        if (this->actor.params == GND_REAL_BOSS) {
+            Anchor_GanondrofIntroOver(&this->actor);
+        }
+#endif
+    }
+
     this->actionFunc(this, play);
 
     for (i = 0; i < ARRAY_COUNT(this->timers); i++) {
@@ -1341,6 +1391,63 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
         Lights_PointNoGlowSetInfo(&this->lightInfo, this->spearTip.x, this->spearTip.y, this->spearTip.z, 255, 255, 255,
                                   200);
     }
+}
+
+// Co-op: the effects the real Update makes every frame that nothing else on a mirror
+// does (the spear glitter, the stun shock, the spear light). action: 1 = neutral
+// float (green glitter), 2 = charge (the spiral). The mirror's skeleton is posed from
+// the stream, so spearTip is current from the last draw.
+void BossGanondrof_MirrorUpdate(Actor* thisx, PlayState* play, s32 action) {
+    BossGanondrof* this = (BossGanondrof*)thisx;
+    s16 i;
+    Vec3f pos;
+    Vec3f vel = { 0.0f, 0.0f, 0.0f };
+    Vec3f accel = { 0.0f, 0.0f, 0.0f };
+
+    this->work[GND_VARIANCE_TIMER]++;
+    if (action == 1 && (this->work[GND_VARIANCE_TIMER] & 1) == 0) {
+        for (i = 0; i < 3; i++) {
+            pos.x = Rand_CenteredFloat(20.0f) + this->spearTip.x;
+            pos.y = Rand_CenteredFloat(20.0f) + this->spearTip.y;
+            pos.z = Rand_CenteredFloat(20.0f) + this->spearTip.z;
+            accel.y = -0.08f;
+            EffectSsFhgFlash_SpawnLightBall(play, &pos, &vel, &accel, (s16)(Rand_ZeroOne() * 80.0f) + 150,
+                                            FHGFLASH_LIGHTBALL_GREEN);
+        }
+    } else if (action == 2) {
+        Vec3f baseOffset = { 0.0f, 10.0f, 0.0f };
+        Vec3f offset;
+
+        for (i = 0; i < 10; i++) {
+            Matrix_Push();
+            Matrix_RotateY((this->actor.shape.rot.y / (f32)0x8000) * M_PI, MTXMODE_NEW);
+            Matrix_RotateX((this->actor.shape.rot.x / (f32)0x8000) * M_PI, MTXMODE_APPLY);
+            Matrix_RotateZ((this->work[GND_PARTICLE_ANGLE] / (f32)0x8000) * M_PI, MTXMODE_APPLY);
+            Matrix_MultVec3f(&baseOffset, &offset);
+            Matrix_Pop();
+            pos.x = this->spearTip.x + offset.x;
+            pos.y = this->spearTip.y + offset.y;
+            pos.z = this->spearTip.z + offset.z;
+            vel.x = (offset.x * 500.0f) / 1000.0f;
+            vel.y = (offset.y * 500.0f) / 1000.0f;
+            vel.z = (offset.z * 500.0f) / 1000.0f;
+            accel.x = (offset.x * -50.0f) / 1000.0f;
+            accel.y = (offset.y * -50.0f) / 1000.0f;
+            accel.z = (offset.z * -50.0f) / 1000.0f;
+            EffectSsFhgFlash_SpawnLightBall(play, &pos, &vel, &accel, 150, i % 7);
+            this->work[GND_PARTICLE_ANGLE] += 0x1A5C;
+        }
+    }
+
+    if (this->shockTimer != 0) {
+        this->shockTimer--;
+        for (i = 0; i < 7; i++) {
+            EffectSsFhgFlash_SpawnShock(play, &this->actor, &this->actor.world.pos, 45, FHGFLASH_SHOCK_PG);
+        }
+    }
+
+    Lights_PointNoGlowSetInfo(&this->lightInfo, this->spearTip.x, this->spearTip.y, this->spearTip.z, 255, 255, 255,
+                              200);
 }
 
 s32 BossGanondrof_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {

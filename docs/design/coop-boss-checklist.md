@@ -48,7 +48,7 @@ in a two-client live test, with screenshots and logs. The rig is in
 | Gohma | M3, PHA-4023 | Done (warp spot and crash handoff: PHA-4046) |
 | King Dodongo | PHA-4047 | **Done**, see below |
 | Barinade | PHA-4048 | **Done**, see below |
-| Phantom Ganon | PHA-4049 | Not started |
+| Phantom Ganon | PHA-4049 | **Done**, see below |
 | Volvagia | PHA-4050 | **Done**, see below |
 | Morpha | PHA-4051 | **Done**, see below |
 | Bongo Bongo | PHA-4052 | Not started |
@@ -126,3 +126,25 @@ Known limits:
 | Live test | | No desync canary and no crash in either log after the fixes. |
 
 Open: defeat while a victim is held, and the bandwidth of the `jt` arrays, were not measured.
+
+## Phantom Ganon (PHA-4049)
+
+Boss_Ganondrof plus its horse (En_fHG, the painting-ride phase) and the energy ball (En_Fhg_Fire, params 50).
+
+| Row | How | Live test (2026-10-07, two local clients) |
+|---|---|---|
+| Phases | INTRO / FIGHT / DEFEATED from `deathState` and a new `introOver` field (set when the local intro and the horse's cutscene finish). `ShouldMirror` is false until the local intro is over and the stream says FIGHT. `Anchor_GanondrofIntroOver` marks the end. | Both clients ran the full intro in lockstep, then B streamed and A mirrored. |
+| Extras | `flyMode`, action code, leg and arm angles, eye brightness and alpha, invincibility and shock timers, flags, the horse pose (`hz`) and a ring of recent spawn events (`ev`) that the mirror replays (lightning, spear light). `GND_PositionCollider` re-offsets the body cylinder on the mirror, as `BossGanondrof_Update` does by hand. Nothing that spawns from Draw is streamed. | Same pose, horse and lightning on both screens; `ringSeq` equalled `replaySeq`. |
+| Painting phase | Damage counts only for arrow, slingshot and hookshot flags (`0x1F8A4`) while the body collider is exposed. A mirror's hit is forwarded and the host applies it (health -2, `hitTimer`, invincibility), then streams the result. | Arrow hits from A and from B took 30 -> 28 -> 26 -> 24 on both clients; at 24 both switched to NEUTRAL together. |
+| Neutral phase | Sword hits do damage, from either player. | 24 -> 0 with alternating swings from A and B, health identical on both at every step. |
+| Defeat | On FIGHT -> DEFEATED the mirror runs `BossGanondrof_StartDefeat` (his own SetupDeath) and returns true. `OnRemoteDefeat` covers a missed edge. A client still in its intro defers the defeat. | Killing blow on the host: both clients ran the death cutscene and each got one blue warp, one heart container and the clear flag. |
+| Children | Tracked: the reflected energy ball (EN_FHG_FIRE params 50). Excluded as local effects (`IsTrackingExcluded`): every other EN_FHG_FIRE (lightning, spear light, warp flashes) and the fake bosses (BOSS_GANONDROF params >= 10); each machine spawns its own from the streamed state and events. | Ball position on A followed B's. No double spawns seen. |
+| Aggro | No puppet swap (the intro, the horse ride and the death read GET_PLAYER). `BossGanondrof_AimTarget` and the ball's aim feed attacks to the nearest living player on the authority. The mirror never aims; it follows the stream. | Ball and lightning aimed at the nearer player. |
+| Reflected ball | The ball is authority-driven. A mirror's sword hit on the ball becomes a hit request, and the host reflects it exactly as if it had struck the ball itself. In co-op the ball has 1 hit point so a forwarded hit reflects it. | Reflected by B (host): BLUE, flew back, boss entered RETURN, ball returned. Reflected by A (mirror) with the ball in flight: B's ball turned BLUE and flew back to the boss. |
+| Live test | | Intro -> painting phase -> neutral -> defeat on two clients: no desync, no crash, both players landed damage and took hits. |
+
+Known limits:
+- The ball's colour on the mirror stays green after a reflect (the mode is not streamed); the flight and the hit are correct.
+- A mirror's reflect needs the ball to still be in flight when the request reaches the host; with a very short throw distance and rig latency (about 0.6 s) it can land too late. At normal arena distances it worked.
+- Not exercised live: a killing blow landed by the mirror (the same forwarded-hit and edge paths as above), and a host leaving mid-fight.
+- Warping Link outside the arena floor reloads the room and restarts the intro, as in the vanilla game.

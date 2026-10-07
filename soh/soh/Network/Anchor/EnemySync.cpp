@@ -302,7 +302,8 @@ static s16* ProjectileTimer(Actor* actor) {
 static bool IsTrackingExcluded(Actor* actor) {
     return (actor->id == ACTOR_EN_GOMA && (uint16_t)actor->params >= 6) || actor->id == ACTOR_EN_BDFIRE ||
            (actor->id == ACTOR_BOSS_VA && actor->params >= (int16_t)BARINADE_PARAM_STUMP_1) ||
-           actor->id == ACTOR_EN_VB_BALL;
+           actor->id == ACTOR_EN_VB_BALL || (actor->id == ACTOR_BOSS_GANONDROF && (uint16_t)actor->params >= 10) ||
+           (actor->id == ACTOR_EN_FHG_FIRE && (uint16_t)actor->params != 50);
 }
 
 // Barinade (PHA-4048): one actor id, param-split parts. Parts spawned while
@@ -1015,6 +1016,9 @@ static void SubmitColliders(Actor* actor, TrackedState& st, RemoteEnemyState& r)
         if (col->shape == COLSHAPE_CYLINDER) {
             // Repositioned from the streamed world.pos (ApplyPose ran first) — accurate.
             Collider_UpdateCylinder(actor, (ColliderCylinder*)col);
+            if (const ActorSyncAdapter* ad = GetAdapter(actor->id); ad != nullptr && ad->PositionCollider != nullptr) {
+                ad->PositionCollider(actor, col);
+            }
         } else if (col->shape == COLSHAPE_QUAD) {
             // Quad AT/AC vertices are AI-set; the suppressed mirror never recomputes
             // them, so drive them from the stream. A quad that qualifies for AT/AC

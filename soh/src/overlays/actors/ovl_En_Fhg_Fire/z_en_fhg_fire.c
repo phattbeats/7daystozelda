@@ -13,6 +13,22 @@
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4049: soh/Network/Anchor/EnemyTargeting.cpp
+Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
+// PHA-4049: soh/Network/Anchor/BossAdapters/GanondrofAdapter.cpp
+void Anchor_GanondrofSpawned(Actor* fire);
+#endif
+
+// The player the energy ball aims at and bursts on: the nearest living one in co-op, else Link.
+static Actor* EnFhgFire_AimTarget(PlayState* play, Actor* from) {
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    return Anchor_BossNearestTarget(play, from);
+#else
+    return &GET_PLAYER(play)->actor;
+#endif
+}
+
 typedef enum {
     /*  0 */ STRIKE_INIT,
     /* 10 */ STRIKE_BURST = 10,
@@ -84,7 +100,6 @@ void EnFhgFire_SetUpdate(EnFhgFire* this, EnFhgFireUpdateFunc updateFunc) {
 void EnFhgFire_Init(Actor* thisx, PlayState* play) {
     s32 pad;
     EnFhgFire* this = (EnFhgFire*)thisx;
-    Player* player = GET_PLAYER(play);
 
     ActorShape_Init(&this->actor.shape, 0.0f, NULL, 0.0f);
     if ((this->actor.params == FHGFIRE_LIGHTNING_SHOCK) || (this->actor.params == FHGFIRE_LIGHTNING_BURST) ||
@@ -148,9 +163,12 @@ void EnFhgFire_Init(Actor* thisx, PlayState* play) {
         this->work[FHGFIRE_TIMER] = 70;
         this->work[FHGFIRE_FX_TIMER] = 2;
 
-        dxL = player->actor.world.pos.x - this->actor.world.pos.x;
-        dyL = player->actor.world.pos.y + 30.0f - this->actor.world.pos.y;
-        dzL = player->actor.world.pos.z - this->actor.world.pos.z;
+        {
+            Actor* aim = EnFhgFire_AimTarget(play, &this->actor);
+            dxL = aim->world.pos.x - this->actor.world.pos.x;
+            dyL = aim->world.pos.y + 30.0f - this->actor.world.pos.y;
+            dzL = aim->world.pos.z - this->actor.world.pos.z;
+        }
         this->actor.world.rot.y = Math_FAtan2F(dxL, dzL) * (0x8000 / M_PI);
         dxzL = sqrtf(SQ(dxL) + SQ(dzL));
         this->actor.world.rot.x = Math_FAtan2F(dyL, dxzL) * (0x8000 / M_PI);
@@ -160,7 +178,14 @@ void EnFhgFire_Init(Actor* thisx, PlayState* play) {
         this->lightNode = LightContext_InsertLight(play, &play->lightCtx, &this->lightInfo);
         Lights_PointNoGlowSetInfo(&this->lightInfo, this->actor.world.pos.x, this->actor.world.pos.y,
                                   this->actor.world.pos.z, 255, 255, 255, 255);
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+        // The ball has no health of its own; co-op only broadcasts a dynamic spawn that has some.
+        this->actor.colChkInfo.health = 1;
+#endif
     }
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    Anchor_GanondrofSpawned(&this->actor);
+#endif
 }
 
 void EnFhgFire_Destroy(Actor* thisx, PlayState* play) {
@@ -378,6 +403,10 @@ void EnFhgFire_SpearLight(EnFhgFire* this, PlayState* play) {
 
     osSyncPrintf("yari hikari 1\n");
     bossGnd = (BossGanondrof*)this->actor.parent;
+    if (bossGnd == NULL) {
+        Actor_Kill(&this->actor);
+        return;
+    }
     if ((this->work[FHGFIRE_VARIANCE_TIMER] % 2) != 0) {
         Actor_SetScale(&this->actor, 6.0f);
     } else {
@@ -422,6 +451,12 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
     u8 killMode = BALL_FIZZLE;
     u8 canBottleReflect1;
     Player* player = GET_PLAYER(play);
+    Actor* aim = EnFhgFire_AimTarget(play, &this->actor);
+
+    if (this->actor.parent == NULL) {
+        Actor_Kill(&this->actor);
+        return;
+    }
 
     if (this->work[FHGFIRE_KILL_TIMER] != 0) {
         this->work[FHGFIRE_KILL_TIMER]--;
@@ -436,9 +471,9 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         dxPG = bossGnd->targetPos.x - this->actor.world.pos.x;
         dyPG = bossGnd->targetPos.y - this->actor.world.pos.y;
         dzPG = bossGnd->targetPos.z - this->actor.world.pos.z;
-        dxL = player->actor.world.pos.x - this->actor.world.pos.x;
-        dyL = player->actor.world.pos.y + 40.0f - this->actor.world.pos.y;
-        dzL = player->actor.world.pos.z - this->actor.world.pos.z;
+        dxL = aim->world.pos.x - this->actor.world.pos.x;
+        dyL = aim->world.pos.y + 40.0f - this->actor.world.pos.y;
+        dzL = aim->world.pos.z - this->actor.world.pos.z;
         Actor_UpdateVelocityXYZ(&this->actor);
         Actor_UpdatePos(&this->actor);
         if (this->work[FHGFIRE_VARIANCE_TIMER] & 1) {
@@ -611,7 +646,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                 }
                 if (killMode == BALL_BURST) {
                     Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x,
-                                       player->actor.world.pos.y + 20.0f, this->actor.world.pos.z, 0xC8, 0, 0,
+                                       aim->world.pos.y + 20.0f, this->actor.world.pos.z, 0xC8, 0, 0,
                                        FHGFIRE_LIGHTNING_BURST);
                 }
                 bossGnd->flyMode = GND_FLY_NEUTRAL;
@@ -642,6 +677,11 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
 void EnFhgFire_PhantomWarp(EnFhgFire* this, PlayState* play) {
     EnfHG* horse = (EnfHG*)this->actor.parent;
     f32 scrollDirection;
+
+    if (horse == NULL) {
+        Actor_Kill(&this->actor);
+        return;
+    }
 
     this->fwork[FHGFIRE_WARP_TEX_1_X] += 25.0f * this->fwork[FHGFIRE_WARP_TEX_SPEED];
     this->fwork[FHGFIRE_WARP_TEX_1_Y] -= 40.0f * this->fwork[FHGFIRE_WARP_TEX_SPEED];

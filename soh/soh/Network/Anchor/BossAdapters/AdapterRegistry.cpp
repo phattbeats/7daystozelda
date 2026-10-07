@@ -9,6 +9,7 @@ void RegisterEnFloormasAdapter();
 void RegisterBarinadeAdapter();
 void RegisterVolvagiaAdapter();
 void RegisterMorphaAdapter();
+void RegisterGanondrofAdapter();
 
 namespace EnemySync {
 
@@ -37,6 +38,7 @@ void RegisterBuiltInAdapters() {
     RegisterBarinadeAdapter();
     RegisterVolvagiaAdapter();
     RegisterMorphaAdapter();
+    RegisterGanondrofAdapter();
 }
 
 } // namespace EnemySync

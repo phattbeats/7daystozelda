@@ -48,6 +48,9 @@ struct ActorSyncAdapter {
     // defeat? Null = yes. Multi-part bosses (Barinade) return false for parts,
     // whose deaths replay as ordinary kills.
     bool (*HandlesDefeat)(Actor* actor) = nullptr;
+    // Mirror: runs right after the cylinder colliders are repositioned from the
+    // streamed world.pos, for bosses whose Update offsets a collider by hand.
+    void (*PositionCollider)(Actor* actor, Collider* col) = nullptr;
 };
 
 namespace EnemySync {

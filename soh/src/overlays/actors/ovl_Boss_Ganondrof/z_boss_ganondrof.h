@@ -89,6 +89,7 @@ typedef struct BossGanondrof {
     /* 0x01C8 */ u8 shockTimer;
     /* 0x01C9 */ u8 flyMode;
     /* 0x01CA */ u8 returnSuccess;
+    /* 0x01CB */ u8 introOver;
     /* 0x01CC */ f32 fwork[GND_FLOAT_COUNT];
     /* 0x0200 */ Vec3f spearTip;
     /* 0x020C */ Vec3f targetPos;
