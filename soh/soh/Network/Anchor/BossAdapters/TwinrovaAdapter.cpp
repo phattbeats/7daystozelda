@@ -671,7 +671,14 @@ const char* anchor_test_tw(int cmd, int arg) {
             if (a->id == ACTOR_BOSS_TW) {
                 tws++;
                 uint16_t p = (uint16_t)a->params;
-                if (p == TW_FIRE_BLAST || p == TW_ICE_BLAST) blasts++;
+                if (p == TW_FIRE_BLAST || p == TW_ICE_BLAST) {
+                    blasts++;
+                    BossTw* bt = (BossTw*)a;
+                    j["blast"] = { { "params", p }, { "cs1", bt->csState1 }, { "t0", bt->timers[0] },
+                                   { "pos", { a->world.pos.x, a->world.pos.y, a->world.pos.z } },
+                                   { "refl", bt->anchorReflector }, { "sup", EnemySync::IsSuppressed(a) },
+                                   { "key", (unsigned long long)EnemySync::KeyForActor(a) } };
+                }
                 else if (p == TW_FIRE_BLAST_GROUND || p == TW_ICE_BLAST_GROUND) pools++;
                 else if (p >= TW_DEATHBALL_KOTAKE) balls++;
             }
@@ -747,7 +754,13 @@ const char* anchor_test_tw(int cmd, int arg) {
         p["key"] = (unsigned long long)EnemySync::KeyForActor(&t->actor);
         j[names[i]] = p;
     }
-    j["linkYaw"] = link->actor.shape.rot.y;
+    {
+        Vec3s sd;
+        Matrix_MtxFToYXZRotS(&link->shieldMf, &sd, 0);
+        j["linkYaw"] = link->actor.shape.rot.y;
+        j["shieldDir"] = { sd.x, sd.y, sd.z };
+        j["bodyPart"] = { link->bodyPartsPos[15].x, link->bodyPartsPos[15].y, link->bodyPartsPos[15].z };
+    }
     j["ringSeq"] = sTw.nextSeq;
     j["replaySeq"] = sTw.replayed;
     j["pending"] = sTw.pendingDefeat;
