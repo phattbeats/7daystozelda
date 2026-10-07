@@ -20,6 +20,7 @@
 extern "C" {
 #include "variables.h"
 #include "functions.h"
+#include "src/overlays/actors/ovl_En_Floormas/z_en_floormas.h"
 
 extern PlayState* gPlayState;
 }
@@ -55,6 +56,12 @@ static constexpr size_t MAX_TRACKED_COLLIDERS = 12;
 static constexpr uint64_t DYNAMIC_KEY_BIT = 1ULL << 63;
 // Living dynamic spawns re-broadcast on this cadence so mirrors self-heal.
 static constexpr uint64_t SPAWN_REBROADCAST_TICKS = 60;
+// Marks a key derived from another enemy's key (a Floormaster's two small
+// hands, keyed off the big hand). Bits 56-57 carry the slot. Free in both key
+// shapes: PackKey stops at bit 55, dynamic keys at bit 55 plus bit 63.
+static constexpr uint64_t LINKED_KEY_BIT = 1ULL << 62;
+// En_Floormas params of the small hands its Init spawns.
+static constexpr uint16_t FLOORMAS_SPAWN_SMALL = 0x10;
 
 // Collider classes an actor submitted this frame (authority side), streamed so
 // the mirror only re-submits classes the real AI is currently exposing.
@@ -98,6 +105,7 @@ struct TrackedState {
     bool needsSpawnBroadcast = false; // authority: announce this dynamic spawn
     bool projectile = false;          // whitelisted enemy projectile: fire-and-forget replica, never streamed/mirrored
     bool reflected = false;           // projectile: bounced off a shield (here or on a peer); announced once
+    bool linked = false;              // key derived from a group leader's (LINKED_KEY_BIT): never spawn-broadcast
     uint8_t phase = 0;                // last adapter phase seen/applied
 };
 
@@ -289,11 +297,91 @@ static bool IsTrackingExcluded(Actor* actor) {
     return (actor->id == ACTOR_EN_GOMA && (uint16_t)actor->params >= 6) || actor->id == ACTOR_EN_BDFIRE;
 }
 
-// En_Floormas's split/merge logic manipulates parent/child links across three
-// actors with unguarded derefs — mirroring it risks crashes on stream loss.
-// It stays permanently local (M1 shared-HP still applies).
-static bool IsMirrorBlocked(Actor* actor) {
+// A Floormaster is three En_Floormas actors linked into a parent/child ring by
+// the big hand's Init (z_en_floormas.c), and its split/merge code derefs those
+// links unguarded every frame. They are created together and, in vanilla, only
+// ever killed together (EnFloormas_SetupSmWait). Sync must keep it that way:
+// every kill sync performs on a Floormaster goes through KillFloormasGroup, so no
+// hand is ever left pointing at a freed one (PHA-4045).
+static bool IsFloormas(Actor* actor) {
     return actor->id == ACTOR_EN_FLOORMAS;
+}
+
+// The other two hands of a Floormaster ring, or nullptr where a pointer doesn't
+// lead to a live tracked hand. Looked up in `tracked` before any deref: tracked
+// entries are erased on destroy, so a hit means the actor still exists.
+static void FloormasHands(Actor* actor, Actor* out[2]) {
+    Actor* links[2] = { actor->parent, actor->child };
+    for (int i = 0; i < 2; i++) {
+        out[i] = nullptr;
+        if (links[i] != nullptr && links[i] != actor && tracked.contains(links[i]) &&
+            links[i]->id == ACTOR_EN_FLOORMAS) {
+            out[i] = links[i];
+        }
+    }
+}
+
+// Kills the whole ring in one frame, so none of its updates runs against a
+// freed partner. Quiet (deathCooldown): the authority's own ring broadcasts its
+// deaths, and its last hand rolls its own drop.
+static void KillFloormasGroup(Actor* actor) {
+    Actor* hands[2];
+    FloormasHands(actor, hands);
+    Actor* members[3] = { actor, hands[0], hands[1] };
+    for (Actor* m : members) {
+        auto it = m != nullptr ? tracked.find(m) : tracked.end();
+        if (it == tracked.end() || m->update == NULL) {
+            continue;
+        }
+        it->second.deathCooldown = DEATH_COOLDOWN_FRAMES;
+        it->second.pendingKillFrames = 0;
+        Actor_Kill(m);
+    }
+    ESYNC_LOG("[EnemySync] FLOORMAS group kill key={:#x}", KeyForActor(actor));
+}
+
+// Keys a Floormaster's two small hands off the big hand's key. Their own keys
+// came from wherever the big hand's Init ran (room-load occurrence counters, or
+// a local dynamic key for a runtime spawn), which a peer that spawned the big
+// hand from a packet can't reproduce; a derived key is the same everywhere.
+// Runs again whenever the big hand is re-keyed.
+static void LinkFloormasGroup(Actor* big) {
+    auto bit = tracked.find(big);
+    if (!IsFloormas(big) || bit == tracked.end() || bit->second.spawnParams == FLOORMAS_SPAWN_SMALL) {
+        return;
+    }
+    uint64_t bigKey = bit->second.key;
+    Actor* hands[2];
+    FloormasHands(big, hands);
+    for (int slot = 0; slot < 2; slot++) {
+        if (hands[slot] == nullptr) {
+            continue;
+        }
+        TrackedState& st = tracked[hands[slot]];
+        uint64_t key = bigKey | LINKED_KEY_BIT | ((uint64_t)(slot + 1) << 56);
+        if (st.key == key) {
+            continue;
+        }
+        auto kit = keyToActor.find(st.key);
+        if (kit != keyToActor.end() && kit->second == hands[slot]) {
+            keyToActor.erase(kit);
+        }
+        // Give back the occurrence slot the hand took, as ReKeyDynamic does.
+        if (!st.dynamicKey && !st.linked) {
+            uint32_t comboKey = ((uint32_t)(uint16_t)hands[slot]->id << 16) | st.spawnParams;
+            auto sc = spawnCounts.find(comboKey);
+            if (sc != spawnCounts.end() && sc->second > 0) {
+                sc->second--;
+            }
+        }
+        st.key = key;
+        st.linked = true;
+        st.dynamicKey = false;
+        st.remoteSpawned = false;
+        st.needsSpawnBroadcast = false;
+        keyToActor[key] = hands[slot];
+        ESYNC_LOG("[EnemySync] FLOORMAS link slot={} key={:#x}", slot + 1, key);
+    }
 }
 
 template <typename F> static void ForEachColliderInfo(Collider* collider, F fn) {
@@ -545,8 +633,9 @@ Actor* FindActorForPacket(uint64_t key, int16_t actorId, Vec3f homePos) {
     }
 
     // Dynamic keys are exact by construction — a miss just means the spawn
-    // packet hasn't been processed (or the enemy already despawned).
-    if (key & DYNAMIC_KEY_BIT) {
+    // packet hasn't been processed (or the enemy already despawned). Linked keys
+    // too: their low bits are the leader's params, not the actor's own.
+    if (key & (DYNAMIC_KEY_BIT | LINKED_KEY_BIT)) {
         ESYNC_LOG("[EnemySync] Unmapped dynamic key={:#x} id={}", key, actorId);
         return nullptr;
     }
@@ -657,6 +746,16 @@ void ApplyRemoteDeath(Actor* actor, Actor* attacker, bool permanent) {
     TrackedState& state = it->second;
     ESYNC_LOG("[EnemySync] DEATH apply id={} cooldown={} alive={} permanent={}", actor->id, state.deathCooldown,
               actor->update != NULL, permanent);
+    if (IsFloormas(actor)) {
+        // A hand's own defeat (non-permanent) is a state the stream already
+        // carries; latching it local would split this hand off the authority's
+        // ring for good. The authority's Actor_Kill only comes once the whole
+        // ring is done, and it takes the whole ring here too.
+        if (permanent && state.deathCooldown == 0) {
+            KillFloormasGroup(actor);
+        }
+        return;
+    }
     if (state.deathCooldown > 0) {
         return; // already died locally (or handled a remote death) within the echo window
     }
@@ -964,13 +1063,13 @@ static void ApplyPose(Actor* actor, TrackedState& st, RemoteEnemyState& r) {
 // be killed and freed on an earlier actor-category pass of this same frame, so a
 // cross-frame raw pointer could dangle. Each clientId re-resolves to the live puppet
 // and is re-validated with the same liveness predicate used to build the cache.
-static void OverridePlayerPerception(Actor* actor) {
+static Actor* OverridePlayerPerception(Actor* actor) {
     if (gPlayState == NULL || Anchor::Instance == nullptr) {
-        return;
+        return nullptr;
     }
     Player* localPlayer = GET_PLAYER(gPlayState);
     if (localPlayer == NULL) {
-        return;
+        return nullptr;
     }
 
     // Baseline is the local player — identical to what the engine just computed.
@@ -1026,6 +1125,42 @@ static void OverridePlayerPerception(Actor* actor) {
     actor->yDistToPlayer = bestY;
     actor->xyzDistToPlayerSq = bestSq;
     actor->yawTowardsPlayer = Actor_WorldYawTowardActor(actor, best);
+    return best;
+}
+
+// Puppets carry no collider in co-op (DummyPlayer_Update returns before
+// submitting one unless PvP is on), so a Floormaster hand jumping at a
+// teammate never gets the OC contact EnFloormas_JumpAtLink grabs on. Give it
+// the contact its cylinder would have made with that player's body: the same
+// overlap test CollisionCheck_OC runs, against a child/adult Link-sized
+// cylinder at the puppet. GET_PLAYER is the puppet during this update
+// (EnemyTargeting swap), so the grab then routes to that player.
+static void SynthesizeFloormasPuppetContact(Actor* actor, Actor* target) {
+    if (target == nullptr || target == &GET_PLAYER(gPlayState)->actor ||
+        !EnFloormas_MirrorIsJumpingAtLink((EnFloormas*)actor)) {
+        return;
+    }
+    bool isPuppet = false;
+    for (auto& [cid, c] : Anchor::Instance->clients) {
+        isPuppet |= !c.self && c.player != nullptr && &c.player->actor == target;
+    }
+    if (!isPuppet) {
+        return;
+    }
+    ColliderCylinder* col = &((EnFloormas*)actor)->collider;
+    if (!(col->base.ocFlags1 & OC1_ON)) {
+        return;
+    }
+    Player* puppet = (Player*)target;
+    f32 bodyRadius = puppet->cylinder.dim.radius > 0 ? puppet->cylinder.dim.radius : 12.0f;
+    f32 bodyHeight = puppet->cylinder.dim.height > 0 ? puppet->cylinder.dim.height : 50.0f;
+    f32 handBottom = actor->world.pos.y + col->dim.yShift;
+    f32 handTop = handBottom + col->dim.height;
+    if (Actor_WorldDistXZToActor(actor, target) < col->dim.radius + bodyRadius && handTop > target->world.pos.y &&
+        handBottom < target->world.pos.y + bodyHeight) {
+        col->base.ocFlags1 |= OC1_HIT;
+        col->base.oc = target;
+    }
 }
 
 // The mirror step. Runs in the actor's own update slot (ShouldActorUpdate hook):
@@ -1055,9 +1190,12 @@ static void OnShouldEnemyUpdate(Actor* actor, bool* should) {
     // is exactly the case we care about. Guards: authority only; at least one puppet
     // present (implicit local + a cached puppet ⇒ the design's targets.size() > 1);
     // not mid death-handoff; not a projectile (belt-and-suspenders — the early return
-    // above already excludes them); never the permanently-local Floormaster.
-    if (IsLocalAuthority() && !sPerceptionTargets.empty() && !st.dying && !st.projectile && !IsMirrorBlocked(actor)) {
-        OverridePlayerPerception(actor);
+    // above already excludes them).
+    if (IsLocalAuthority() && !sPerceptionTargets.empty() && !st.dying && !st.projectile) {
+        Actor* target = OverridePlayerPerception(actor);
+        if (IsFloormas(actor)) {
+            SynthesizeFloormasPuppetContact(actor, target);
+        }
     }
 
     if (cachedAuthorityId == UINT32_MAX || IsLocalAuthority()) {
@@ -1068,8 +1206,8 @@ static void OnShouldEnemyUpdate(Actor* actor, bool* should) {
         }
         return; // we own the AI (or nothing is elected): run it
     }
-    if (st.dying || IsMirrorBlocked(actor)) {
-        return; // death handoff / blocklisted: local simulation runs
+    if (st.dying) {
+        return; // death handoff: local simulation runs
     }
 
     auto rs = remoteStates.find(st.key);
@@ -1385,7 +1523,7 @@ static void Tick() {
     if (IsLocalAuthority() && peerInScene) {
         nlohmann::json enemies = nlohmann::json::array();
         for (auto& [actor, st] : tracked) {
-            if (actor->update == NULL || IsMirrorBlocked(actor)) {
+            if (actor->update == NULL) {
                 st.submitMask = 0;
                 continue;
             }
@@ -1426,7 +1564,10 @@ static void Tick() {
             // keys it already knows. Projectiles are excluded from rebroadcast: they
             // are fire-and-forget (announced once via needsSpawnBroadcast), and a
             // re-announce after the other side's copy already died would resurrect it.
-            bool rebroadcast = st.dynamicKey && !st.projectile && (tickCounter % SPAWN_REBROADCAST_TICKS) == 0;
+            // Linked keys (Floormaster hands) are never announced: every client's
+            // copy of the leader spawns its own hands in Init.
+            bool rebroadcast = st.dynamicKey && !st.projectile && !st.linked &&
+                               (tickCounter % SPAWN_REBROADCAST_TICKS) == 0;
             // Relax the health>0 gate for projectiles (they spawn with health 0).
             if ((st.needsSpawnBroadcast || rebroadcast) && (actor->colChkInfo.health > 0 || st.projectile)) {
                 st.needsSpawnBroadcast = false;
@@ -1471,7 +1612,7 @@ static void Tick() {
         uint64_t freshCount = 0;
         for (auto& [actor, st] : tracked) {
             st.submitMask = 0;
-            if (actor->update == NULL || st.dying || IsMirrorBlocked(actor)) {
+            if (actor->update == NULL || st.dying) {
                 continue;
             }
             auto rs = remoteStates.find(st.key);
@@ -1559,6 +1700,26 @@ static void OnEnemyActorInit(Actor* actor) {
               (uint16_t)actor->params, st.key, st.prevHealth, st.colliders.size(),
               st.skelAnime != nullptr ? st.skelAnime->limbCount : 0);
 
+    if (IsFloormas(actor)) {
+        // The hands' Inits ran inside this one's; they're tracked already.
+        LinkFloormasGroup(actor);
+        // A hand alone can't be in the ledger (only the ring dies, and it
+        // reaches this point first as the big hand, which carries the ledger
+        // entry): kill the ring as one.
+        if (st.spawnParams != FLOORMAS_SPAWN_SMALL) {
+            auto ledger = pendingRemoteKills.find(st.key);
+            if (ledger != pendingRemoteKills.end()) {
+                ESYNC_LOG("[EnemySync] ROSTER ledger-kill floormaster key={:#x}", st.key);
+                pendingRemoteKills.erase(ledger);
+                for (uint64_t slot = 1; slot <= 2; slot++) {
+                    pendingRemoteKills.erase(st.key | LINKED_KEY_BIT | (slot << 56));
+                }
+                KillFloormasGroup(actor);
+            }
+        }
+        return;
+    }
+
     // Death ledger: this enemy was killed remotely while its room was unloaded.
     // Now that its copy exists, apply the kill quietly (same as ReconcileRoster's
     // ghost-kill: set the cooldown so OnEnemyActorKill won't re-broadcast, no drops).
@@ -1591,6 +1752,9 @@ static void ReKeyDynamic(Actor* actor, TrackedState& st, uint64_t newKey, bool r
     st.needsSpawnBroadcast = !remoteSpawned;
     keyToActor[newKey] = actor;
     ESYNC_LOG("[EnemySync] DYNKEY id={} key={:#x} remote={}", actor->id, newKey, remoteSpawned);
+    if (IsFloormas(actor)) {
+        LinkFloormasGroup(actor);
+    }
 }
 
 // Fires inside Actor_Spawn. Room-listed actors spawn while numSetupActors != 0
@@ -1609,6 +1773,9 @@ static void OnEnemyActorSpawn(Actor* actor) {
     }
 
     auto it = tracked.find(actor);
+    if (it != tracked.end() && it->second.linked) {
+        return; // a Floormaster hand, keyed off its big hand already
+    }
     if (it != tracked.end()) {
         ReKeyDynamic(actor, it->second, NextDynamicKey(), false);
     } else {
@@ -1643,6 +1810,7 @@ void HandleRemoteSpawn(uint64_t key, int16_t actorId, uint16_t params, Vec3f pos
         it->second.remoteSpawned = true;
         it->second.needsSpawnBroadcast = false;
         keyToActor[key] = actor;
+        LinkFloormasGroup(actor);
     } else {
         pendingDynamicKeys[actor] = { key, true }; // deferred init claims it
     }
@@ -1670,6 +1838,10 @@ void HandleRemoteDespawn(uint64_t key) {
         st->second.deathCooldown = DEATH_COOLDOWN_FRAMES; // removal, not a death: never re-broadcast
     }
     ESYNC_LOG("[EnemySync] DESPAWN rx key={:#x}", key);
+    if (IsFloormas(it->second)) {
+        KillFloormasGroup(it->second);
+        return;
+    }
     Actor_Kill(it->second);
 }
 
@@ -1763,7 +1935,26 @@ void ReconcileRoster(int16_t roomNum, const nlohmann::json& entries) {
             // Projectiles never appear in a roster (BuildRoster skips them), so an
             // absent key must not be read as "authority killed it" — skip them here
             // too, or a mirror's live local copy would be ghost-killed on room entry.
-            if (actor->room != roomNum || st.projectile || st.dying || actor->update == NULL || IsMirrorBlocked(actor)) {
+            if (actor->room != roomNum || st.projectile || st.dying || actor->update == NULL) {
+                continue;
+            }
+            if (IsFloormas(actor)) {
+                // Health streams; only a whole ring the authority no longer has dies.
+                Actor* hands[2];
+                FloormasHands(actor, hands);
+                bool anyAlive = false;
+                for (Actor* m : { actor, hands[0], hands[1] }) {
+                    auto mt = m != nullptr ? tracked.find(m) : tracked.end();
+                    if (mt == tracked.end()) {
+                        continue;
+                    }
+                    auto ma = authority.find(mt->second.key);
+                    anyAlive |= ma != authority.end() && ma->second.first;
+                }
+                if (!anyAlive) {
+                    ESYNC_LOG("[EnemySync] ROSTER ghost-kill floormaster key={:#x}", st.key);
+                    KillFloormasGroup(actor);
+                }
                 continue;
             }
             auto it = authority.find(st.key);
@@ -1864,6 +2055,15 @@ static void OnEnemyActorUpdate(Actor* actor) {
             // (pendingKillFrames, above). prevHealth is set alongside health so the
             // HP-drop detector doesn't re-broadcast a spurious ENEMY_HIT echo.
             uint8_t resid = state.expectedRemoteDamage;
+            if (IsFloormas(actor)) {
+                // Floormasters take hits through the plain AC path; one that
+                // went unconsumed landed while the hand was invulnerable here
+                // (hovering, splitting, merging) and the sword bounced. Forcing
+                // the health down would leave a 0-HP hand that never splits.
+                ESYNC_LOG("[EnemySync] expired debt dropped (floormaster) key={:#x} dmg={}", state.key, resid);
+                state.expectedRemoteDamage = 0;
+                return;
+            }
             ESYNC_LOG("[EnemySync] expired debt force-applied id={} key={:#x} dmg={}", actor->id, state.key, resid);
             actor->colChkInfo.health = (actor->colChkInfo.health > resid) ? actor->colChkInfo.health - resid : 0;
             state.prevHealth = actor->colChkInfo.health;
@@ -1918,6 +2118,13 @@ static void OnEnemyDefeated(Actor* actor) {
 
     // The enemy is visibly playing its death now — never force-kill on top of it
     state.pendingKillFrames = 0;
+
+    // A Floormaster hand's defeat is a shrink inside a ring that lives on (the
+    // stream carries it). The cooldown would also pull the hand out of the
+    // stream; only the ring's final Actor_Kill is a death to broadcast.
+    if (IsFloormas(actor)) {
+        return;
+    }
 
     if (state.deathCooldown > 0) {
         return; // defeat caused by a remote death we already applied — don't echo
@@ -2248,6 +2455,111 @@ int anchor_test_reflect_nut(const char* keyStr, int dist) {
     col->base.atFlags |= AT_TYPE_PLAYER;
     col->info.toucher.dmgFlags = 2;
     return 1;
+}
+
+s32 Object_Spawn(ObjectContext* objectCtx, s16 objectId); // z_scene.c
+
+// PHA-4045 tests. "list" (or ""): every tracked Floormaster hand with its key,
+// action index, params, visibility, scale and ring links. "obj": load the
+// Wallmaster object (do it on every client before "spawn"). "spawn:x,y,z":
+// spawn a big Floormaster there. "hit:<key>[,dmg]": land a local sword hit on
+// that hand through its collider, as the local player's sword would (dmg 0 =
+// its remaining health).
+EMSCRIPTEN_KEEPALIVE
+const char* anchor_test_floormas(const char* cmd) {
+    using namespace EnemySync;
+    static std::string out;
+    static ColliderInfo sTestToucher;
+    std::string c = cmd != nullptr ? cmd : "";
+    nlohmann::json j;
+    if (gPlayState == NULL) {
+        return "{}";
+    }
+    if (c == "obj") {
+        if (Object_GetIndex(&gPlayState->objectCtx, OBJECT_WALLMASTER) < 0) {
+            Object_Spawn(&gPlayState->objectCtx, OBJECT_WALLMASTER);
+        }
+        j["obj"] = Object_GetIndex(&gPlayState->objectCtx, OBJECT_WALLMASTER);
+    } else if (c.rfind("spawn:", 0) == 0) {
+        float x = 0, y = 0, z = 0;
+        sscanf(c.c_str() + 6, "%f,%f,%f", &x, &y, &z);
+        Actor* a = Actor_Spawn(&gPlayState->actorCtx, gPlayState, ACTOR_EN_FLOORMAS, x, y, z, 0, 0, 0, 0, false);
+        j["spawned"] = a != NULL;
+    } else if (c.rfind("fx:", 0) == 0) {
+        // Send an ENEMY_PLAYER_EFFECT (kind, amount) to every other client.
+        int kind = 0, amount = 0;
+        sscanf(c.c_str() + 3, "%d,%d", &kind, &amount);
+        int n = 0;
+        for (auto& [cid, cl] : Anchor::Instance->clients) {
+            if (!cl.self) {
+                Anchor::Instance->SendPacket_EnemyPlayerEffect(cid, (u8)kind, amount, 0, 0.0f, 0.0f, 0);
+                n++;
+            }
+        }
+        j["sent"] = n;
+    } else if (c.rfind("hit:", 0) == 0) {
+        unsigned long long key = 0;
+        int dmg = 0;
+        sscanf(c.c_str() + 4, "%llu,%d", &key, &dmg);
+        auto it = keyToActor.find((uint64_t)key);
+        j["hit"] = false;
+        if (it != keyToActor.end() && it->second->update != NULL) {
+            Actor* a = it->second;
+            ColliderCylinder* col = &((EnFloormas*)a)->collider;
+            memset(&sTestToucher, 0, sizeof(sTestToucher));
+            sTestToucher.toucher.dmgFlags = DMG_SLASH_MASTER;
+            sTestToucher.toucher.damage = 2;
+            sTestToucher.toucherFlags = TOUCH_ON | TOUCH_HIT;
+            a->colChkInfo.damage = dmg > 0 ? dmg : a->colChkInfo.health;
+            a->colChkInfo.damageEffect = 0;
+            col->base.acFlags |= AC_HIT;
+            col->base.ac = &GET_PLAYER(gPlayState)->actor;
+            col->info.bumperFlags |= BUMP_HIT;
+            col->info.acHitInfo = &sTestToucher;
+            j["hit"] = true;
+        }
+    }
+    j["auth"] = cachedAuthorityId;
+    j["own"] = Anchor::Instance != nullptr ? Anchor::Instance->ownClientId : 0;
+    Player* self = GET_PLAYER(gPlayState);
+    j["me"] = { { "grabbed", (self->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) != 0 },
+                { "hp", gSaveContext.health },
+                { "inv", self->invincibilityTimer },
+                { "parent", self->actor.parent != NULL ? self->actor.parent->id : -1 } };
+    for (auto& [cid, cl] : Anchor::Instance->clients) {
+        if (!cl.self && cl.player != nullptr) {
+            j["puppet"] = { { "grabbed", (cl.player->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) != 0 },
+                            { "streamGrabbed", (cl.stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY) != 0 },
+                            { "inv", cl.player->invincibilityTimer } };
+        }
+    }
+    j["hands"] = nlohmann::json::array();
+    for (auto& [actor, st] : tracked) {
+        if (actor->id != ACTOR_EN_FLOORMAS) {
+            continue;
+        }
+        EnFloormas* f = (EnFloormas*)actor;
+        Actor* hands[2];
+        FloormasHands(actor, hands);
+        nlohmann::json e;
+        e["key"] = std::to_string(st.key);
+        e["alive"] = actor->update != NULL;
+        e["af"] = EnFloormas_MirrorGetAction(f);
+        e["pa"] = (uint16_t)actor->params;
+        e["dr"] = EnFloormas_MirrorGetDraw(f);
+        e["sc"] = actor->scale.x;
+        e["hp"] = actor->colChkInfo.health;
+        e["sup"] = st.suppressed;
+        e["linked"] = st.linked;
+        e["dyn"] = st.dynamicKey;
+        e["hard"] = f->collider.base.colType == COLTYPE_HARD;
+        e["p"] = hands[0] != nullptr ? std::to_string(tracked[hands[0]].key) : "";
+        e["c"] = hands[1] != nullptr ? std::to_string(tracked[hands[1]].key) : "";
+        e["pos"] = { (int)actor->world.pos.x, (int)actor->world.pos.y, (int)actor->world.pos.z };
+        j["hands"].push_back(e);
+    }
+    out = j.dump();
+    return out.c_str();
 }
 
 } // extern "C"

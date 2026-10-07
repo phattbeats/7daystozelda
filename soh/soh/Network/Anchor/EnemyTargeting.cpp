@@ -67,7 +67,6 @@ bool IsSwapBlocked(Actor* actor) {
     }
     switch (actor->id) {
         case ACTOR_EN_WALLMAS:    // grab -> Play_TriggerRespawn (would warp the host)
-        case ACTOR_EN_FLOORMAS:   // never mirrored; stays fully local
         case ACTOR_EN_RR:         // Like-Like: Inventory_DeleteEquipment on the host's save
         case ACTOR_EN_GELDB:      // Gerudo fighter: jail transition + player cutscene
         case ACTOR_EN_PO_FIELD:   // Item_Give / bottle checks against the host's save

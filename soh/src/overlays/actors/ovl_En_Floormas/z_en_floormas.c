@@ -1131,6 +1131,87 @@ void EnFloormas_Draw(Actor* thisx, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// Co-op mirroring: index tables for the state the stream carries. Order is wire
+// format; append only.
+static EnFloormasActionFunc sMirrorActions[] = {
+    EnFloormas_SmWait,         EnFloormas_BigDecideAction, EnFloormas_Stand,
+    EnFloormas_BigWalk,        EnFloormas_BigStopWalk,     EnFloormas_Run,
+    EnFloormas_Turn,           EnFloormas_Hover,           EnFloormas_Charge,
+    EnFloormas_Land,           EnFloormas_Split,           EnFloormas_SmWalk,
+    EnFloormas_SmDecideAction, EnFloormas_SmShrink,        EnFloormas_JumpAtLink,
+    EnFloormas_GrabLink,       EnFloormas_SmSlaveJumpAtMaster, EnFloormas_Merge,
+    EnFloormas_TakeDamage,     EnFloormas_Recover,         EnFloormas_Freeze,
+};
+
+static const char* sMirrorAnims[] = {
+    gWallmasterWaitAnim,  gWallmasterStandUpAnim, gWallmasterWalkAnim,   gWallmasterStopWalkAnim,
+    gWallmasterHoverAnim, gWallmasterJumpAnim,    gWallmasterDamageAnim, gWallmasterRecoverFromDamageAnim,
+    gFloormasterTurnAnim, gFloormasterTapFingerAnim,
+};
+
+s32 EnFloormas_MirrorGetAction(EnFloormas* this) {
+    for (s32 i = 0; i < ARRAY_COUNT(sMirrorActions); i++) {
+        if (this->actionFunc == sMirrorActions[i]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+s32 EnFloormas_MirrorGetAnim(EnFloormas* this) {
+    for (s32 i = 0; i < ARRAY_COUNT(sMirrorAnims); i++) {
+        if (this->skelAnime.animation == (void*)sMirrorAnims[i]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// 0 hidden (a "dead" hand waiting in SmWait), 1 normal, 2 lens-only.
+s32 EnFloormas_MirrorGetDraw(EnFloormas* this) {
+    if (this->actor.draw == NULL) {
+        return 0;
+    }
+    return this->actor.draw == EnFloormas_DrawHighlighted ? 2 : 1;
+}
+
+s32 EnFloormas_MirrorIsShrinking(EnFloormas* this) {
+    return this->actionFunc == EnFloormas_SmShrink;
+}
+
+// Co-op: a hand jumping at a teammate's puppet. JumpAtLink grabs on OC contact
+// with GET_PLAYER, which a puppet can't give (it has no collider outside PvP).
+s32 EnFloormas_MirrorIsJumpingAtLink(EnFloormas* this) {
+    return this->actionFunc == EnFloormas_JumpAtLink;
+}
+
+// Mirror: adopt the authority's action, animation and visibility. The joint
+// table already comes from the stream; the action and animation only matter
+// when the stream drops and this copy's own AI resumes, which then picks up
+// where the authority left off.
+void EnFloormas_MirrorApply(EnFloormas* this, s32 action, s32 anim, s32 mode, f32 curFrame, f32 playSpeed,
+                            f32 endFrame, s32 draw) {
+    if (action >= 0 && action < ARRAY_COUNT(sMirrorActions)) {
+        this->actionFunc = sMirrorActions[action];
+    }
+    if (anim >= 0 && anim < ARRAY_COUNT(sMirrorAnims)) {
+        if (this->skelAnime.animation != (void*)sMirrorAnims[anim]) {
+            Animation_Change(&this->skelAnime, (AnimationHeader*)sMirrorAnims[anim], playSpeed, 0.0f, endFrame,
+                             (mode == ANIMMODE_LOOP) ? ANIMMODE_LOOP : ANIMMODE_ONCE, 0.0f);
+        }
+        this->skelAnime.curFrame = curFrame;
+        this->skelAnime.playSpeed = playSpeed;
+        this->skelAnime.endFrame = endFrame;
+    }
+    if (draw == 0) {
+        this->actor.draw = NULL;
+    } else if (draw == 2) {
+        this->actor.draw = EnFloormas_DrawHighlighted;
+    } else {
+        this->actor.draw = EnFloormas_Draw;
+    }
+}
+
 void EnFloormas_DrawHighlighted(Actor* thisx, PlayState* play) {
     EnFloormas* this = (EnFloormas*)thisx;
 

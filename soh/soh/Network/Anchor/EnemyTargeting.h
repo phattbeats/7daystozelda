@@ -39,7 +39,8 @@
  *  - enemies with global side effects on "the player": Wallmaster (respawn warp),
  *    Like-Like (deletes equipment from the save), Gerudo fighters (jail warp),
  *    Poes / Poe Sisters (item gives, one-point cutscenes), Skull Kid (items,
- *    rupees, cutscenes), Floormaster (already never mirrored).
+ *    rupees, cutscenes). Floormaster hands grab and bite through the routers
+ *    like any other grabber (PHA-4045).
  *
  * Kill switch: CVar gRemote.Anchor.EnemyTargeting = 0 falls back to the previous
  * perception-only behavior.
