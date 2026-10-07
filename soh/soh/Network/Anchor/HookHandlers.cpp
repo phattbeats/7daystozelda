@@ -8,6 +8,7 @@
 #include "BgmSync.h"
 #include "PushBlockSync.h"
 #include "AmbientSync.h"
+#include "WorldObjectSync.h"
 #include <libultraship/libultraship.h>
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 
@@ -35,6 +36,15 @@ extern "C" {
 #include "src/overlays/actors/ovl_Item_B_Heart/z_item_b_heart.h"
 #include "src/overlays/actors/ovl_Obj_Bombiwa/z_obj_bombiwa.h"
 #include "src/overlays/actors/ovl_Obj_Hamishi/z_obj_hamishi.h"
+#include "src/overlays/actors/ovl_Obj_Switch/z_obj_switch.h"
+#include "src/overlays/actors/ovl_Bg_Ddan_Kd/z_bg_ddan_kd.h"
+#include "src/overlays/actors/ovl_Bg_Dodoago/z_bg_dodoago.h"
+#include "src/overlays/actors/ovl_Bg_Gnd_Soulmeiro/z_bg_gnd_soulmeiro.h"
+#include "src/overlays/actors/ovl_Bg_Heavy_Block/z_bg_heavy_block.h"
+#include "src/overlays/actors/ovl_Bg_Jya_Megami/z_bg_jya_megami.h"
+#include "src/overlays/actors/ovl_Bg_Spot16_Bombstone/z_bg_spot16_bombstone.h"
+#include "src/overlays/actors/ovl_En_Ishi/z_en_ishi.h"
+#include "src/overlays/actors/ovl_Obj_Syokudai/z_obj_syokudai.h"
 #include "src/overlays/actors/ovl_Bg_Hidan_Dalm/z_bg_hidan_dalm.h"
 #include "src/overlays/actors/ovl_Bg_Hidan_Kowarerukabe/z_bg_hidan_kowarerukabe.h"
 
@@ -57,7 +67,101 @@ void BgYdanSp_FloorWebIdle(BgYdanSp* bgYdanSp, PlayState* play);
 void BgYdanSp_WallWebIdle(BgYdanSp* bgYdanSp, PlayState* play);
 void BgYdanSp_BurnWeb(BgYdanSp* bgYdanSp, PlayState* play);
 void EnDoor_Idle(EnDoor* enDoor, PlayState* play);
+void ObjSwitch_FloorUp(ObjSwitch* objSwitch, PlayState* play);
+void ObjSwitch_FloorPressInit(ObjSwitch* objSwitch);
+void ObjSwitch_FloorDown(ObjSwitch* objSwitch, PlayState* play);
+void ObjSwitch_FloorReleaseInit(ObjSwitch* objSwitch);
+void ObjSwitch_EyeOpen(ObjSwitch* objSwitch, PlayState* play);
+void ObjSwitch_EyeClosingInit(ObjSwitch* objSwitch);
+void ObjSwitch_EyeClosed(ObjSwitch* objSwitch, PlayState* play);
+void ObjSwitch_EyeOpeningInit(ObjSwitch* objSwitch);
+void ObjSwitch_CrystalOff(ObjSwitch* objSwitch, PlayState* play);
+void ObjSwitch_CrystalTurnOnInit(ObjSwitch* objSwitch);
+void ObjSwitch_CrystalOn(ObjSwitch* objSwitch, PlayState* play);
+void ObjSwitch_CrystalTurnOffInit(ObjSwitch* objSwitch);
+void func_80AFB950(EnSi* enSi, PlayState* play);
+void BgDdanKd_CheckForExplosions(BgDdanKd* bgDdanKd, PlayState* play);
+void BgDdanKd_LowerStairs(BgDdanKd* bgDdanKd, PlayState* play);
+void BgDodoago_WaitExplosives(BgDodoago* bgDodoago, PlayState* play);
+void BgDodoago_OpenJaw(BgDodoago* bgDodoago, PlayState* play);
+void func_8087B284(BgGndSoulmeiro* bgGndSoulmeiro, PlayState* play);
+void func_8087AF38(BgGndSoulmeiro* bgGndSoulmeiro, PlayState* play);
+void BgHeavyBlock_Wait(BgHeavyBlock* bgHeavyBlock, PlayState* play);
+void BgHeavyBlock_SpawnPieces(BgHeavyBlock* bgHeavyBlock, PlayState* play);
+void BgJyaMegami_DetectLight(BgJyaMegami* bgJyaMegami, PlayState* play);
+void func_808B5950(BgSpot16Bombstone* bgSpot16Bombstone, PlayState* play);
+void EnIshi_Wait(EnIshi* enIshi, PlayState* play);
+void EnIshi_SpawnFragmentsLarge(EnIshi* enIshi, PlayState* play);
+void EnIshi_SpawnDustLarge(EnIshi* enIshi, PlayState* play);
 }
+
+namespace {
+
+// PHA-4044: a switch a partner pressed only moves the flag on this client; its own copy of
+// the switch never looks at the flag again (except a few subtypes). Make the idle copy
+// follow the flag, animating as if pressed but without calling SetOn/SetOff (no chime, no
+// re-broadcast). cooldownOn = false lets the press/release animation run at once.
+void FollowSwitchFlag(ObjSwitch* sw) {
+    s32 flag = Flags_GetSwitch(gPlayState, (sw->dyna.actor.params >> 8) & 0x3F);
+    s32 type = sw->dyna.actor.params & 7;
+    s32 subType = (sw->dyna.actor.params >> 4) & 7;
+
+    if ((sw->dyna.actor.params >> 7) & 1) {
+        return; // still frozen in ice
+    }
+
+    if (type == OBJSWITCH_TYPE_FLOOR || type == OBJSWITCH_TYPE_FLOOR_RUSTY) {
+        bool hold = type == OBJSWITCH_TYPE_FLOOR &&
+                    (subType == OBJSWITCH_SUBTYPE_FLOOR_2 || subType == OBJSWITCH_SUBTYPE_FLOOR_3);
+        // A hold switch is "on" while pressed (subtype 3 inverts: pressed clears the flag).
+        bool pressedByFlag = subType == OBJSWITCH_SUBTYPE_FLOOR_3 ? !flag : flag;
+
+        if (sw->actionFunc == ObjSwitch_FloorUp) {
+            if (hold) {
+                // Show the partner's weight without entering FloorDown, which would release
+                // (and clear the flag) six frames later because nobody stands on this copy.
+                // Subtype 3's resting flag state isn't fixed, so it keeps its own look.
+                if (subType == OBJSWITCH_SUBTYPE_FLOOR_2) {
+                    sw->dyna.actor.scale.y = flag ? 33.0f / 2000.0f : 33.0f / 200.0f;
+                }
+            } else if (flag) {
+                sw->cooldownOn = false;
+                ObjSwitch_FloorPressInit(sw);
+            }
+        } else if (sw->actionFunc == ObjSwitch_FloorDown) {
+            if (type == OBJSWITCH_TYPE_FLOOR && subType == OBJSWITCH_SUBTYPE_FLOOR_1 && !flag) {
+                sw->cooldownOn = false;
+                ObjSwitch_FloorReleaseInit(sw);
+            } else if (hold && DynaPolyActor_IsSwitchPressed(&sw->dyna) && !pressedByFlag) {
+                // The partner stepped off their copy while this player still stands on
+                // ours: hold the door open again (this broadcasts).
+                if (subType == OBJSWITCH_SUBTYPE_FLOOR_2) {
+                    Flags_SetSwitch(gPlayState, (sw->dyna.actor.params >> 8) & 0x3F);
+                } else {
+                    Flags_UnsetSwitch(gPlayState, (sw->dyna.actor.params >> 8) & 0x3F);
+                }
+            }
+        }
+    } else if (type == OBJSWITCH_TYPE_EYE) {
+        if (sw->actionFunc == ObjSwitch_EyeOpen && flag) {
+            sw->cooldownOn = false;
+            ObjSwitch_EyeClosingInit(sw);
+        } else if (sw->actionFunc == ObjSwitch_EyeClosed && subType == OBJSWITCH_SUBTYPE_EYE_1 && !flag) {
+            sw->cooldownOn = false;
+            ObjSwitch_EyeOpeningInit(sw);
+        }
+    } else if (type == OBJSWITCH_TYPE_CRYSTAL || type == OBJSWITCH_TYPE_CRYSTAL_TARGETABLE) {
+        if (sw->actionFunc == ObjSwitch_CrystalOff && flag) {
+            sw->cooldownOn = false;
+            ObjSwitch_CrystalTurnOnInit(sw);
+        } else if (sw->actionFunc == ObjSwitch_CrystalOn && subType == OBJSWITCH_SUBTYPE_CRYSTAL_1 && !flag) {
+            sw->cooldownOn = false;
+            ObjSwitch_CrystalTurnOffInit(sw);
+        }
+    }
+}
+
+} // namespace
 
 void Anchor::RegisterHooks() {
 
@@ -162,6 +266,12 @@ void Anchor::RegisterHooks() {
              itemEntry.itemId <= ITEM_RUPEE_GOLD) ||
             (itemEntry.modIndex == MOD_RANDOMIZER && itemEntry.getItemId >= RG_GREEN_RUPEE &&
              itemEntry.getItemId <= RG_HUGE_RUPEE)) {
+            return;
+        }
+
+        // A heart/ammo/magic drop belongs to whoever picked it up: the partner has their own
+        // copy of the drop (see Packets/WorldObject.cpp).
+        if (WorldObject_IsPersonalPickup(itemEntry)) {
             return;
         }
 
@@ -324,7 +434,10 @@ void Anchor::RegisterHooks() {
     COND_ID_HOOK(ShouldActorUpdate, ACTOR_EN_SI, isConnected, [&](void* refActor, bool* should) {
         EnSi* actor = static_cast<EnSi*>(refActor);
 
-        if (GET_GS_FLAGS((actor->actor.params & 0x1F00) >> 8) & (actor->actor.params & 0xFF)) {
+        // The token this player just collected sets its flag early (Packets/WorldObject.cpp);
+        // let it finish its textbox instead of vanishing.
+        if (actor->actionFunc != func_80AFB950 &&
+            (GET_GS_FLAGS((actor->actor.params & 0x1F00) >> 8) & (actor->actor.params & 0xFF))) {
             Actor_Kill(&actor->actor);
             *should = false;
         }
@@ -367,6 +480,104 @@ void Anchor::RegisterHooks() {
             SoundSource_PlaySfxAtFixedWorldPos(gPlayState, &actor->actor.world.pos, 40, NA_SE_EV_WALL_BROKEN);
             Actor_Kill(&actor->actor);
             *should = false;
+        }
+    });
+
+    // PHA-4044: breakables that set a switch flag but only read it at Init, so the partner's
+    // copy stayed whole (and in the way) until the room reloaded.
+
+    // Dodongo's Cavern: the stairs the two bomb flowers drop.
+    COND_ID_HOOK(ShouldActorUpdate, ACTOR_BG_DDAN_KD, isConnected, [&](void* refActor, bool* should) {
+        BgDdanKd* actor = static_cast<BgDdanKd*>(refActor);
+
+        if (actor->actionFunc == BgDdanKd_CheckForExplosions && Flags_GetSwitch(gPlayState, actor->dyna.actor.params)) {
+            actor->actionFunc = BgDdanKd_LowerStairs;
+        }
+    });
+
+    // Dodongo's Cavern: the giant skull's jaw (both eyes bombed).
+    COND_ID_HOOK(ShouldActorUpdate, ACTOR_BG_DODOAGO, isConnected, [&](void* refActor, bool* should) {
+        BgDodoago* actor = static_cast<BgDodoago*>(refActor);
+
+        if (actor->actionFunc == BgDodoago_WaitExplosives &&
+            Flags_GetSwitch(gPlayState, actor->dyna.actor.params & 0x3F)) {
+            gPlayState->roomCtx.unk_74[BGDODOAGO_EYE_LEFT] = 255;
+            gPlayState->roomCtx.unk_74[BGDODOAGO_EYE_RIGHT] = 255;
+            actor->state = 0;
+            actor->actionFunc = BgDodoago_OpenJaw;
+        }
+    });
+
+    // Death Mountain Trail: the boulder in front of Dodongo's Cavern.
+    COND_ID_HOOK(ShouldActorUpdate, ACTOR_BG_SPOT16_BOMBSTONE, isConnected, [&](void* refActor, bool* should) {
+        BgSpot16Bombstone* actor = static_cast<BgSpot16Bombstone*>(refActor);
+
+        if (actor->actionFunc == func_808B5950 && Flags_GetSwitch(gPlayState, actor->switchFlag)) {
+            actor->colliderCylinder.base.acFlags |= AC_HIT;
+        }
+    });
+
+    // Spirit Temple: the goddess statue's face (crumbles under mirror light).
+    COND_ID_HOOK(ShouldActorUpdate, ACTOR_BG_JYA_MEGAMI, isConnected, [&](void* refActor, bool* should) {
+        BgJyaMegami* actor = static_cast<BgJyaMegami*>(refActor);
+
+        if (actor->actionFunc == BgJyaMegami_DetectLight &&
+            Flags_GetSwitch(gPlayState, actor->dyna.actor.params & 0x3F)) {
+            actor->lightTimer = 41;
+        }
+    });
+
+    // Ganon's Castle Spirit Trial: the web that lets the sunlight in.
+    COND_ID_HOOK(ShouldActorUpdate, ACTOR_BG_GND_SOULMEIRO, isConnected, [&](void* refActor, bool* should) {
+        BgGndSoulmeiro* actor = static_cast<BgGndSoulmeiro*>(refActor);
+
+        if ((actor->actor.params & 0xFF) == 0 && actor->actionFunc == func_8087B284 &&
+            Flags_GetSwitch(gPlayState, (actor->actor.params >> 8) & 0x3F)) {
+            actor->unk_198 = 40;
+            actor->actionFunc = func_8087AF38;
+        }
+    });
+
+    // Silver-gauntlet boulders.
+    COND_ID_HOOK(ShouldActorUpdate, ACTOR_EN_ISHI, isConnected, [&](void* refActor, bool* should) {
+        EnIshi* actor = static_cast<EnIshi*>(refActor);
+        s16 params = actor->actor.params;
+
+        if ((params & 1) == ROCK_LARGE && actor->actionFunc == EnIshi_Wait &&
+            Flags_GetSwitch(gPlayState, ((params >> 0xA) & 0x3C) | ((params >> 6) & 3))) {
+            EnIshi_SpawnFragmentsLarge(actor, gPlayState);
+            EnIshi_SpawnDustLarge(actor, gPlayState);
+            SoundSource_PlaySfxAtFixedWorldPos(gPlayState, &actor->actor.world.pos, 40, NA_SE_EV_WALL_BROKEN);
+            Actor_Kill(&actor->actor);
+            *should = false;
+        }
+    });
+
+    // Golden-gauntlet pillars (Ganon's Castle, Fire Temple).
+    COND_ID_HOOK(ShouldActorUpdate, ACTOR_BG_HEAVY_BLOCK, isConnected, [&](void* refActor, bool* should) {
+        BgHeavyBlock* actor = static_cast<BgHeavyBlock*>(refActor);
+
+        if ((actor->dyna.actor.params & 0xFF) == HEAVYBLOCK_BREAKABLE && actor->actionFunc == BgHeavyBlock_Wait &&
+            !Actor_HasParent(&actor->dyna.actor, gPlayState) &&
+            Flags_GetSwitch(gPlayState, (actor->dyna.actor.params >> 8) & 0x3F)) {
+            BgHeavyBlock_SpawnPieces(actor, gPlayState);
+            SoundSource_PlaySfxAtFixedWorldPos(gPlayState, &actor->dyna.actor.world.pos, 40, NA_SE_EV_WALL_BROKEN);
+            Actor_Kill(&actor->dyna.actor);
+            *should = false;
+        }
+    });
+
+    COND_ID_HOOK(ShouldActorUpdate, ACTOR_OBJ_SWITCH, isConnected,
+                 [&](void* refActor, bool* should) { FollowSwitchFlag(static_cast<ObjSwitch*>(refActor)); });
+
+    // A single torch a partner lit only reads its flag at Init (timed torch groups already
+    // follow it every frame).
+    COND_ID_HOOK(ShouldActorUpdate, ACTOR_OBJ_SYOKUDAI, isConnected, [&](void* refActor, bool* should) {
+        ObjSyokudai* actor = static_cast<ObjSyokudai*>(refActor);
+
+        if (((actor->actor.params >> 6) & 0xF) == 0 && actor->litTimer == 0 &&
+            Flags_GetSwitch(gPlayState, actor->actor.params & 0x3F)) {
+            actor->litTimer = -1;
         }
     });
 
@@ -425,6 +636,9 @@ void Anchor::RegisterHooks() {
     // Cuccos, dogs and other wanderers follow one client's copy (see Packets/AmbientSync.cpp)
     RegisterAmbientSyncHooks(isConnected);
 
+    // Grottos, personal pickups and Skulltula tokens (see Packets/WorldObject.cpp)
+    RegisterWorldObjectHooks(isConnected);
+
     // ---- Anchor per-frame dispatcher --------------------------------------------------
     // GameInteractor::ExecuteHooks iterates an unordered_map, so per-hook execution order
     // is implementation-defined — NOT registration order. The Anchor layer has real
@@ -449,5 +663,6 @@ void Anchor::RegisterHooks() {
         BgmSyncTick();                // spectate restore READS myLifeState
         PushBlockTick();              // pending remote pushes + room-entry block request
         AmbientSyncTick();            // stream driven cuccos/dogs/walkers (READS the EnemySync authority)
+        WorldObjectTick();            // ages the personal-pickup window
     });
 }

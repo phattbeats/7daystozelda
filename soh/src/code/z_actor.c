@@ -706,7 +706,9 @@ void Flags_SetSwitch(PlayState* play, s32 flag) {
  * Unsets current scene switch flag.
  */
 void Flags_UnsetSwitch(PlayState* play, s32 flag) {
-    u8 previouslyOn = Flags_GetSwitch(play, flag);
+    // != 0: the getter returns the flag's bit, which a u8 truncates to 0 for flags 8 and up,
+    // so the unset hook (and the co-op UNSET_FLAG) never fired for them (PHA-4044).
+    u8 previouslyOn = Flags_GetSwitch(play, flag) != 0;
     if (flag < 0x20) {
         play->actorCtx.flags.swch &= ~(1 << flag);
     } else {
@@ -793,7 +795,9 @@ void Flags_SetClear(PlayState* play, s32 flag) {
  * Unsets current scene clear flag.
  */
 void Flags_UnsetClear(PlayState* play, s32 flag) {
-    u8 previouslyOn = Flags_GetClear(play, flag);
+    // != 0: the getter returns the flag's bit, which a u8 truncates to 0 for flags 8 and up,
+    // so the unset hook (and the co-op UNSET_FLAG) never fired for them (PHA-4044).
+    u8 previouslyOn = Flags_GetClear(play, flag) != 0;
     play->actorCtx.flags.clear &= ~(1 << flag);
     if (previouslyOn) {
         LUSLOG_INFO("Clear Flag Unset - %#x", flag);

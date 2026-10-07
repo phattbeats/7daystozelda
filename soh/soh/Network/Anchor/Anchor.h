@@ -148,6 +148,7 @@ class Anchor : public Network {
     void HandlePacket_RequestTeleport(nlohmann::json payload);
     void HandlePacket_RupeeChange(nlohmann::json payload);
     void HandlePacket_ServerMessage(nlohmann::json payload);
+    void HandlePacket_WorldObject(nlohmann::json payload);
     void HandlePacket_SetCheckStatus(nlohmann::json payload);
     void HandlePacket_SetFlag(nlohmann::json payload);
     void HandlePacket_TeleportTo(nlohmann::json payload);
@@ -198,6 +199,7 @@ class Anchor : public Network {
     inline static const std::string RUPEE_CHANGE = "RUPEE_CHANGE";
     inline static const std::string SERVER_MESSAGE = "SERVER_MESSAGE";
     inline static const std::string SET_CHECK_STATUS = "SET_CHECK_STATUS";
+    inline static const std::string WORLD_OBJECT = "WORLD_OBJECT";
     inline static const std::string SET_FLAG = "SET_FLAG";
     inline static const std::string TELEPORT_TO = "TELEPORT_TO";
     inline static const std::string UNSET_FLAG = "UNSET_FLAG";
