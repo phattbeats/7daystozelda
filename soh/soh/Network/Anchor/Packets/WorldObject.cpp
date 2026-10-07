@@ -1,5 +1,6 @@
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Anchor/WorldObjectSync.h"
+#include "soh/Network/Anchor/EnemySync.h"
 #include <nlohmann/json.hpp>
 #include <libultraship/libultraship.h>
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -132,6 +133,60 @@ void SendGrotto(Actor* actor) {
     }
 }
 
+// Gohma's blue warp and heart container (PHA-4046). Each client's defeat sequence picks
+// the warp's spot from its own Link and Gohma poses, so the two copies landed in
+// different places. The enemy authority's spawn position wins: it is sent once, and the
+// partner snaps its copy to it, whether the copy already spawned or spawns later.
+struct BossSpot {
+    bool have = false;
+    Vec3f pos{};
+};
+BossSpot sBossSpot[2]; // 0 = Door_Warp1, 1 = Item_B_Heart
+
+int BossSpotSlot(s16 actorId) {
+    return actorId == ACTOR_DOOR_WARP1 ? 0 : 1;
+}
+
+void SnapActor(Actor* actor, const Vec3f& pos) {
+    actor->world.pos = pos;
+    actor->home.pos = pos;
+    actor->prevPos = pos;
+}
+
+void SendBossSpot(Actor* actor) {
+    Anchor* anchor = Anchor::Instance;
+    if (anchor == nullptr || !anchor->IsSaveLoaded() || gPlayState == NULL) {
+        return;
+    }
+    nlohmann::json payload;
+    payload["type"] = Anchor::WORLD_OBJECT;
+    payload["quiet"] = true;
+    payload["kind"] = "bossspot";
+    payload["sceneNum"] = gPlayState->sceneNum;
+    payload["actorId"] = actor->id;
+    payload["pos"] = VecJson(actor->world.pos);
+
+    for (auto& [clientId, client] : anchor->clients) {
+        if (client.sceneNum == gPlayState->sceneNum && client.online && client.isSaveLoaded && !client.self) {
+            payload["targetClientId"] = clientId;
+            anchor->SendJsonToRemote(payload);
+        }
+    }
+}
+
+void OnBossSpotActorInit(Actor* actor) {
+    if (gPlayState == NULL || gPlayState->sceneNum != SCENE_DEKU_TREE_BOSS || Anchor::Instance == nullptr ||
+        !CVarGetInteger("gRemote.Anchor.BossSpotSync", 1)) {
+        return;
+    }
+    BossSpot& spot = sBossSpot[BossSpotSlot(actor->id)];
+    if (EnemySync::IsLocalAuthority() || !EnemySync::HasSameScenePeer()) {
+        SendBossSpot(actor);
+    } else if (spot.have) {
+        SnapActor(actor, spot.pos);
+    }
+}
+
 } // namespace
 
 bool WorldObject_IsPersonalPickup(const GetItemEntry& itemEntry) {
@@ -141,6 +196,28 @@ bool WorldObject_IsPersonalPickup(const GetItemEntry& itemEntry) {
 
 void Anchor::HandlePacket_WorldObject(nlohmann::json payload) {
     if (!IsSaveLoaded() || gPlayState == NULL || payload["sceneNum"].get<s16>() != gPlayState->sceneNum) {
+        return;
+    }
+
+    if (payload["kind"].get<std::string>() == "bossspot" && gPlayState->sceneNum == SCENE_DEKU_TREE_BOSS &&
+        CVarGetInteger("gRemote.Anchor.BossSpotSync", 1)) {
+        s16 actorId = payload["actorId"].get<s16>();
+        if (actorId != ACTOR_DOOR_WARP1 && actorId != ACTOR_ITEM_B_HEART) {
+            return;
+        }
+        BossSpot& spot = sBossSpot[BossSpotSlot(actorId)];
+        spot.have = true;
+        spot.pos = JsonVec(payload["pos"]);
+        if (EnemySync::IsLocalAuthority()) {
+            return;
+        }
+        for (s32 cat = 0; cat < ACTORCAT_MAX; cat++) {
+            for (Actor* a = gPlayState->actorCtx.actorLists[cat].head; a != NULL; a = a->next) {
+                if (a->id == actorId && a->update != NULL) {
+                    SnapActor(a, spot.pos);
+                }
+            }
+        }
         return;
     }
 
@@ -162,6 +239,13 @@ void RegisterWorldObjectHooks(bool isConnected) {
     sGrottoClosed.clear();
     sPickupUntil = 0;
     sPickupItem = ITEM_NONE;
+    sBossSpot[0] = sBossSpot[1] = BossSpot{};
+
+    COND_HOOK(OnSceneInit, isConnected, [](int16_t) { sBossSpot[0] = sBossSpot[1] = BossSpot{}; });
+    COND_ID_HOOK(OnActorInit, ACTOR_DOOR_WARP1, isConnected,
+                 [](void* refActor) { OnBossSpotActorInit(static_cast<Actor*>(refActor)); });
+    COND_ID_HOOK(OnActorInit, ACTOR_ITEM_B_HEART, isConnected,
+                 [](void* refActor) { OnBossSpotActorInit(static_cast<Actor*>(refActor)); });
 
     COND_VB_SHOULD(VB_GIVE_ITEM_FROM_ITEM_00, isConnected, {
         EnItem00* item = va_arg(args, EnItem00*);

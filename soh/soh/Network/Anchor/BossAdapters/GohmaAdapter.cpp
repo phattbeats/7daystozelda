@@ -1,5 +1,6 @@
 #include "soh/Network/Anchor/BossAdapters/ActorSyncAdapter.h"
 #include "soh/Network/Anchor/EnemySync.h"
+#include "soh/Network/Anchor/Anchor.h"
 // Pull the C++ side of global.h in under proper linkage before the extern "C"
 // overlay header includes it (BossRush.cpp pattern).
 #include "soh/OTRGlobals.h"
@@ -11,6 +12,7 @@ extern "C" {
 #include "src/overlays/actors/ovl_Boss_Goma/z_boss_goma.h"
 
 void BossGoma_SetupDefeated(BossGoma* thisx, PlayState* play);
+void BossGoma_SetupEncounterState4(BossGoma* thisx, PlayState* play);
 extern PlayState* gPlayState;
 }
 
@@ -126,3 +128,69 @@ void RegisterGohmaAdapter() {
     adapter.OnRemoteDefeat = Gohma_OnRemoteDefeat;
     EnemySync::RegisterAdapter(ACTOR_BOSS_GOMA, adapter);
 }
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+extern "C" {
+// PHA-4046 rig. Reports Gohma's sync state and every Door_Warp1 / Item_B_Heart position
+// on this client. cmd 1: start the defeat sequence here (host), as the killing blow does;
+// cmd 3: stand it near the room's centre (arg = x offset), where the warp spot is re-rolled;
+// cmd 2: end the intro's wait for the player to look at Gohma.
+EMSCRIPTEN_KEEPALIVE
+const char* anchor_test_gm(int cmd, int arg) {
+    static std::string out;
+    nlohmann::json j;
+    if (gPlayState == NULL) {
+        return "{}";
+    }
+    BossGoma* goma = nullptr;
+    for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_BOSS].head; a != nullptr; a = a->next) {
+        if (a->id == ACTOR_BOSS_GOMA && a->update != NULL) {
+            goma = (BossGoma*)a;
+            break;
+        }
+    }
+    Player* player = GET_PLAYER(gPlayState);
+    j["scene"] = gPlayState->sceneNum;
+    j["auth"] = EnemySync::CurrentAuthorityId();
+    j["own"] = Anchor::Instance != nullptr ? Anchor::Instance->ownClientId : 0;
+    j["link"] = { player->actor.world.pos.x, player->actor.world.pos.y, player->actor.world.pos.z };
+    nlohmann::json warps = nlohmann::json::array(), hearts = nlohmann::json::array();
+    for (int cat = 0; cat < ACTORCAT_MAX; cat++) {
+        for (Actor* a = gPlayState->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
+            if (a->id == ACTOR_DOOR_WARP1 && a->update != NULL) {
+                warps.push_back({ a->world.pos.x, a->world.pos.y, a->world.pos.z });
+            } else if (a->id == ACTOR_ITEM_B_HEART && a->update != NULL) {
+                hearts.push_back({ a->world.pos.x, a->world.pos.y, a->world.pos.z });
+            }
+        }
+    }
+    j["warps"] = warps;
+    j["hearts"] = hearts;
+    j["present"] = goma != nullptr;
+    if (goma != nullptr) {
+        Actor* actor = &goma->actor;
+        j["phase"] = Gohma_GetPhase(actor);
+        j["hp"] = (int)actor->colChkInfo.health;
+        j["pos"] = { actor->world.pos.x, actor->world.pos.y, actor->world.pos.z };
+        j["sup"] = EnemySync::IsSuppressed(actor);
+        j["dying"] = EnemySync::IsDying(actor);
+        j["as"] = goma->actionState;
+        j["tick"] = (unsigned)gPlayState->gameplayFrames;
+        if (cmd == 2 && goma->actionState == 3) {
+            BossGoma_SetupEncounterState4(goma, gPlayState); // the player "looked at Gohma": ends the intro wait
+        }
+        if (cmd == 3 && !EnemySync::IsSuppressed(actor)) {
+            actor->world.pos.x = -150.0f + arg;
+            actor->world.pos.z = -350.0f;
+        }
+        if (cmd == 1 && !EnemySync::IsSuppressed(actor)) {
+            actor->colChkInfo.health = 0;
+            BossGoma_SetupDefeated(goma, gPlayState);
+        }
+    }
+    out = j.dump();
+    return out.c_str();
+}
+}
+#endif
