@@ -117,6 +117,8 @@ void Anchor::ProcessIncomingPacketQueue() {
             HandlePacket_BgmPos(payload);
         else if (packetType == BGM_POS_REQUEST)
             HandlePacket_BgmPosRequest(payload);
+        else if (packetType == AMBIENT_STATE)
+            HandlePacket_AmbientState(payload);
         else if (packetType == BGM_RESTART)
             HandlePacket_BgmRestart(payload);
         else if (packetType == BGM_STATE)

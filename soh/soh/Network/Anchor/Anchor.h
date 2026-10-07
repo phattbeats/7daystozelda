@@ -118,6 +118,7 @@ class Anchor : public Network {
     void HandlePacket_AllClientState(nlohmann::json payload);
     void HandlePacket_BgmPos(nlohmann::json payload);
     void HandlePacket_BgmPosRequest(nlohmann::json payload);
+    void HandlePacket_AmbientState(nlohmann::json payload);
     void HandlePacket_BgmRestart(nlohmann::json payload);
     void HandlePacket_BgmState(nlohmann::json payload);
     void HandlePacket_BossEntry(nlohmann::json payload);
@@ -164,6 +165,7 @@ class Anchor : public Network {
 
     // Packet types //
     inline static const std::string ALL_CLIENT_STATE = "ALL_CLIENT_STATE";
+    inline static const std::string AMBIENT_STATE = "AMBIENT_STATE";
     inline static const std::string BGM_POS = "BGM_POS";
     inline static const std::string BGM_POS_REQUEST = "BGM_POS_REQUEST";
     inline static const std::string BGM_RESTART = "BGM_RESTART";
