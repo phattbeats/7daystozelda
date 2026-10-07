@@ -478,6 +478,7 @@ void RegisterGanondorfAdapter() {
     a.OnLocalResume = GDF_OnLocalResume;
     a.OnRemoteEvent = GDF_OnRemoteEvent;
     a.HandlesDefeat = GDF_HandlesDefeat;
+    a.DropUnconsumedHits = true;
     a.PositionCollider = GDF_PositionCollider;
     EnemySync::RegisterAdapter(ACTOR_BOSS_GANON, a);
 }

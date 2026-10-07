@@ -2306,6 +2306,11 @@ static void OnEnemyActorUpdate(Actor* actor) {
                 state.expectedRemoteDamage = 0;
                 return;
             }
+            if (const ActorSyncAdapter* ad = GetAdapter(actor->id); ad != nullptr && ad->DropUnconsumedHits) {
+                ESYNC_LOG("[EnemySync] expired debt dropped (adapter) key={:#x} dmg={}", state.key, resid);
+                state.expectedRemoteDamage = 0;
+                return;
+            }
             ESYNC_LOG("[EnemySync] expired debt force-applied id={} key={:#x} dmg={}", actor->id, state.key, resid);
             actor->colChkInfo.health = (actor->colChkInfo.health > resid) ? actor->colChkInfo.health - resid : 0;
             state.prevHealth = actor->colChkInfo.health;

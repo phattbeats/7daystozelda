@@ -293,6 +293,7 @@ void RegisterGanon2Adapter() {
     a.OnRemoteDefeat = GN2_OnRemoteDefeat;
     a.OnLocalResume = GN2_OnLocalResume;
     a.OnRemoteEvent = GN2_OnRemoteEvent;
+    a.DropUnconsumedHits = true;
     EnemySync::RegisterAdapter(ACTOR_BOSS_GANON2, a);
 }
 

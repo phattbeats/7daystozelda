@@ -72,6 +72,11 @@ struct ActorSyncAdapter {
     bool (*OnLocalHit)(Actor* actor) = nullptr;
     // Authority: OnRemoteEvent with the sender's payload and client id (EnemySync::SendAdapterEvent's `data`).
     void (*OnRemoteEventData)(Actor* actor, uint8_t event, const nlohmann::json& data, uint32_t fromClient) = nullptr;
+    // Authority: a replayed hit the boss's own update did not consume is dropped, not forced
+    // onto its health. For bosses that only take damage in some states (Ganondorf is hurt
+    // only while stunned, Ganon only from behind or when stunned), where a hit that lands in
+    // another state must do nothing, exactly as it does for the local player.
+    bool DropUnconsumedHits = false;
 };
 
 namespace EnemySync {
