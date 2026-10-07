@@ -1,6 +1,6 @@
 # PHA-4062: display-list overflow, and what a 256-piece base costs
 
-Status: shipped as a permanent fix (see "Shipped"). Everything below was measured on the PHA-4062 rig
+Status: shipped. Live as `soh-web:pha4062` (`soh.js?v=2e7d69b3`, code at 60537b8); rollback `soh-web:pre-pha4062` (= pha4046, `soh.js?v=4eba9b30`), old container kept stopped as `soh-web-pre-pha4062`. Everything below was measured on the PHA-4062 rig
 (`tools/harness/pha4062/`): four headless Chrome clients with a local GPU, one relay, one box, so the
 absolute frame rates are for that rig only. No real phone was available to the run; see "Not measured".
 
