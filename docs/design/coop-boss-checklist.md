@@ -54,6 +54,9 @@ in a two-client live test, with screenshots and logs. The rig is in
 | Bongo Bongo | PHA-4052 | Not started |
 | Twinrova | PHA-4053 | **Done**, see below |
 | Ganondorf and Ganon | PHA-4054 | Not started |
+
+| Twinrova | PHA-4053 | Not started |
+| Ganondorf and Ganon | PHA-4054 | **Done**, see below |
 | Minibosses (Dark Link, Iron Knuckle, Dead Hand, Big Octo, Flare Dancer, Stalfos, Lizalfos) | PHA-4055 | See the miniboss section below |
 
 ## King Dodongo (PHA-4047)
@@ -212,3 +215,25 @@ Known limits:
 - A reflect needs the verdict to reach the host within the hold (beam about 1.2 s, blast about 0.6 s); a very slow link just lets the beam or blast through.
 - The shield-pose reports are about 20 events a second while a shield holds a reflect.
 - `OnLocalResume` after a host change in the middle of a cutscene was not exercised.
+
+## Ganondorf and Ganon (PHA-4054)
+
+Two adapters. Boss_Ganon (`GanondorfAdapter.cpp`, scene 25, entrance 0x41F) is Ganondorf, his tennis light ball, the big-magic balls and the falling platforms. Boss_Ganon2 (`Ganon2Adapter.cpp`, scene 79, entrance 0x517) is the beast in the ruins. Evidence: `docs/evidence/pha4054/` (screenshots, `logs.txt`, `adapter-log-excerpt.txt`); rig: `tools/harness/pha4054/`.
+
+Trap found on the way: the room places Ganondorf with params 0xFFFF, which the game reads as the signed -1 (`< 0x64`). Compare params as `int16_t`, or he looks like an effect and is excluded from tracking.
+
+| Row | How | Live test (2026-10-07, two local clients, A authority, B mirror) |
+|---|---|---|
+| Ganondorf phases | INTRO / FIGHT / DEFEATED from the action (`BossGanon_CoopPhase`). The intro cutscene runs on both; `ShouldMirror` waits for the local intro and the streamed FIGHT. | Both ran the intro to FIGHT; B mirrored (`sup` true) with the same pose and position. |
+| Ganondorf extras | Leg sway, open hand, hand light ball, big-magic charge, the shock over him, triforce and vortex, room lighting, flashes, lens flare, targetable flag, plus a ring (`ev`) of effect spawns (params >= 0xC8) and fallen platforms that the mirror replays once. `BossGanon_CoopMirrorUpdate` runs the effect buffer and the lighting. | ring and replay counters equal on both clients (41/41). |
+| Tennis ball | Tracked dynamic spawn (health forced to 1), aimed at the nearest player. A sword hit on B's copy is a hit request; A's ball is sent back at Ganondorf, who volleys it. A ball touching a Link on a mirror machine hurts that Link there and tells the authority (event 1). | B's hit reversed A's ball (mode 0 -> 1 -> 2 -> 0 in `ballMode`); B's copy followed. |
+| Vulnerable and damage | A reflected big-magic ball reaching a mirror's Ganondorf is reported (event 2); the authority stuns him. Replayed hits the boss did not consume are dropped (`DropUnconsumedHits`), so damage lands only while he is vulnerable. | Stun, then a light-arrow hit from B, then sword hits from B: Wait -> HitByLightBall -> Vulnerable -> Damaged, health 3 -> 0. Before the drop flag a sword hit in Wait took 39 health through the expired-debt path. |
+| Defeat | FIGHT -> DEFEATED runs `BossGanon_StartDefeat` on the mirror (his own SetupDeathCutscene, sounds, defeat hook) and returns true; a client in its intro defers it. | Both clients ran the death cutscene in lockstep and entered the tower collapse scene (26) within 0.1 s of each other. |
+| Children | Excluded from tracking: the cape, the organ, the tower-collapse copy (params 1) and every params >= 0xC8 effect. | no duplicate spawns (`effects` 0 after the room load). |
+| Aggro | No puppet swap. Facing, distances, the pound and the ball aim use the nearest living player (`yawTowardsPlayer` is re-pointed at the top of `BossGanon_Update`). The pound and balls hurt only the Link of the machine they run on. Limits: a partner's bottle swing does not reflect the ball; the arrow-block reflex reads the local bow. | Pound and balls followed the nearer player. |
+| Ganon phases | 0 INTRO, 1 FIGHT (including him lying with Link free), 3 DOWN_CS (Zelda's text when health first drops under 21), 4 SWORD_CS (Link takes the Master Sword), 2 DEFEATED (the finale). A client mirrors only in FIGHT; a streamed edge into 3, 4 or 2 starts that cutscene locally, deferred if its own cutscene is still running. | Intro -> fight -> downed cutscene (B started its own on the edge, ran csState 1, 2, 3, then re-mirrored) -> getting up at health 25 -> finale. |
+| Ganon extras | Head turn, tail sway, glows, hit flash, swing flag, look-on flag, lying flag, attention flag. `BossGanon2_CoopMirrorUpdate` runs the ring of fire and sword knock-back on the local Link, the storm and the particles. | Same pose, walk and swing on both; position within 3 units at every sample. |
+| Master Sword | The intro knocks the sword out on every client. A mirror that picks it up while Ganon is lying sends event 1 and the authority starts the cutscene; at any other time the sword stays on the floor. | Event path built; the pickup itself was not driven live (the cutscene was started with a rig command). |
+| Ganon damage | Hits are replayed on the authority; unconsumed ones are dropped, so a sword on his guarded front does nothing. | B's hit landed on A (`HITREQ rx`). |
+| Ganon defeat | Phase 2 runs `func_80901020` on the mirror and releases it. | Both clients ran the finale (stab with the Master Sword, light, Sages) and entered the Chamber of the Sages (scene 68) within 1 s. |
+| Live test | | Both fights run intro -> fight -> defeat on two clients with no crash and no desync; both players landed damage and took hits. Open: the real Master Sword pickup, the platform fall replay and the big-magic volley were not driven. |
