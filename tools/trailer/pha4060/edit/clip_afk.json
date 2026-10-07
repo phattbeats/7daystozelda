@@ -1,0 +1,1 @@
+{"name": "ca", "max": 11.0, "tag": "v_tag_afk.png", "segs": [{"src": "r5_chair_gate3", "ss": 1.0, "dur": 11.0, "grade": "night", "crop": "960:720:200:0"}], "audio": [["../clips/r5_chair_gate3.mp4", 1.0, 11.0, 1.0]]}

@@ -1,0 +1,21 @@
+import math
+HIDE_UI()
+a = math.radians(22.5); X0, Z0 = 150 + 720 * math.sin(a), 2000 + 720 * math.cos(a)
+yaw = int((22.5 / 360) * 65536)
+W(X0, 0, Z0, yaw); time.sleep(0.6)
+fx, fz = math.sin(a), math.cos(a); lx, lz = math.cos(a), -math.sin(a)   # forward, right
+eye = (X0 + fx * 330 + lx * 330, 90, Z0 + fz * 330 + lz * 330)
+at = (X0 + fx * 40 + lx * 60, 45, Z0 + fz * 40 + lz * 60)
+eye2 = (X0 + fx * 300 + lx * 430, 110, Z0 + fz * 300 + lz * 430)
+at2 = (X0 + fx * 40 + lx * 170, 45, Z0 + fz * 40 + lz * 170)
+CAM(1, eye, at, eye2, at2, 20 * 13, 55, 55, 3)
+REC_START('g2_place'); time.sleep(0.6)
+_cc('sevendays_test_begin_placement', None, ['number'], [12]); time.sleep(1.6)
+key('x'); time.sleep(1.4)
+for i in range(2):
+    W(X0 + lx * 124 * (i + 1), 0, Z0 + lz * 124 * (i + 1), yaw); time.sleep(1.0)
+    key('x'); time.sleep(1.4)
+key('c'); time.sleep(0.4)
+W(X0 + lx * 186, 0, Z0 + lz * 186 - 0, yaw); time.sleep(0.3)
+_cc('sevendays_test_begin_placement', None, ['number'], [7]); time.sleep(1.2); key('x'); time.sleep(1.6)
+print('frames', REC_STOP())

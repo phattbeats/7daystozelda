@@ -1,0 +1,1 @@
+{"name": "cb", "max": 12.0, "tag": "v_tag_build.png", "segs": [{"src": "build2", "ss": 1.5, "dur": 9.0, "speed": 4.4, "grade": "day"}, {"src": "r7_dawn_end", "ss": 5.0, "dur": 3.0, "speed": 1.2}], "audio": [["../clips/build2.mp4", 3.0, 9.0, 1.0], ["../t/serve/title-theme.mp3", 16.0, 3.0, 2.4]]}

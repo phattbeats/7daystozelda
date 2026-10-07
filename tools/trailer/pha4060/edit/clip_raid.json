@@ -1,0 +1,1 @@
+{"name": "cr", "max": 11.0, "tag": "v_tag_raid.png", "segs": [{"src": "r1_nightfall", "ss": 11.0, "dur": 2.0, "speed": 1.5}, {"src": "r4_brawl", "ss": 2.6, "dur": 5.0, "grade": "night", "crop": "736:552:200:84"}, {"src": "r4_brawl", "ss": 10.0, "dur": 4.0, "grade": "night", "crop": "736:552:200:84"}], "audio": [["../clips/r5_chair_gate.mp4", 1.0, 11.0, 1.0]]}

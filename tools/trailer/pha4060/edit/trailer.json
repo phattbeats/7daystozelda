@@ -1,0 +1,79 @@
+{
+ "name": "tr",
+ "segs": [
+  {
+   "src": "g1_gather",
+   "ss": 0.9,
+   "dur": 2.2,
+   "grade": "day"
+  },
+  {
+   "src": "s2_workbench",
+   "ss": 2.3,
+   "dur": 1.4
+  },
+  {
+   "src": "g2_place",
+   "ss": 0.8,
+   "dur": 2.4,
+   "grade": "day"
+  },
+  {
+   "src": "build2",
+   "ss": 1.5,
+   "dur": 5.0,
+   "speed": 7.8,
+   "grade": "day"
+  },
+  {
+   "src": "s1_temple",
+   "ss": 2.2,
+   "dur": 2.4,
+   "crop": "960:540:180:10"
+  },
+  {
+   "src": "r1_nightfall",
+   "ss": 1.0,
+   "dur": 5.4,
+   "speed": 3.0
+  },
+  {
+   "src": "r3_ramparts2",
+   "ss": 1.0,
+   "dur": 2.5,
+   "grade": "night"
+  },
+  {
+   "src": "r4_brawl",
+   "ss": 2.6,
+   "dur": 3.4,
+   "grade": "night",
+   "crop": "982:552:149:84"
+  },
+  {
+   "src": "r5_chair_gate3",
+   "ss": 3.0,
+   "dur": 3.2,
+   "grade": "night"
+  },
+  {
+   "src": "r3_ramparts",
+   "ss": 0.4,
+   "dur": 1.6,
+   "grade": "night"
+  },
+  {
+   "src": "r4_brawl",
+   "ss": 10.2,
+   "dur": 2.6,
+   "grade": "night",
+   "crop": "982:552:149:84"
+  },
+  {
+   "src": "r7_dawn_end",
+   "ss": 0.2,
+   "dur": 8.2,
+   "speed": 1.35
+  }
+ ]
+}

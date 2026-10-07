@@ -1,0 +1,9 @@
+{"name": "sh", "segs": [
+ {"src": "r1_nightfall",  "ss": 9.3,  "dur": 2.8, "speed": 1.5},
+ {"src": "r3_ramparts2",  "ss": 1.0,  "dur": 2.0, "grade": "night", "crop": "960:720:200:0"},
+ {"src": "r4_brawl",      "ss": 2.8,  "dur": 2.6, "grade": "night", "crop": "736:552:200:84"},
+ {"src": "r5_chair_gate3","ss": 3.5,  "dur": 1.7, "grade": "night", "crop": "960:720:200:0"},
+ {"src": "build2",        "ss": 8.0,  "dur": 2.2, "speed": 12.0, "grade": "day"},
+ {"src": "g1_gather",     "ss": 1.2,  "dur": 1.2, "grade": "day"},
+ {"src": "r7_dawn_end",   "ss": 4.0,  "dur": 3.0, "speed": 1.3}
+]}

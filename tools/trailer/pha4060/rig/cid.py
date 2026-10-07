@@ -1,0 +1,3 @@
+r=ev('''(()=>{const F=Module.FS;const out=[];const walk=d=>{for(const n of F.readdir(d)){if(n=='.'||n=='..')continue;const p=(d=='/'?'':d)+'/'+n;let st;try{st=F.stat(p)}catch(e){continue}if(F.isDir(st.mode)){if(!p.startsWith('/proc')&&!p.startsWith('/dev'))walk(p)}else if(p.endsWith('.json')){const t=F.readFile(p,{encoding:'utf8'});const m=t.match(/"LastClientId":\\s*\\d+/);if(m){F.writeFile(p,t.replace(/"LastClientId":\\s*\\d+/,'"LastClientId": %d'));out.push(p+' '+m[0])}}}};walk('/');sohPersist();return out.join(';')})()'''%CID)
+print(r); time.sleep(3); page.reload(); time.sleep(35); page.mouse.click(480,270); time.sleep(2)
+print(ev('document.querySelector("#net-text").textContent'))

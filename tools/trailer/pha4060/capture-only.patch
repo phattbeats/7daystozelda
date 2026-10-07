@@ -1,0 +1,244 @@
+--- a/soh/src/code/z_camera.c
++++ b/soh/src/code/z_camera.c
+@@ -3,6 +3,9 @@
+ #include "vt.h"
+ 
+ #include <string.h>
++#ifdef __EMSCRIPTEN__
++#include <emscripten.h>
++#endif
+ 
+ #include "overlays/actors/ovl_En_Horse/z_en_horse.h"
+ 
+@@ -7485,6 +7488,61 @@
+ }
+ 
+ s32 sOOBTimer = 0;
++// PHA-4060 trailer capture build only: a scripted main camera. Mode 1 flies from
++// eye0/at0 to eye1/at1 in world space, mode 2 does the same relative to Link,
++// mode 3 orbits at0..at1 with eye = (angle deg, height, radius). Eased over n frames.
++s32 gTrailerCamMode = 0;
++s32 gTrailerHideHud = 0;
++static f32 sTrailerK[14];
++static s32 sTrailerFrames = 1;
++static s32 sTrailerFrame = 0;
++
++#ifdef __EMSCRIPTEN__
++EMSCRIPTEN_KEEPALIVE
++#endif
++void sevendays_test_cam(s32 mode, f32 ex0, f32 ey0, f32 ez0, f32 ax0, f32 ay0, f32 az0, f32 ex1, f32 ey1, f32 ez1,
++                        f32 ax1, f32 ay1, f32 az1, s32 frames, f32 fov0, f32 fov1, s32 hideHud) {
++    f32 k[14] = { ex0, ey0, ez0, ax0, ay0, az0, ex1, ey1, ez1, ax1, ay1, az1, fov0, fov1 };
++    memcpy(sTrailerK, k, sizeof(k));
++    gTrailerCamMode = mode;
++    gTrailerHideHud = hideHud;
++    sTrailerFrames = frames < 1 ? 1 : frames;
++    sTrailerFrame = 0;
++}
++
++static void Camera_TrailerOverride(Camera* camera) {
++    f32* k = sTrailerK;
++    f32 t = (f32)sTrailerFrame / sTrailerFrames;
++    f32 e = t * t * (3.0f - 2.0f * t);
++    Vec3f eye, at;
++    if (sTrailerFrame < sTrailerFrames) {
++        sTrailerFrame++;
++    }
++    at.x = k[3] + (k[9] - k[3]) * e;
++    at.y = k[4] + (k[10] - k[4]) * e;
++    at.z = k[5] + (k[11] - k[5]) * e;
++    if (gTrailerCamMode == 3) {
++        f32 ang = (k[0] + (k[6] - k[0]) * e) * (M_PI / 180.0f);
++        f32 r = k[2] + (k[8] - k[2]) * e;
++        eye.x = at.x + sinf(ang) * r;
++        eye.y = at.y + k[1] + (k[7] - k[1]) * e;
++        eye.z = at.z + cosf(ang) * r;
++    } else {
++        eye.x = k[0] + (k[6] - k[0]) * e;
++        eye.y = k[1] + (k[7] - k[1]) * e;
++        eye.z = k[2] + (k[8] - k[2]) * e;
++    }
++    if (gTrailerCamMode == 2 && camera->player != NULL) {
++        Vec3f* p = &camera->player->actor.world.pos;
++        eye.x += p->x; eye.y += p->y; eye.z += p->z;
++        at.x += p->x; at.y += p->y; at.z += p->z;
++    }
++    camera->eye = camera->eyeNext = eye;
++    camera->at = at;
++    camera->fov = k[12] + (k[13] - k[12]) * e;
++    camera->roll = 0;
++}
++
+ Vec3s Camera_Update(Camera* camera) {
+     Vec3f viewAt;
+     Vec3f viewEye;
+@@ -7660,6 +7718,10 @@
+         return camera->inputDir;
+     }
+ 
++    if (gTrailerCamMode != 0 && camera->thisIdx == MAIN_CAM) {
++        Camera_TrailerOverride(camera);
++    }
++
+     // setting bgCheckId to the ret of Quake_Calc, and checking that
+     // is required, it doesn't make too much sense though.
+     if ((bgId = Quake_Calc(camera, &quake), bgId != 0) && (camera->setting != CAM_SET_TURN_AROUND)) {
+--- a/soh/src/code/z_parameter.c
++++ b/soh/src/code/z_parameter.c
+@@ -5081,7 +5081,12 @@
+                                 gCounterDigit2Tex, gCounterDigit3Tex, gCounterDigit4Tex, gCounterDigit5Tex,
+                                 gCounterDigit6Tex, gCounterDigit7Tex, gCounterDigit8Tex };
+ 
++extern s32 gTrailerHideHud; // z_camera.c, PHA-4060 capture build
++
+ void Interface_Draw(PlayState* play) {
++    if (gTrailerHideHud) {
++        return;
++    }
+     static s16 magicArrowEffectsR[] = { 255, 100, 255 };
+     static s16 magicArrowEffectsG[] = { 0, 100, 255 };
+     static s16 magicArrowEffectsB[] = { 0, 255, 100 };
+--- a/soh/src/code/graph.c
++++ b/soh/src/code/graph.c
+@@ -113,15 +113,22 @@
+ 
+     pool->headMagic = GFXPOOL_HEAD_MAGIC;
+     pool->tailMagic = GFXPOOL_TAIL_MAGIC;
+-    THGA_Ct(&gfxCtx->polyOpa, pool->polyOpaBuffer, sizeof(pool->polyOpaBuffer));
+-    THGA_Ct(&gfxCtx->polyXlu, pool->polyXluBuffer, sizeof(pool->polyXluBuffer));
+-    THGA_Ct(&gfxCtx->overlay, pool->overlayBuffer, sizeof(pool->overlayBuffer));
+-    THGA_Ct(&gfxCtx->work, pool->workBuffer, sizeof(pool->workBuffer));
++    // PHA-4060 capture build: 4x display-list pools. A full 94-piece base plus a raid
++    // overran the stock POLY_OPA buffer ("Unhandled OP code" then a renderer SEGV).
++    static Gfx sTrailerOpa[2][0x2FC0 * 4];
++    static Gfx sTrailerXlu[2][0x1000 * 4];
++    static Gfx sTrailerOvl[2][0x800 * 4];
++    static Gfx sTrailerWork[2][0x100 * 4];
++    s32 idx = gfxCtx->gfxPoolIdx & 1;
++    THGA_Ct(&gfxCtx->polyOpa, sTrailerOpa[idx], sizeof(sTrailerOpa[idx]));
++    THGA_Ct(&gfxCtx->polyXlu, sTrailerXlu[idx], sizeof(sTrailerXlu[idx]));
++    THGA_Ct(&gfxCtx->overlay, sTrailerOvl[idx], sizeof(sTrailerOvl[idx]));
++    THGA_Ct(&gfxCtx->work, sTrailerWork[idx], sizeof(sTrailerWork[idx]));
+ 
+-    gfxCtx->polyOpaBuffer = pool->polyOpaBuffer;
+-    gfxCtx->polyXluBuffer = pool->polyXluBuffer;
+-    gfxCtx->overlayBuffer = pool->overlayBuffer;
+-    gfxCtx->workBuffer = pool->workBuffer;
++    gfxCtx->polyOpaBuffer = sTrailerOpa[idx];
++    gfxCtx->polyXluBuffer = sTrailerXlu[idx];
++    gfxCtx->overlayBuffer = sTrailerOvl[idx];
++    gfxCtx->workBuffer = sTrailerWork[idx];
+ 
+     gfxCtx->curFrameBuffer = (u16*)SysCfb_GetFbPtr(gfxCtx->fbIdx % 2);
+     gfxCtx->unk_014 = 0;
+--- a/soh/soh/Enhancements/nametag.cpp
++++ b/soh/soh/Enhancements/nametag.cpp
+@@ -148,7 +148,12 @@
+ }
+ 
+ // Draw all the name tags by leveraging a system heap buffer for majority of the graphics commands
++extern "C" int32_t gTrailerHideHud; // z_camera.c, PHA-4060 capture build
++
+ void DrawNameTags() {
++    if (gTrailerHideHud) {
++        return;
++    }
+     if (gPlayState == nullptr || nameTags.size() == 0) {
+         return;
+     }
+--- a/soh/soh/Notification/Notification.cpp
++++ b/soh/soh/Notification/Notification.cpp
+@@ -18,7 +18,12 @@
+ static uint32_t nextId = 0;
+ static std::vector<Options> notifications = {};
+ 
++extern "C" int32_t gTrailerHideHud; // z_camera.c, PHA-4060 capture build
++
+ void Window::Draw() {
++    if (gTrailerHideHud) {
++        return;
++    }
+     auto vp = ImGui::GetMainViewport();
+ 
+     const float margin = 30.0f;
+--- a/soh/soh/SevenDays/Nights.cpp
++++ b/soh/soh/SevenDays/Nights.cpp
+@@ -20,6 +20,7 @@
+ extern f32 gSevenDaysMoonScale; // z_kankyo.c: Environment_DrawSunAndMoon
+ extern u8 gSevenDaysMoonRed;
+ extern s16 gSevenDaysTint[3][3]; // z_kankyo.c: Environment_Update, added to the adj colors
++extern s32 gTrailerHideHud; // z_camera.c, PHA-4060 capture build: 1 hides all overlays, 2 keeps the day card, 3 keeps notices
+ }
+ 
+ #include "textures/message_static/message_static.h"
+@@ -677,7 +678,12 @@
+ }
+ 
+ static void DrawOverlayElements(PlayState* play, GraphicsContext* gfx) {
+-    DrawNotices(play, gfx);
++    if (gTrailerHideHud == 1) {
++        return;
++    }
++    if (gTrailerHideHud == 0 || gTrailerHideHud == 3) { // 3: notices only (gather/build shots)
++        DrawNotices(play, gfx);
++    }
+     if (!NightsEnabled()) {
+         return;
+     }
+@@ -688,7 +694,7 @@
+         // Cutscenes and text boxes own the screen: the clock steps aside for both,
+         // the card for cutscenes (a dawn often comes with a Navi line under it).
+         bool cutscene = play->csCtx.state != CS_STATE_IDLE || Player_InCsMode(play);
+-        if (!cutscene && play->msgCtx.msgMode == MSGMODE_NONE) {
++        if (!cutscene && play->msgCtx.msgMode == MSGMODE_NONE && gTrailerHideHud == 0) {
+             DrawFinalHoursClock(gfx);
+         }
+         // A card hidden by a cutscene or Navi's dawn line waits instead of running out unseen.
+--- a/soh/soh/SevenDays/Raids.cpp
++++ b/soh/soh/SevenDays/Raids.cpp
+@@ -227,6 +227,9 @@
+ // Gohma's night is easy-ish: a few Stalchildren whatever the gamestage. The second
+ // raid buys at 1x gamestage, the third on at the spec's 1.5x.
+ static int32_t WaveBudget(int32_t gamestage, int32_t raidNo, bool prologue) {
++    if (int32_t trailer = CVarGetInteger(CVAR_SEVEN_DAYS("TrailerBudget"), 0); trailer > 0) {
++        return trailer; // PHA-4060 capture build: a bigger wave for the trailer
++    }
+     if (prologue) {
+         return 2 + CountReadyPlayers();
+     }
+@@ -2218,6 +2221,10 @@
+         gPlayState->transitionTrigger = TRANS_TRIGGER_START;
+         gPlayState->transitionType = TRANS_TYPE_FADE_BLACK;
+         gSaveContext.nextCutsceneIndex = 0xFFEF; // no entrance cutscene
++    } else if (cmd.rfind("story:", 0) == 0) {
++        // PHA-4060 capture build: skip the prologue (e.g. "story:12" = Gohma dead, first raid done).
++        Net::MutableBase().story |= (uint32_t)std::stoul(cmd.substr(6));
++        Net::CommitBase();
+     } else if (cmd.rfind("raids:", 0) == 0) {
+         const_cast<BaseState&>(GetBase()).hordeNightsSurvived = (uint32_t)std::stoul(cmd.substr(6));
+     } else if (cmd.rfind("tier:", 0) == 0) {
+--- a/soh/soh/SevenDays/Placeables.cpp
++++ b/soh/soh/SevenDays/Placeables.cpp
+@@ -2121,7 +2121,8 @@
+                        "torch, stone wall, bomb-flower trap, player gate, iron wall, palisade, floors, deck, step, ladder, "
+                        "stairs, doors)";
+     placeable.category = ACTORCAT_BG;
+-    placeable.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED;
++    // PHA-4060 capture build: wide trailer shots draw the whole base.
++    placeable.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED;
+     placeable.objectId = OBJECT_GAMEPLAY_KEEP;
+     placeable.instanceSize = sizeof(PlaceableActor);
+     placeable.init = Placeable_Init;
+--- a/soh/soh/SevenDays/SevenDays.cpp
++++ b/soh/soh/SevenDays/SevenDays.cpp
+@@ -344,6 +344,10 @@
+     if (sPendingNavi.empty() || gPlayState == nullptr) {
+         return;
+     }
++    if (CVarGetInteger(CVAR_SEVEN_DAYS("TrailerQuiet"), 0)) {
++        sPendingNavi.clear(); // PHA-4060 capture build: no Navi lines over trailer shots
++        return;
++    }
+     Player* player = GET_PLAYER(gPlayState);
+     if (player == nullptr || gPlayState->msgCtx.msgMode != MSGMODE_NONE || Player_InCsMode(gPlayState) ||
+         (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM |

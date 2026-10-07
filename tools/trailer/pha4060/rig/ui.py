@@ -1,0 +1,6 @@
+CAM(0); HIDE_UI(); W(150, 0, 2120, 0x8000); time.sleep(1)
+REC_START('s2_workbench'); time.sleep(0.3)
+_cc('sevendays_test_open_window', None, ['number'], [0]); time.sleep(2.2)
+for i in range(6): hold('s', 0.35); time.sleep(0.45)
+hold('d', 0.3); time.sleep(0.8); hold('d', 0.3); time.sleep(1.2)
+print('frames', REC_STOP()); key('space'); time.sleep(1)
