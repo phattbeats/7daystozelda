@@ -32,6 +32,15 @@ struct ActorSyncAdapter {
     // copy never took the streamed defeat edge (stale stream, missed frame).
     // Start the local defeat sequence; no-op if it is already running.
     void (*OnRemoteDefeat)(Actor* actor) = nullptr;
+    // Mirror: suppression ended without a defeat (the stream went stale, or we
+    // became the authority), so the local AI resumes from the last streamed
+    // pose. The boss's own action state is whatever it was when mirroring
+    // began; put it back into a state that can continue from here.
+    void (*OnLocalResume)(Actor* actor) = nullptr;
+    // Authority: a mirror reports something its player did to this boss that
+    // no collider carries (King Dodongo swallowing that player's bomb). The
+    // event code is the adapter's own; see EnemySync::SendAdapterEvent.
+    void (*OnRemoteEvent)(Actor* actor, uint8_t event) = nullptr;
 };
 
 namespace EnemySync {

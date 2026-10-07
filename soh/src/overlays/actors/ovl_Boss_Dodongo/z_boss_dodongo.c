@@ -42,10 +42,19 @@ void BossDodongo_Damaged(BossDodongo* this, PlayState* play);
 void BossDodongo_UpdateDamage(BossDodongo* this, PlayState* play);
 void BossDodongo_PlayerPosCheck(BossDodongo* this, PlayState* play);
 void BossDodongo_PlayerYawCheck(BossDodongo* this, PlayState* play);
-f32 func_808C4F6C(BossDodongo* this, PlayState* play);
-f32 func_808C50A8(BossDodongo* this, PlayState* play);
+f32 func_808C4F6C(BossDodongo* this, Actor* target);
+f32 func_808C50A8(BossDodongo* this, Actor* target);
 void BossDodongo_DrawEffects(PlayState* play);
 void BossDodongo_UpdateEffects(PlayState* play);
+void BossDodongo_UpdateAim(BossDodongo* this, PlayState* play);
+void BossDodongo_UpdateAmbience(BossDodongo* this, PlayState* play, s32 isMirror);
+
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4047: soh/Network/Anchor/EnemyTargeting.cpp
+s32 Anchor_BossAimTargets(PlayState* play, Actor** out, s32 max);
+// PHA-4047: soh/Network/Anchor/BossAdapters/KingDodongoAdapter.cpp
+s32 Anchor_KingDodongoDefeatPending(Actor* actor);
+#endif
 
 const ActorInit Boss_Dodongo_InitVars = {
     ACTOR_BOSS_DODONGO,
@@ -603,6 +612,12 @@ void BossDodongo_IntroCutscene(BossDodongo* this, PlayState* play) {
                 this->unk_1BC = 0;
                 player->actor.shape.rot.y = -0x4002;
                 Flags_SetEventChkInf(EVENTCHKINF_BEGAN_KING_DODONGO_BATTLE);
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+                // 7DtZ co-op: the partner beat him while this intro played.
+                if (Anchor_KingDodongoDefeatPending(&this->actor)) {
+                    this->health = 0; // UpdateDamage starts the death right after this
+                }
+#endif
             }
             break;
     }
@@ -995,11 +1010,7 @@ void BossDodongo_Roll(BossDodongo* this, PlayState* play) {
 void BossDodongo_Update(Actor* thisx, PlayState* play2) {
     PlayState* play = play2;
     BossDodongo* this = (BossDodongo*)thisx;
-    f32 temp_f0;
     s16 i;
-    Player* player = GET_PLAYER(play);
-    Player* player2 = GET_PLAYER(play);
-    s32 pad;
 
     this->unk_1E2 = 0;
     this->unk_19E++;
@@ -1024,23 +1035,7 @@ void BossDodongo_Update(Actor* thisx, PlayState* play2) {
         this->unk_1C8--;
     }
 
-    temp_f0 = func_808C4F6C(this, play);
-
-    if (temp_f0 > 0.0f) {
-        this->unk_1A4 = temp_f0;
-    } else {
-        this->unk_1A4 = 0;
-    }
-
-    temp_f0 = func_808C50A8(this, play);
-
-    if (temp_f0 > 0.0f) {
-        this->unk_1A6 = temp_f0;
-    } else {
-        this->unk_1A6 = 0;
-    }
-
-    BossDodongo_PlayerYawCheck(this, play);
+    BossDodongo_UpdateAim(this, play);
     BossDodongo_PlayerPosCheck(this, play);
 
     this->actionFunc(this, play);
@@ -1053,6 +1048,59 @@ void BossDodongo_Update(Actor* thisx, PlayState* play2) {
     Actor_UpdateBgCheckInfo(play, thisx, 10.0f, 10.0f, 20.0f, 4);
     Math_SmoothStepToF(&this->unk_208, 0, 1, 0.001f, 0.0);
     Math_SmoothStepToF(&this->unk_20C, 0, 1, 0.001f, 0.0);
+
+    if (this->unk_1BE != 0) {
+        if (this->unk_1BE >= 1000) {
+            Math_SmoothStepToF(&this->colorFilterR, 30.0f, 1, 20.0f, 0.0);
+            Math_SmoothStepToF(&this->colorFilterG, 10.0f, 1, 20.0f, 0.0);
+        } else {
+            this->unk_1BE--;
+            Math_SmoothStepToF(&this->colorFilterR, 255.0f, 1, 20.0f, 0.0);
+            Math_SmoothStepToF(&this->colorFilterG, 0.0f, 1, 20.0f, 0.0);
+        }
+
+        Math_SmoothStepToF(&this->colorFilterB, 0.0f, 1, 20.0f, 0.0);
+        Math_SmoothStepToF(&this->colorFilterMin, 900.0f, 1, 10.0f, 0.0);
+        Math_SmoothStepToF(&this->colorFilterMax, 1099.0f, 1, 10.0f, 0.0);
+    } else {
+        Math_SmoothStepToF(&this->colorFilterR, play->lightCtx.fogColor[0], 1, 5.0f, 0.0);
+        Math_SmoothStepToF(&this->colorFilterG, play->lightCtx.fogColor[1], 1.0f, 5.0f, 0.0);
+        Math_SmoothStepToF(&this->colorFilterB, play->lightCtx.fogColor[2], 1.0f, 5.0f, 0.0);
+        Math_SmoothStepToF(&this->colorFilterMin, play->lightCtx.fogNear, 1.0, 5.0f, 0.0);
+        Math_SmoothStepToF(&this->colorFilterMax, 1000.0f, 1, 5.0f, 0.0);
+    }
+
+    if (this->unk_1BC == 0) {
+        if (this->actionFunc != BossDodongo_DeathCutscene) {
+            CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider.base);
+        }
+
+        CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
+
+        if (this->actionFunc == BossDodongo_Roll) {
+            CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+        }
+    }
+
+    this->collider.elements[0].dim.scale = (this->actionFunc == BossDodongo_Inhale) ? 0.0f : 1.0f;
+
+    for (i = 6; i < 19; i++) {
+        if (i != 12) {
+            this->collider.elements[i].dim.scale = (this->actionFunc == BossDodongo_Roll) ? 0.0f : 1.0f;
+        }
+    }
+
+    BossDodongo_UpdateAmbience(this, play, false);
+}
+
+// 7DtZ co-op (PHA-4047): the room's lava, the fire-breath glow and the body
+// wobble, split out of Update so a co-op mirror (whose Update is replaced by
+// the host's stream) still runs them. The mirror skips the magma spawns: the
+// host's are replayed on its screen (EnemyFxSync).
+void BossDodongo_UpdateAmbience(BossDodongo* this, PlayState* play, s32 isMirror) {
+    s16 i;
+    Player* player = GET_PLAYER(play);
+    Player* player2 = GET_PLAYER(play);
 
     if ((this->unk_19E % 128) == 0) {
         for (i = 0; i < 50; i++) {
@@ -1077,27 +1125,6 @@ void BossDodongo_Update(Actor* thisx, PlayState* play2) {
             play->envCtx.adjAmbientColor[0] = (u8)this->unk_240;
             play->envCtx.adjAmbientColor[1] = (u8)(this->unk_240 * 0.1f);
         }
-    }
-
-    if (this->unk_1BE != 0) {
-        if (this->unk_1BE >= 1000) {
-            Math_SmoothStepToF(&this->colorFilterR, 30.0f, 1, 20.0f, 0.0);
-            Math_SmoothStepToF(&this->colorFilterG, 10.0f, 1, 20.0f, 0.0);
-        } else {
-            this->unk_1BE--;
-            Math_SmoothStepToF(&this->colorFilterR, 255.0f, 1, 20.0f, 0.0);
-            Math_SmoothStepToF(&this->colorFilterG, 0.0f, 1, 20.0f, 0.0);
-        }
-
-        Math_SmoothStepToF(&this->colorFilterB, 0.0f, 1, 20.0f, 0.0);
-        Math_SmoothStepToF(&this->colorFilterMin, 900.0f, 1, 10.0f, 0.0);
-        Math_SmoothStepToF(&this->colorFilterMax, 1099.0f, 1, 10.0f, 0.0);
-    } else {
-        Math_SmoothStepToF(&this->colorFilterR, play->lightCtx.fogColor[0], 1, 5.0f, 0.0);
-        Math_SmoothStepToF(&this->colorFilterG, play->lightCtx.fogColor[1], 1.0f, 5.0f, 0.0);
-        Math_SmoothStepToF(&this->colorFilterB, play->lightCtx.fogColor[2], 1.0f, 5.0f, 0.0);
-        Math_SmoothStepToF(&this->colorFilterMin, play->lightCtx.fogNear, 1.0, 5.0f, 0.0);
-        Math_SmoothStepToF(&this->colorFilterMax, 1000.0f, 1, 5.0f, 0.0);
     }
 
     if (player->actor.world.pos.y < -1000.0f) {
@@ -1134,7 +1161,7 @@ void BossDodongo_Update(Actor* thisx, PlayState* play2) {
             phi_s0_3 = -1;
         }
 
-        if ((this->unk_19E & phi_s0_3) == 0) {
+        if (!isMirror && (this->unk_19E & phi_s0_3) == 0) {
             static Color_RGBA8 magmaPrimColor[] = { { 255, 255, 0, 255 }, { 0, 0, 0, 150 } };
             static Color_RGBA8 magmaEnvColor[] = { { 255, 0, 0, 255 }, { 0, 0, 0, 0 } };
             Vec3f sp84;
@@ -1160,7 +1187,9 @@ void BossDodongo_Update(Actor* thisx, PlayState* play2) {
             sp54.x = sinf(sp4C) * sp50 + (-890.0f);
             sp54.y = -1523.76f;
             sp54.z = cosf(sp4C) * sp50 + (-3304.0f);
-            EffectSsGMagma_Spawn(play, &sp54);
+            if (!isMirror) {
+                EffectSsGMagma_Spawn(play, &sp54);
+            }
             for (i = 0; i < 4; i++) {
                 sp60.y = 0.4f;
                 sp60.x = Rand_CenteredFloat(0.5f);
@@ -1242,26 +1271,6 @@ void BossDodongo_Update(Actor* thisx, PlayState* play2) {
         }
 
         Math_SmoothStepToF(&this->unk_224, 0.0f, 1.0f, 0.01f, 0.0f);
-    }
-
-    if (this->unk_1BC == 0) {
-        if (this->actionFunc != BossDodongo_DeathCutscene) {
-            CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider.base);
-        }
-
-        CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
-
-        if (this->actionFunc == BossDodongo_Roll) {
-            CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
-        }
-    }
-
-    this->collider.elements[0].dim.scale = (this->actionFunc == BossDodongo_Inhale) ? 0.0f : 1.0f;
-
-    for (i = 6; i < 19; i++) {
-        if (i != 12) {
-            this->collider.elements[i].dim.scale = (this->actionFunc == BossDodongo_Roll) ? 0.0f : 1.0f;
-        }
     }
 
     if (this->unk_244 != 0) {
@@ -1393,17 +1402,16 @@ void BossDodongo_Draw(Actor* thisx, PlayState* play) {
     BossDodongo_DrawEffects(play);
 }
 
-f32 func_808C4F6C(BossDodongo* this, PlayState* play) {
+f32 func_808C4F6C(BossDodongo* this, Actor* target) {
     f32 xDiff;
     f32 zDiff;
     f32 sp2C;
     s32 pad;
     f32 temp_f2;
     f32 rotation;
-    Player* player = GET_PLAYER(play);
 
-    xDiff = player->actor.world.pos.x - this->actor.world.pos.x;
-    zDiff = player->actor.world.pos.z - this->actor.world.pos.z;
+    xDiff = target->world.pos.x - this->actor.world.pos.x;
+    zDiff = target->world.pos.z - this->actor.world.pos.z;
 
     rotation = Math_CosS(-this->actor.world.rot.y);
     sp2C = (Math_SinS(-this->actor.world.rot.y) * zDiff) + (rotation * xDiff);
@@ -1416,17 +1424,16 @@ f32 func_808C4F6C(BossDodongo* this, PlayState* play) {
     return -1.0f;
 }
 
-f32 func_808C50A8(BossDodongo* this, PlayState* play) {
+f32 func_808C50A8(BossDodongo* this, Actor* target) {
     f32 xDiff;
     f32 zDiff;
     f32 sp2C;
     s32 pad;
     f32 temp_f2;
     f32 rotation;
-    Player* player = GET_PLAYER(play);
 
-    xDiff = player->actor.world.pos.x - this->actor.world.pos.x;
-    zDiff = player->actor.world.pos.z - this->actor.world.pos.z;
+    xDiff = target->world.pos.x - this->actor.world.pos.x;
+    zDiff = target->world.pos.z - this->actor.world.pos.z;
 
     rotation = Math_CosS(-0x8000 - this->actor.world.rot.y);
     sp2C = (Math_SinS(-0x8000 - this->actor.world.rot.y) * zDiff) + (rotation * xDiff);
@@ -1447,6 +1454,70 @@ void BossDodongo_PlayerYawCheck(BossDodongo* this, PlayState* play) {
         this->playerYawInRange = true;
     } else {
         this->playerYawInRange = false;
+    }
+}
+
+// 7DtZ co-op (PHA-4047): King Dodongo never aims at a position. He walks a
+// fixed path between the corners, rolls into whoever is in his way, and his
+// fire runs along the walls; only the choice to attack reads the player. In
+// co-op the host decides for everyone, so feed that choice every living player
+// in the room: he breathes fire at whoever stands in front of him (the nearest
+// one, if they're within 500 as vanilla asks), turns back for whoever is
+// behind him, and keeps walking while anyone is ahead. GET_PLAYER itself stays
+// the local Link, because the intro, the death and the lava all move it.
+// Alone, this is exactly the vanilla check.
+void BossDodongo_UpdateAim(BossDodongo* this, PlayState* play) {
+    Actor* targets[4];
+    s32 count = 1;
+    s32 i;
+    f32 front = -1.0f;
+    f32 back = -1.0f;
+    f32 dist;
+    Actor* frontTarget = NULL;
+    s32 frontInReach = false;
+
+    targets[0] = &GET_PLAYER(play)->actor;
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    count = Anchor_BossAimTargets(play, targets, ARRAY_COUNT(targets));
+#endif
+    if (count <= 1) {
+        dist = func_808C4F6C(this, targets[0]);
+        this->unk_1A4 = (dist > 0.0f) ? dist : 0;
+        dist = func_808C50A8(this, targets[0]);
+        this->unk_1A6 = (dist > 0.0f) ? dist : 0;
+        BossDodongo_PlayerYawCheck(this, play);
+        return;
+    }
+
+    this->playerYawInRange = false;
+    for (i = 0; i < count; i++) {
+        Actor* target = targets[i];
+        s16 yawDiff = Actor_WorldYawTowardActor(&this->actor, target) - this->actor.world.rot.y;
+
+        dist = func_808C4F6C(this, target);
+        if (dist > 0.0f) {
+            // In the lane: someone within 500 beats anyone farther away, then the nearest wins.
+            s32 inReach = Actor_WorldDistXZToActor(&this->actor, target) < 500.0f;
+
+            if ((frontTarget == NULL) || (inReach && !frontInReach) || ((inReach == frontInReach) && (dist < front))) {
+                front = dist;
+                frontTarget = target;
+                frontInReach = inReach;
+            }
+        }
+        dist = func_808C50A8(this, target);
+        if ((dist > 0.0f) && ((back < 0.0f) || (dist < back))) {
+            back = dist;
+        }
+        if ((yawDiff < 0x38E3) && (-0x38E3 < yawDiff)) {
+            this->playerYawInRange = true;
+        }
+    }
+    this->unk_1A4 = (front > 0.0f) ? front : 0;
+    this->unk_1A6 = (back > 0.0f) ? back : 0;
+    if (frontTarget != NULL) {
+        // Walk's "within 500" check is about the player in front of him.
+        this->actor.xzDistToPlayer = Actor_WorldDistXZToActor(&this->actor, frontTarget);
     }
 }
 

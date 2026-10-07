@@ -281,8 +281,12 @@ static s16* ProjectileTimer(Actor* actor) {
 // short-lived local effects spawned on BOTH clients (limb pieces spawn from
 // PostLimbDraw during the locally-run defeat) — tracking or replicating them
 // would double-spawn and pollute the stream.
+// EN_BDFIRE: King Dodongo's fire breath. Each machine spawns its own flames
+// (the authority from the AI, a mirror from the streamed flame count in the
+// King Dodongo adapter), and each flame burns only that machine's own Link
+// (it checks GET_PLAYER by distance; it has no collider to mirror).
 static bool IsTrackingExcluded(Actor* actor) {
-    return actor->id == ACTOR_EN_GOMA && (uint16_t)actor->params >= 6;
+    return (actor->id == ACTOR_EN_GOMA && (uint16_t)actor->params >= 6) || actor->id == ACTOR_EN_BDFIRE;
 }
 
 // En_Floormas's split/merge logic manipulates parent/child links across three
@@ -700,6 +704,11 @@ static void EndSuppression(Actor* actor, TrackedState& st, const char* reason) {
     st.expectedRemoteDamage = 0;
     st.expectedRemoteDamageTimer = 0;
     ESYNC_LOG("[EnemySync] MIRROR suppress=off key={:#x} reason={}", st.key, reason);
+    // Defeat handoffs set dying first and start their own sequence.
+    const ActorSyncAdapter* adapter = GetAdapter(actor->id);
+    if (!st.dying && adapter != nullptr && adapter->OnLocalResume != nullptr) {
+        adapter->OnLocalResume(actor);
+    }
 }
 
 void ReleaseForDeath(Actor* actor) {
@@ -736,6 +745,28 @@ bool HandOffRemoteDefeat(Actor* actor) {
     ESYNC_LOG("[EnemySync] remote defeat handoff key={:#x} id={}", st.key, actor->id);
     ReleaseForDeath(actor);
     return true;
+}
+
+void SendAdapterEvent(Actor* actor, uint8_t event) {
+    auto it = tracked.find(actor);
+    if (it == tracked.end() || Anchor::Instance == nullptr || gPlayState == NULL || IsLocalAuthority() ||
+        cachedAuthorityId == UINT32_MAX) {
+        return;
+    }
+    nlohmann::json payload;
+    payload["type"] = Anchor::ENEMY_HIT_REQUEST;
+    payload["quiet"] = true;
+    payload["sceneNum"] = gPlayState->sceneNum;
+    payload["key"] = it->second.key;
+    payload["actorId"] = actor->id;
+    payload["homePos"] = actor->home.pos;
+    payload["damage"] = 0;
+    payload["dmgFlags"] = 0;
+    payload["hitPos"] = Vec3s{ 0, 0, 0 };
+    payload["event"] = event;
+    payload["targetClientId"] = cachedAuthorityId;
+    Anchor::Instance->SendJsonToRemote(payload);
+    ESYNC_LOG("[EnemySync] EVENT tx id={} key={:#x} event={}", actor->id, it->second.key, event);
 }
 
 // Reads this frame's collision results (CollisionCheck_Damage already resolved

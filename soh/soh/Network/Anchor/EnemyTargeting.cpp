@@ -425,3 +425,24 @@ extern "C" void Anchor_EnemyTargetEnd(PlayState* play, Actor* actor) {
 extern "C" s32 Anchor_EnemyTargetSwapActive(void) {
     return EnemyTargeting::SwapActive() ? 1 : 0;
 }
+
+// PHA-4047: the players a boss may pick its next attack against (see
+// BossDodongo_UpdateAim). The local Link always comes first, as GET_PLAYER;
+// living same-scene puppets follow while we run enemy AI for a peer.
+extern "C" s32 Anchor_BossAimTargets(PlayState* play, Actor** out, s32 max) {
+    s32 count = 0;
+    if (play == NULL || max <= 0) {
+        return 0;
+    }
+    out[count++] = &GET_PLAYER(play)->actor;
+    if (!Enabled() || !EnemySync::SyncEnabled() || Anchor::Instance == nullptr) {
+        return count;
+    }
+    for (uint32_t cid : EnemySync::PerceptionTargets()) {
+        Player* p = ResolvePuppet(cid);
+        if (p != nullptr && count < max) {
+            out[count++] = &p->actor;
+        }
+    }
+    return count;
+}

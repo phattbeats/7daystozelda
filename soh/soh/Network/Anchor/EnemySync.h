@@ -106,6 +106,11 @@ void ReleaseForDeath(Actor* actor);
 // (the caller falls back to ApplyRemoteDeath).
 bool HandOffRemoteDefeat(Actor* actor);
 
+// Mirror -> authority: an adapter-defined event for this tracked boss (rides
+// on ENEMY_HIT_REQUEST with an "event" field; the authority calls the
+// adapter's OnRemoteEvent). No-op when we are the authority.
+void SendAdapterEvent(Actor* actor, uint8_t event);
+
 // Game-thread ingest of an ENEMY_STATE payload into the stream cache.
 void IngestEnemyState(const nlohmann::json& payload);
 

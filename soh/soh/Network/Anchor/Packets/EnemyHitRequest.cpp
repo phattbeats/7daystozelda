@@ -1,5 +1,6 @@
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Anchor/EnemySync.h"
+#include "soh/Network/Anchor/BossAdapters/ActorSyncAdapter.h"
 #include "soh/Network/Anchor/JsonConversions.hpp"
 #include <nlohmann/json.hpp>
 #include <libultraship/libultraship.h>
@@ -75,6 +76,18 @@ void Anchor::HandlePacket_EnemyHitRequest(nlohmann::json payload) {
         // hand-off shows up instead of silently eating the mirror's hit.
         ESYNC_LOG("[EnemySync] HITREQ rx dropped (suppressed) key={:#x} auth={}", payload["key"].get<uint64_t>(),
                   EnemySync::CurrentAuthorityId());
+        return;
+    }
+
+    // An adapter event, not a hit (PHA-4047: King Dodongo swallowed the
+    // requester's bomb). Old builds never send one.
+    if (payload.contains("event")) {
+        const ActorSyncAdapter* adapter = EnemySync::GetAdapter(actor->id);
+        uint8_t event = payload["event"].get<uint8_t>();
+        ESYNC_LOG("[EnemySync] EVENT rx id={} event={}", actor->id, event);
+        if (adapter != nullptr && adapter->OnRemoteEvent != nullptr) {
+            adapter->OnRemoteEvent(actor, event);
+        }
         return;
     }
 

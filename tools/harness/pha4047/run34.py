@@ -1,0 +1,6 @@
+exec(open('/tmp/z4047/t/cycle.py').read())
+for e in cycle('B','A'): print(e)
+for e in cycle('A','B'): print(e)
+a=kd('A'); b=kd('B')
+print('A', {k:a[k] for k in ('act','phase','hp','cs','sup','dying')})
+print('B', {k:b[k] for k in ('act','phase','hp','cs','sup','dying','pending')})
