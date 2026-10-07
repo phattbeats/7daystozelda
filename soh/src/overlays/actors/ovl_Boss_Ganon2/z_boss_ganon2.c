@@ -13,6 +13,14 @@
 
 #include <string.h>
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4054: soh/Network/Anchor/EnemyTargeting.cpp
+Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
+// PHA-4054: soh/Network/Anchor/BossAdapters/Ganon2Adapter.cpp
+void Anchor_Ganon2IntroOver(Actor* boss);
+s32 Anchor_Ganon2SwordPickup(Actor* boss);
+#endif
+
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
      ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -930,6 +938,9 @@ void func_808FD5F4(BossGanon2* this, PlayState* play) {
                 this->unk_1A2[1] = 50;
                 this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
                 sBossGanon2Zelda->unk_3C8 = 7;
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+                Anchor_Ganon2IntroOver(&this->actor);
+#endif
             }
             break;
     }
@@ -2009,122 +2020,16 @@ void func_80902524(BossGanon2* this, PlayState* play) {
     }
 }
 
-void BossGanon2_Update(Actor* thisx, PlayState* play) {
-    BossGanon2* this = (BossGanon2*)thisx;
-    s32 pad;
+// The lightning flashes, the sky filter, the room lighting and the rubble that fall in the
+// ruins. Co-op runs it on a mirrored Ganon too: each client has its own storm.
+static void BossGanon2_UpdateEnvironment(BossGanon2* this, PlayState* play) {
     s16 i;
-    f32 phi_f2;
     u16 i2;
     Vec3f sp58;
     Vec3f sp4C;
     f32 angle;
     f32 sp44;
 
-    if ((this->unk_337 == 0) || (this->unk_337 == 2)) {
-        BossGanon2_SetObjectSegment(this, play, OBJECT_GANON_ANIME3, false);
-    } else {
-        BossGanon2_SetObjectSegment(this, play, OBJECT_GANON2, false);
-        Math_ApproachZeroF(&this->unk_30C, 1.0f, 0.5f);
-    }
-    func_808FFC84(this);
-    this->unk_312 = 0;
-    this->unk_19C++;
-    Actor_SetScale(&this->actor, 0.01f);
-    this->actionFunc(this, play);
-    for (i = 0; i < ARRAY_COUNT(this->unk_1A2); i++) {
-        if (this->unk_1A2[i] != 0) {
-            this->unk_1A2[i]--;
-        }
-    }
-    if (this->unk_316 != 0) {
-        this->unk_316--;
-    }
-    if (this->unk_342 != 0) {
-        this->unk_342--;
-    }
-    if (this->unk_390 != 0) {
-        this->unk_390--;
-    }
-    if (this->unk_392 != 0) {
-        this->unk_392--;
-    }
-    Actor_MoveXZGravity(&this->actor);
-    this->actor.shape.rot = this->actor.world.rot;
-    if (this->unk_335 != 0) {
-        Actor_UpdateBgCheckInfo(play, &this->actor, 60.0f, 60.0f, 100.0f, 5);
-        if (this->actor.bgCheckFlags & 1) {
-            if (this->actor.velocity.y < -5.0f) {
-                func_80033E88(&this->actor, play, 5, 20);
-                Sfx_PlaySfxCentered(NA_SE_IT_BOMB_EXPLOSION);
-            }
-            this->actor.velocity.y = 0.0f;
-        }
-    }
-    if (((this->unk_19C & 0x1F) == 0) && (Rand_ZeroOne() < 0.3f)) {
-        this->unk_318 = 4;
-    }
-    this->unk_310 = D_80907074[this->unk_318];
-    if (this->unk_318 != 0) {
-        this->unk_318--;
-    }
-    this->unk_1B0 = (Math_SinS(this->unk_19C * 0x2AAA) * 64.0f) + 191.0f;
-    if (this->unk_344 != 0) {
-        this->unk_344--;
-        Math_ApproachF(&this->unk_360.x, 5000.0f, 0.5f, 3000.0f);
-        Math_ApproachF(&this->unk_370.x, 5500.0f, 0.5f, 3000.0f);
-        Math_ApproachF(&this->unk_360.z, 8000.0f, 0.1f, 4000.0f);
-        Math_ApproachF(&this->unk_370.z, 8000.0f, 0.1f, 4000.0f);
-        Math_ApproachS(&this->unk_346, 0xFA0, 0xA, 0x7D0);
-    } else {
-        this->unk_360.y = 14000.0f;
-        Math_ApproachF(&this->unk_360.x, 2000.0f, 0.1f, 100.0f);
-        this->unk_370.y = 12000.0f;
-        Math_ApproachF(&this->unk_370.x, 1500.0f, 0.1f, 100.0f);
-        if ((this->actionFunc == func_808FFEBC) || (this->actionFunc == func_808FFFE0) ||
-            (this->actionFunc == func_80900104)) {
-            Math_ApproachF(&this->unk_360.z, 1000.0f, 0.1f, 100.0f);
-            Math_ApproachF(&this->unk_370.z, 1000.0f, 0.1f, 100.0f);
-            Math_ApproachS(&this->unk_346, -0xFA0, 0xA, 0x64);
-        } else {
-            Math_ApproachF(&this->unk_360.z, 5000.0f, 0.1f, 200.0f);
-            Math_ApproachF(&this->unk_370.z, 5000.0f, 0.1f, 200.0f);
-            Math_ApproachS(&this->unk_346, 0, 0xA, 0x64);
-        }
-    }
-    if (this->csState != 75) {
-        this->unk_35C += this->unk_360.x;
-        this->unk_36C += this->unk_370.x;
-    }
-    if (this->unk_337 == 2) {
-        this->unk_370.z = 0.0f;
-        this->unk_360.z = 0.0f;
-    }
-
-    for (i = 0; i < ARRAY_COUNT(this->unk_348); i++) {
-        if (i == 0) {
-            phi_f2 = 0.2f;
-        } else if (i == 1) {
-            phi_f2 = 0.5f;
-        } else {
-            phi_f2 = 1.0f;
-        }
-
-        this->unk_348[i] = Math_SinS(((s16)this->unk_35C + (i * (s16)this->unk_360.y))) * phi_f2 * this->unk_360.z;
-        this->unk_352[i] = Math_SinS(((s16)this->unk_36C + (i * (s16)this->unk_370.y))) * phi_f2 * this->unk_370.z;
-    }
-
-    func_808FF898(this, play);
-    func_80902348(this, play);
-    CollisionCheck_SetOC(play, &play->colChkCtx, &this->unk_424.base);
-    if (this->actionFunc != func_8090120C) {
-        func_80902524(this, play);
-        CollisionCheck_SetAC(play, &play->colChkCtx, &this->unk_424.base);
-        CollisionCheck_SetOC(play, &play->colChkCtx, &this->unk_444.base);
-        CollisionCheck_SetAC(play, &play->colChkCtx, &this->unk_444.base);
-        if (this->unk_39E == 0) {
-            CollisionCheck_SetAT(play, &play->colChkCtx, &this->unk_444.base);
-        }
-    }
     if ((this->unk_332 == 0) && (this->unk_336 != 0)) {
         if (this->unk_336 == 2) {
             this->unk_332 = (s16)Rand_ZeroFloat(30.0f) + 8;
@@ -2240,6 +2145,135 @@ void BossGanon2_Update(Actor* thisx, PlayState* play) {
             func_808FD27C(play, &sp58, &sp4C, Rand_ZeroFloat(0.3f) + 0.2f);
         }
     }
+}
+
+void BossGanon2_Update(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+    s32 pad;
+    s16 i;
+    f32 phi_f2;
+
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    {
+        // Co-op: his facing, his walk and his swings go after the nearest player.
+        Actor* aim = Anchor_BossNearestTarget(play, &this->actor);
+        Player* player = GET_PLAYER(play);
+
+        if (aim != &player->actor) {
+            this->actor.yawTowardsPlayer = Math_Vec3f_Yaw(&this->actor.world.pos, &aim->world.pos);
+            this->actor.xzDistToPlayer = Math_Vec3f_DistXZ(&this->actor.world.pos, &aim->world.pos);
+            this->actor.yDistToPlayer = aim->world.pos.y - this->actor.world.pos.y;
+            this->actor.xyzDistToPlayerSq = SQ(this->actor.xzDistToPlayer) + SQ(this->actor.yDistToPlayer);
+        }
+    }
+#endif
+
+    if ((this->unk_337 == 0) || (this->unk_337 == 2)) {
+        BossGanon2_SetObjectSegment(this, play, OBJECT_GANON_ANIME3, false);
+    } else {
+        BossGanon2_SetObjectSegment(this, play, OBJECT_GANON2, false);
+        Math_ApproachZeroF(&this->unk_30C, 1.0f, 0.5f);
+    }
+    func_808FFC84(this);
+    this->unk_312 = 0;
+    this->unk_19C++;
+    Actor_SetScale(&this->actor, 0.01f);
+    this->actionFunc(this, play);
+    for (i = 0; i < ARRAY_COUNT(this->unk_1A2); i++) {
+        if (this->unk_1A2[i] != 0) {
+            this->unk_1A2[i]--;
+        }
+    }
+    if (this->unk_316 != 0) {
+        this->unk_316--;
+    }
+    if (this->unk_342 != 0) {
+        this->unk_342--;
+    }
+    if (this->unk_390 != 0) {
+        this->unk_390--;
+    }
+    if (this->unk_392 != 0) {
+        this->unk_392--;
+    }
+    Actor_MoveXZGravity(&this->actor);
+    this->actor.shape.rot = this->actor.world.rot;
+    if (this->unk_335 != 0) {
+        Actor_UpdateBgCheckInfo(play, &this->actor, 60.0f, 60.0f, 100.0f, 5);
+        if (this->actor.bgCheckFlags & 1) {
+            if (this->actor.velocity.y < -5.0f) {
+                func_80033E88(&this->actor, play, 5, 20);
+                Sfx_PlaySfxCentered(NA_SE_IT_BOMB_EXPLOSION);
+            }
+            this->actor.velocity.y = 0.0f;
+        }
+    }
+    if (((this->unk_19C & 0x1F) == 0) && (Rand_ZeroOne() < 0.3f)) {
+        this->unk_318 = 4;
+    }
+    this->unk_310 = D_80907074[this->unk_318];
+    if (this->unk_318 != 0) {
+        this->unk_318--;
+    }
+    this->unk_1B0 = (Math_SinS(this->unk_19C * 0x2AAA) * 64.0f) + 191.0f;
+    if (this->unk_344 != 0) {
+        this->unk_344--;
+        Math_ApproachF(&this->unk_360.x, 5000.0f, 0.5f, 3000.0f);
+        Math_ApproachF(&this->unk_370.x, 5500.0f, 0.5f, 3000.0f);
+        Math_ApproachF(&this->unk_360.z, 8000.0f, 0.1f, 4000.0f);
+        Math_ApproachF(&this->unk_370.z, 8000.0f, 0.1f, 4000.0f);
+        Math_ApproachS(&this->unk_346, 0xFA0, 0xA, 0x7D0);
+    } else {
+        this->unk_360.y = 14000.0f;
+        Math_ApproachF(&this->unk_360.x, 2000.0f, 0.1f, 100.0f);
+        this->unk_370.y = 12000.0f;
+        Math_ApproachF(&this->unk_370.x, 1500.0f, 0.1f, 100.0f);
+        if ((this->actionFunc == func_808FFEBC) || (this->actionFunc == func_808FFFE0) ||
+            (this->actionFunc == func_80900104)) {
+            Math_ApproachF(&this->unk_360.z, 1000.0f, 0.1f, 100.0f);
+            Math_ApproachF(&this->unk_370.z, 1000.0f, 0.1f, 100.0f);
+            Math_ApproachS(&this->unk_346, -0xFA0, 0xA, 0x64);
+        } else {
+            Math_ApproachF(&this->unk_360.z, 5000.0f, 0.1f, 200.0f);
+            Math_ApproachF(&this->unk_370.z, 5000.0f, 0.1f, 200.0f);
+            Math_ApproachS(&this->unk_346, 0, 0xA, 0x64);
+        }
+    }
+    if (this->csState != 75) {
+        this->unk_35C += this->unk_360.x;
+        this->unk_36C += this->unk_370.x;
+    }
+    if (this->unk_337 == 2) {
+        this->unk_370.z = 0.0f;
+        this->unk_360.z = 0.0f;
+    }
+
+    for (i = 0; i < ARRAY_COUNT(this->unk_348); i++) {
+        if (i == 0) {
+            phi_f2 = 0.2f;
+        } else if (i == 1) {
+            phi_f2 = 0.5f;
+        } else {
+            phi_f2 = 1.0f;
+        }
+
+        this->unk_348[i] = Math_SinS(((s16)this->unk_35C + (i * (s16)this->unk_360.y))) * phi_f2 * this->unk_360.z;
+        this->unk_352[i] = Math_SinS(((s16)this->unk_36C + (i * (s16)this->unk_370.y))) * phi_f2 * this->unk_370.z;
+    }
+
+    func_808FF898(this, play);
+    func_80902348(this, play);
+    CollisionCheck_SetOC(play, &play->colChkCtx, &this->unk_424.base);
+    if (this->actionFunc != func_8090120C) {
+        func_80902524(this, play);
+        CollisionCheck_SetAC(play, &play->colChkCtx, &this->unk_424.base);
+        CollisionCheck_SetOC(play, &play->colChkCtx, &this->unk_444.base);
+        CollisionCheck_SetAC(play, &play->colChkCtx, &this->unk_444.base);
+        if (this->unk_39E == 0) {
+            CollisionCheck_SetAT(play, &play->colChkCtx, &this->unk_444.base);
+        }
+    }
+    BossGanon2_UpdateEnvironment(this, play);
     this->unk_388 += 0.15f;
     func_80905DA8(this, play);
 }
@@ -2911,8 +2945,21 @@ void func_80905DA8(BossGanon2* this, PlayState* play) {
                     }
                     if ((SQ(player->actor.world.pos.x - effect->position.x) +
                          SQ(player->actor.world.pos.z - effect->position.z)) < SQ(25.0f)) {
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+                        // Co-op: a mirrored Ganon cannot start the cutscene; the authority's does.
+                        s32 pickup = Anchor_Ganon2SwordPickup(&this->actor);
+
+                        if (pickup == 2) {
+                            continue;
+                        }
+                        effect->type = 0;
+                        if (pickup == 0) {
+                            this->csState = 10;
+                        }
+#else
                         effect->type = 0;
                         this->csState = 10;
+#endif
                     }
                 }
             } else if (effect->type == 2) {
@@ -3155,3 +3202,113 @@ void BossGanon2_Reset(void) {
     memset(D_80910608, 0, sizeof(D_80910608));
     memset(sBossGanon2Particles, 0, sizeof(sBossGanon2Particles));
 }
+
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4054: what soh/Network/Anchor/BossAdapters/Ganon2Adapter.cpp needs from this file.
+
+// 0 intro cutscene, 1 fight (including Ganon lying downed with Link free), 2 the finale (the
+// Master Sword and the Sages), 3 the cutscene when he first goes down (Zelda's text), 4 the
+// cutscene when Link takes up the Master Sword.
+u8 BossGanon2_CoopPhase(Actor* thisx) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    if (this->actionFunc == func_8090120C) {
+        return 2;
+    }
+    if (this->actionFunc == func_808FD5F4) {
+        return 0;
+    }
+    if (this->actionFunc == func_80900890) {
+        if (this->csState <= 2) {
+            return 3;
+        }
+        if (this->csState == 10 || this->csState == 11) {
+            return 4;
+        }
+    }
+    return 1;
+}
+
+// Ganon is lying downed with the cutscene over: the stretch where players slash his head.
+s32 BossGanon2_CoopIsLying(Actor* thisx) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    return this->actionFunc == func_80900890 && this->csState == 3;
+}
+
+u8 BossGanon2_CoopCsState(Actor* thisx) {
+    return (u8)((BossGanon2*)thisx)->csState;
+}
+
+// The cutscene that starts when his health first drops below 21.
+void BossGanon2_CoopStartDownedCs(Actor* thisx, PlayState* play) {
+    func_80900818((BossGanon2*)thisx, play);
+}
+
+// The cutscene when Link takes up the Master Sword, on a copy that was lying.
+void BossGanon2_CoopStartSwordCs(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    if (this->actionFunc != func_80900890) {
+        Animation_MorphToLoop(&this->skelAnime, &gGanonDownedLoopAnim, 0.0f);
+        this->actionFunc = func_80900890;
+        this->unk_1AC = 1;
+        this->unk_336 = 0;
+    }
+    this->csState = 10;
+}
+
+// The authority's side of a mirror's pickup of the Master Sword.
+void BossGanon2_CoopSwordTaken(Actor* thisx) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    if (this->actionFunc == func_80900890 && this->csState == 3) {
+        this->csState = 10;
+    }
+}
+
+// The defeat decided on another client: what the killing blow's hit path does.
+void BossGanon2_CoopStartDefeat(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    if (this->actionFunc == func_8090120C) {
+        return;
+    }
+    this->actor.colChkInfo.health = 0;
+    func_80901020(this, play);
+}
+
+// Mirroring ended without a defeat: carry on from the streamed pose.
+void BossGanon2_CoopResume(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    this->actor.world.rot = this->actor.shape.rot;
+    if (this->actionFunc != func_808FD5F4 && this->actionFunc != func_8090120C) {
+        func_808FFDB0(this, play);
+    }
+}
+
+// A mirrored Ganon's per-frame upkeep: what his Update does for the picture and for the
+// local Link (the ring of fire, the sword's knock-back), and the storm.
+void BossGanon2_CoopMirrorUpdate(Actor* thisx, PlayState* play) {
+    BossGanon2* this = (BossGanon2*)thisx;
+
+    func_808FFC84(this);
+    this->unk_19C++;
+    if (this->unk_316 != 0) {
+        this->unk_316--;
+    }
+    if (((this->unk_19C & 0x1F) == 0) && (Rand_ZeroOne() < 0.3f)) {
+        this->unk_318 = 4;
+    }
+    this->unk_310 = D_80907074[this->unk_318];
+    if (this->unk_318 != 0) {
+        this->unk_318--;
+    }
+    this->unk_1B0 = (Math_SinS(this->unk_19C * 0x2AAA) * 64.0f) + 191.0f;
+    this->unk_388 += 0.15f;
+    func_80902348(this, play);
+    BossGanon2_UpdateEnvironment(this, play);
+    func_80905DA8(this, play);
+}
+#endif

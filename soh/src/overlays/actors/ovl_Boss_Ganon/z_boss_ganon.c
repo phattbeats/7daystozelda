@@ -16,6 +16,16 @@
 
 #include <string.h>
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4054: soh/Network/Anchor/EnemyTargeting.cpp
+Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
+// PHA-4054: soh/Network/Anchor/BossAdapters/GanondorfAdapter.cpp
+void Anchor_GanondorfSpawned(Actor* spawned);
+void Anchor_GanondorfPlatformCheck(Vec3f* pos);
+void Anchor_GanondorfBallReachedDorf(Actor* dorf);
+void Anchor_GanondorfIntroOver(Actor* dorf);
+#endif
+
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
      ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -45,6 +55,7 @@ void BossGanon_Block(BossGanon* this, PlayState* play);
 void BossGanon_HitByLightBall(BossGanon* this, PlayState* play);
 void BossGanon_Vulnerable(BossGanon* this, PlayState* play);
 void BossGanon_Damaged(BossGanon* this, PlayState* play);
+void BossGanon_StartDefeat(Actor* thisx, PlayState* play);
 
 void BossGanon_SetupWait(BossGanon* this, PlayState* play);
 void BossGanon_SetupChargeLightBall(BossGanon* this, PlayState* play);
@@ -118,6 +129,15 @@ s32 sBossGanonSeed3;
 s32 sBossGanonSeed2;
 
 BossGanon* sBossGanonGanondorf;
+
+// The player Ganondorf and his light balls go after: the nearest living one in co-op, else Link.
+static Actor* BossGanon_AimTarget(PlayState* play, Actor* from) {
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    return Anchor_BossNearestTarget(play, from);
+#else
+    return &GET_PLAYER(play)->actor;
+#endif
+}
 
 EnZl3* sBossGanonZelda;
 
@@ -438,13 +458,23 @@ void BossGanon_Init(Actor* thisx, PlayState* play2) {
             }
         } else {
             // light ball (anything from 0x64 - 0xC7)
+            Actor* aim = BossGanon_AimTarget(play, thisx);
+
             thisx->update = BossGanon_LightBall_Update;
             thisx->draw = BossGanon_LightBall_Draw;
             thisx->speedXZ = 12.0f;
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+            // Co-op: a ball a peer's spawn packet made has no parent; it belongs to this room's Ganondorf.
+            if (thisx->parent == NULL && sBossGanonGanondorf != NULL) {
+                thisx->parent = &sBossGanonGanondorf->actor;
+            }
+            // The ball has no health of its own; co-op only broadcasts a dynamic spawn that has some.
+            thisx->colChkInfo.health = 1;
+#endif
 
-            xDistFromPlayer = player->actor.world.pos.x - thisx->world.pos.x;
-            yDistFromPlayer = (player->actor.world.pos.y + 30.0f) - thisx->world.pos.y;
-            zDistFromPlayer = player->actor.world.pos.z - thisx->world.pos.z;
+            xDistFromPlayer = aim->world.pos.x - thisx->world.pos.x;
+            yDistFromPlayer = (aim->world.pos.y + 30.0f) - thisx->world.pos.y;
+            zDistFromPlayer = aim->world.pos.z - thisx->world.pos.z;
 
             thisx->world.rot.y = Math_Atan2S(zDistFromPlayer, xDistFromPlayer);
             thisx->world.rot.x = Math_Atan2S(sqrtf(SQ(xDistFromPlayer) + SQ(zDistFromPlayer)), yDistFromPlayer);
@@ -466,6 +496,9 @@ void BossGanon_Init(Actor* thisx, PlayState* play2) {
 
     Gfx_RegisterBlendedTexture(ganon_boss_sceneTex_006C18, sWindowShatterTex, NULL);
     Gfx_RegisterBlendedTexture(ganon_boss_sceneTex_007418, sWindowShatterTex, NULL);
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    Anchor_GanondorfSpawned(thisx);
+#endif
 }
 
 void BossGanon_Destroy(Actor* thisx, PlayState* play) {
@@ -1157,6 +1190,9 @@ void BossGanon_IntroCutscene(BossGanon* this, PlayState* play) {
                 func_80064534(play, &play->csCtx);
                 Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
                 BossGanon_SetupWait(this, play);
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+                Anchor_GanondorfIntroOver(&this->actor);
+#endif
             }
 
             if (sBossGanonZelda != NULL) {
@@ -2260,6 +2296,7 @@ void BossGanon_Wait(BossGanon* this, PlayState* play) {
     s32 pad;
     f32 cos;
     Player* player = GET_PLAYER(play);
+    Actor* aim = BossGanon_AimTarget(play, &this->actor);
 
     this->legSwayEnabled = true;
 
@@ -2270,9 +2307,9 @@ void BossGanon_Wait(BossGanon* this, PlayState* play) {
 
     SkelAnime_Update(&this->skelAnime);
 
-    if ((this->unk_1C2 == 0) && !(player->actor.world.pos.y < 0.0f)) {
-        if (!(player->stateFlags1 & PLAYER_STATE1_HANGING_OFF_LEDGE) && (fabsf(player->actor.world.pos.x) < 110.0f) &&
-            (fabsf(player->actor.world.pos.z) < 110.0f)) {
+    if ((this->unk_1C2 == 0) && !(aim->world.pos.y < 0.0f)) {
+        if (!(player->stateFlags1 & PLAYER_STATE1_HANGING_OFF_LEDGE) && (fabsf(aim->world.pos.x) < 110.0f) &&
+            (fabsf(aim->world.pos.z) < 110.0f)) {
             BossGanon_SetupPoundFloor(this, play);
         } else if ((this->timers[0] == 0) && !(player->stateFlags1 & PLAYER_STATE1_HANGING_OFF_LEDGE)) {
             this->timers[0] = (s16)Rand_ZeroFloat(30.0f) + 30;
@@ -2749,6 +2786,22 @@ void BossGanon_Damaged(BossGanon* this, PlayState* play) {
     }
 }
 
+// The killing blow's effects. Co-op also calls this for a defeat that was decided on another client.
+void BossGanon_StartDefeat(Actor* thisx, PlayState* play) {
+    BossGanon* this = (BossGanon*)thisx;
+
+    if (this->actionFunc == BossGanon_DeathAndTowerCutscene) {
+        return;
+    }
+    BossGanon_SetupDeathCutscene(this, play);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DEAD);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DD_THUNDER);
+    Sfx_PlaySfxAtPos(&sZeroVec, NA_SE_EN_LAST_DAMAGE);
+    Audio_QueueSeqCmd(0x100100FF);
+    this->screenFlashTimer = 4;
+    GameInteractor_ExecuteOnBossDefeat(&this->actor);
+}
+
 void BossGanon_UpdateDamage(BossGanon* this, PlayState* play) {
     s16 i;
     s16 j;
@@ -2801,13 +2854,7 @@ void BossGanon_UpdateDamage(BossGanon* this, PlayState* play) {
                 }
 
                 if ((s8)this->actor.colChkInfo.health <= 0) {
-                    BossGanon_SetupDeathCutscene(this, play);
-                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DEAD);
-                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DD_THUNDER);
-                    Sfx_PlaySfxAtPos(&sZeroVec, NA_SE_EN_LAST_DAMAGE);
-                    Audio_QueueSeqCmd(0x100100FF);
-                    this->screenFlashTimer = 4;
-                    GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                    BossGanon_StartDefeat(&this->actor, play);
                 } else {
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE2);
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_CUTBODY);
@@ -2833,6 +2880,168 @@ static f32 D_808E4D44[] = {
     1.0f, 3.0f, 0.0f, 7.0f, 13.0f, 4.0f, 6.0f, 11.0f, 5.0f, 2.0f, 8.0f, 14.0f, 10.0f, 12.0f, 9.0f,
 };
 
+// The room lighting, the white flashes and the lens flare, all driven by fields Ganondorf's
+// action sets. Co-op runs it on a mirrored Ganondorf too, from the streamed fields.
+static void BossGanon_UpdateEnvironment(BossGanon* this, PlayState* play) {
+    f32 targetLensFlareScale;
+
+    play->envCtx.unk_BF = 0;
+    play->envCtx.unk_BE = 0;
+    play->envCtx.unk_DC = 2;
+
+    switch (this->envLightMode) {
+        case -1:
+            break;
+        case 0:
+            Math_ApproachF(&play->envCtx.unk_D8, 0.0f, 1.0f, 0.02f);
+            break;
+        case 1:
+            play->envCtx.unk_BD = 1;
+            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.1f);
+            break;
+        case 2:
+            play->envCtx.unk_BD = 1;
+            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.02f);
+            break;
+        case 3:
+            play->envCtx.unk_BD = 3;
+            play->envCtx.unk_D8 = 1.0f;
+            break;
+        case 35:
+            play->envCtx.unk_BD = 0;
+            play->envCtx.unk_D8 = 1.0f;
+            break;
+        case 4:
+            play->envCtx.unk_BD = 4;
+            play->envCtx.unk_D8 = 1.0f;
+            break;
+        case 5:
+            play->envCtx.unk_BE = 5;
+            play->envCtx.unk_BD = 3;
+            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.075f);
+            break;
+        case 6:
+            play->envCtx.unk_BE = 5;
+            play->envCtx.unk_D8 = 0.0f;
+            break;
+        case 65:
+            play->envCtx.unk_BE = 3;
+            play->envCtx.unk_BD = 6;
+            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.05f);
+            break;
+        case 7:
+            play->envCtx.unk_BE = 7;
+            play->envCtx.unk_D8 = 0.0f;
+            break;
+        case 75:
+            play->envCtx.unk_BE = 4;
+            play->envCtx.unk_BD = 8;
+            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.05f);
+            break;
+        case 8:
+            play->envCtx.unk_BE = 3;
+            play->envCtx.unk_BD = 9;
+            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.05f);
+            break;
+        case 9:
+            play->envCtx.unk_BE = 3;
+            play->envCtx.unk_BD = 0xA;
+            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.05f);
+            break;
+        case 10:
+            play->envCtx.unk_BE = 3;
+            play->envCtx.unk_BD = 0xB;
+            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.05f);
+            this->unk_1A4 = 0;
+            break;
+        case 11:
+            play->envCtx.unk_BE = 0xC;
+            play->envCtx.unk_BD = 0xB;
+            Math_ApproachF(&play->envCtx.unk_D8, (Math_CosS(this->unk_1A4 * 0x1800) * 0.5f) + 0.5f, 1.0f, 1.0f);
+            break;
+        case 12:
+            play->envCtx.unk_BE = 0xC;
+            play->envCtx.unk_BD = 3;
+            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.05f);
+            break;
+        case 13:
+            play->envCtx.unk_BD = 0xD;
+            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.025f);
+            break;
+        case 14:
+            play->envCtx.unk_BD = 0xE;
+            play->envCtx.unk_D8 = 1.0f;
+            break;
+        case 15:
+            play->envCtx.unk_BE = 0xE;
+            play->envCtx.unk_BD = 0xF;
+            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.01f);
+            break;
+        case 16:
+            play->envCtx.unk_BE = 0x10;
+            play->envCtx.unk_BD = 0xF;
+            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.05f);
+            break;
+        case 20:
+            play->envCtx.unk_BE = 2;
+            play->envCtx.unk_BD = 1;
+            break;
+        default:
+            break;
+    }
+
+    this->envLightMode = 0;
+
+    if (this->whiteFillAlpha != 0) {
+        play->envCtx.screenFillColor[3] = (s8)(u8)this->whiteFillAlpha;
+        play->envCtx.screenFillColor[0] = play->envCtx.screenFillColor[1] = play->envCtx.screenFillColor[2] = 255;
+        play->envCtx.fillScreen = true;
+    } else if (this->screenFlashTimer != 0) {
+        play->envCtx.fillScreen = true;
+        play->envCtx.screenFillColor[0] = play->envCtx.screenFillColor[1] = play->envCtx.screenFillColor[2] = 255;
+
+        play->envCtx.screenFillColor[3] = ((this->screenFlashTimer % 2) != 0) ? 100 : 0;
+
+        this->screenFlashTimer--;
+    } else {
+        play->envCtx.fillScreen = play->envCtx.screenFillColor[3] = 0;
+    }
+
+    if (this->lensFlareTimer != 0) {
+        this->lensFlareTimer--;
+
+        if (this->lensFlareMode == 1) {
+            targetLensFlareScale = 40.0f;
+        } else if (this->lensFlareMode == 4) {
+            targetLensFlareScale = 25.0f;
+        } else {
+            targetLensFlareScale = 10.0f;
+        }
+
+        Math_ApproachF(&this->lensFlareScale, targetLensFlareScale, 0.3f, 10.0f);
+    } else {
+        Math_ApproachZeroF(&this->lensFlareScale, 1.0f, 5.0f);
+
+        if (this->lensFlareScale == 0.0f) {
+            this->lensFlareMode = 0;
+        }
+    }
+
+    if (this->lensFlareMode != 0) {
+        gCustomLensFlareOn = true;
+
+        if (this->lensFlareMode == 1) {
+            gCustomLensFlarePos = this->actor.world.pos;
+        }
+
+        gLensFlareScale = this->lensFlareScale;
+        gLensFlareColorIntensity = 10.0f;
+        gLensFlareScreenFillAlpha = 0;
+    } else {
+        gCustomLensFlareOn = false;
+    }
+}
+
 void BossGanon_Update(Actor* thisx, PlayState* play2) {
     BossGanon* this = (BossGanon*)thisx;
     PlayState* play = play2;
@@ -2856,7 +3065,6 @@ void BossGanon_Update(Actor* thisx, PlayState* play2) {
     Vec3f platCheckPosBomb;
     Actor* prop;
     BgGanonOtyuka* platform;
-    f32 targetLensFlareScale;
     f32 xOffset;
     f32 zOffset;
 
@@ -2890,6 +3098,21 @@ void BossGanon_Update(Actor* thisx, PlayState* play2) {
             BossGanonEff_SpawnWindowShard(play, &shardPos, &shardVel, Rand_ZeroFloat(0.075f) + 0.08f);
         }
     }
+
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    {
+        // Co-op: facing, distances and the pound/ball decisions read the nearest player.
+        Actor* aim = BossGanon_AimTarget(play, &this->actor);
+
+        if (aim != &player->actor) {
+            this->actor.yawTowardsPlayer = Math_Vec3f_Yaw(&this->actor.world.pos, &aim->world.pos);
+            this->actor.xzDistToPlayer = Math_Vec3f_DistXZ(&this->actor.world.pos, &aim->world.pos);
+            this->actor.yDistToPlayer = aim->world.pos.y - this->actor.world.pos.y;
+            this->actor.xyzDistToPlayerSq =
+                SQ(this->actor.xzDistToPlayer) + SQ(this->actor.yDistToPlayer);
+        }
+    }
+#endif
 
     this->collider.base.colType = 3;
     sBossGanonCape->gravity = -3.0f;
@@ -3083,161 +3306,7 @@ void BossGanon_Update(Actor* thisx, PlayState* play2) {
         }
     }
 
-    play->envCtx.unk_BF = 0;
-    play->envCtx.unk_BE = 0;
-    play->envCtx.unk_DC = 2;
-
-    switch (this->envLightMode) {
-        case -1:
-            break;
-        case 0:
-            Math_ApproachF(&play->envCtx.unk_D8, 0.0f, 1.0f, 0.02f);
-            break;
-        case 1:
-            play->envCtx.unk_BD = 1;
-            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.1f);
-            break;
-        case 2:
-            play->envCtx.unk_BD = 1;
-            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.02f);
-            break;
-        case 3:
-            play->envCtx.unk_BD = 3;
-            play->envCtx.unk_D8 = 1.0f;
-            break;
-        case 35:
-            play->envCtx.unk_BD = 0;
-            play->envCtx.unk_D8 = 1.0f;
-            break;
-        case 4:
-            play->envCtx.unk_BD = 4;
-            play->envCtx.unk_D8 = 1.0f;
-            break;
-        case 5:
-            play->envCtx.unk_BE = 5;
-            play->envCtx.unk_BD = 3;
-            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.075f);
-            break;
-        case 6:
-            play->envCtx.unk_BE = 5;
-            play->envCtx.unk_D8 = 0.0f;
-            break;
-        case 65:
-            play->envCtx.unk_BE = 3;
-            play->envCtx.unk_BD = 6;
-            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.05f);
-            break;
-        case 7:
-            play->envCtx.unk_BE = 7;
-            play->envCtx.unk_D8 = 0.0f;
-            break;
-        case 75:
-            play->envCtx.unk_BE = 4;
-            play->envCtx.unk_BD = 8;
-            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.05f);
-            break;
-        case 8:
-            play->envCtx.unk_BE = 3;
-            play->envCtx.unk_BD = 9;
-            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.05f);
-            break;
-        case 9:
-            play->envCtx.unk_BE = 3;
-            play->envCtx.unk_BD = 0xA;
-            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.05f);
-            break;
-        case 10:
-            play->envCtx.unk_BE = 3;
-            play->envCtx.unk_BD = 0xB;
-            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.05f);
-            this->unk_1A4 = 0;
-            break;
-        case 11:
-            play->envCtx.unk_BE = 0xC;
-            play->envCtx.unk_BD = 0xB;
-            Math_ApproachF(&play->envCtx.unk_D8, (Math_CosS(this->unk_1A4 * 0x1800) * 0.5f) + 0.5f, 1.0f, 1.0f);
-            break;
-        case 12:
-            play->envCtx.unk_BE = 0xC;
-            play->envCtx.unk_BD = 3;
-            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.05f);
-            break;
-        case 13:
-            play->envCtx.unk_BD = 0xD;
-            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.025f);
-            break;
-        case 14:
-            play->envCtx.unk_BD = 0xE;
-            play->envCtx.unk_D8 = 1.0f;
-            break;
-        case 15:
-            play->envCtx.unk_BE = 0xE;
-            play->envCtx.unk_BD = 0xF;
-            Math_ApproachF(&play->envCtx.unk_D8, 1.0f, 1.0f, 0.01f);
-            break;
-        case 16:
-            play->envCtx.unk_BE = 0x10;
-            play->envCtx.unk_BD = 0xF;
-            Math_ApproachZeroF(&play->envCtx.unk_D8, 1.0f, 0.05f);
-            break;
-        case 20:
-            play->envCtx.unk_BE = 2;
-            play->envCtx.unk_BD = 1;
-            break;
-        default:
-            break;
-    }
-
-    this->envLightMode = 0;
-
-    if (this->whiteFillAlpha != 0) {
-        play->envCtx.screenFillColor[3] = (s8)(u8)this->whiteFillAlpha;
-        play->envCtx.screenFillColor[0] = play->envCtx.screenFillColor[1] = play->envCtx.screenFillColor[2] = 255;
-        play->envCtx.fillScreen = true;
-    } else if (this->screenFlashTimer != 0) {
-        play->envCtx.fillScreen = true;
-        play->envCtx.screenFillColor[0] = play->envCtx.screenFillColor[1] = play->envCtx.screenFillColor[2] = 255;
-
-        play->envCtx.screenFillColor[3] = ((this->screenFlashTimer % 2) != 0) ? 100 : 0;
-
-        this->screenFlashTimer--;
-    } else {
-        play->envCtx.fillScreen = play->envCtx.screenFillColor[3] = 0;
-    }
-
-    if (this->lensFlareTimer != 0) {
-        this->lensFlareTimer--;
-
-        if (this->lensFlareMode == 1) {
-            targetLensFlareScale = 40.0f;
-        } else if (this->lensFlareMode == 4) {
-            targetLensFlareScale = 25.0f;
-        } else {
-            targetLensFlareScale = 10.0f;
-        }
-
-        Math_ApproachF(&this->lensFlareScale, targetLensFlareScale, 0.3f, 10.0f);
-    } else {
-        Math_ApproachZeroF(&this->lensFlareScale, 1.0f, 5.0f);
-
-        if (this->lensFlareScale == 0.0f) {
-            this->lensFlareMode = 0;
-        }
-    }
-
-    if (this->lensFlareMode != 0) {
-        gCustomLensFlareOn = true;
-
-        if (this->lensFlareMode == 1) {
-            gCustomLensFlarePos = this->actor.world.pos;
-        }
-
-        gLensFlareScale = this->lensFlareScale;
-        gLensFlareColorIntensity = 10.0f;
-        gLensFlareScreenFillAlpha = 0;
-    } else {
-        gCustomLensFlareOn = false;
-    }
+    BossGanon_UpdateEnvironment(this, play);
 
     if (this->unk_274 != 0) {
         i = this->unk_274 - 1;
@@ -3914,6 +3983,9 @@ s32 BossGanon_CheckFallingPlatforms(BossGanon* this, PlayState* play, Vec3f* che
             if ((fabsf(xDiff) < 60.0f) && (yDiff < 20.0f) && (yDiff > -20.0f) && (fabsf(zDiff) < 60.0f)) {
                 platform->isFalling = true;
                 platform->visibleSides = OTYUKA_SIDE_ALL;
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+                Anchor_GanondorfPlatformCheck(checkPos);
+#endif
 
                 return 1;
             } else {
@@ -3942,9 +4014,15 @@ void BossGanon_LightBall_Update(Actor* thisx, PlayState* play2) {
     f32 yDistFromGanondorf;
     f32 zDistFromGanondorf;
     Player* player = GET_PLAYER(play);
+    Actor* aim = BossGanon_AimTarget(play, &this->actor);
     s32 pad;
     BossGanon* ganondorf = (BossGanon*)this->actor.parent;
     s32 pad1;
+
+    if (ganondorf == NULL) {
+        Actor_Kill(&this->actor);
+        return;
+    }
 
     this->unk_1A2++;
     ganondorf->envLightMode = 1;
@@ -3988,9 +4066,11 @@ void BossGanon_LightBall_Update(Actor* thisx, PlayState* play2) {
         yDistFromGanondorf = ganondorf->unk_1FC.y - this->actor.world.pos.y;
         zDistFromGanondorf = ganondorf->unk_1FC.z - this->actor.world.pos.z;
 
-        xDistFromLink = player->actor.world.pos.x - this->actor.world.pos.x;
-        yDistFromLink = (player->actor.world.pos.y + 40.0f) - this->actor.world.pos.y;
-        zDistFromLink = player->actor.world.pos.z - this->actor.world.pos.z;
+        // Where the ball goes when it is sent back: the nearest player. Whether it has hit a
+        // Link is decided per machine against that machine's own Link.
+        xDistFromLink = aim->world.pos.x - this->actor.world.pos.x;
+        yDistFromLink = (aim->world.pos.y + 40.0f) - this->actor.world.pos.y;
+        zDistFromLink = aim->world.pos.z - this->actor.world.pos.z;
 
         Actor_UpdateVelocityXYZ(&this->actor);
         Actor_UpdatePos(&this->actor);
@@ -4000,7 +4080,8 @@ void BossGanon_LightBall_Update(Actor* thisx, PlayState* play2) {
                 if ((player->stateFlags1 & PLAYER_STATE1_SWINGING_BOTTLE) &&
                     (ABS((s16)(player->actor.shape.rot.y - (s16)(ganondorf->actor.yawTowardsPlayer + 0x8000))) <
                      0x2000) &&
-                    (sqrtf(SQ(xDistFromLink) + SQ(yDistFromLink) + SQ(zDistFromLink)) <= 25.0f)) {
+                    (sqrtf(SQ(xDistFromLink) + SQ(yDistFromLink) + SQ(zDistFromLink)) <= 25.0f) &&
+                    (aim == &player->actor)) {
                     hitWithBottle = true;
                 } else {
                     hitWithBottle = false;
@@ -4053,7 +4134,9 @@ void BossGanon_LightBall_Update(Actor* thisx, PlayState* play2) {
                         }
                     }
                 } else {
-                    if (sqrtf(SQ(xDistFromLink) + SQ(yDistFromLink) + SQ(zDistFromLink)) <= 25.0f) {
+                    if (sqrtf(SQ(player->actor.world.pos.x - this->actor.world.pos.x) +
+                              SQ(player->actor.world.pos.y + 40.0f - this->actor.world.pos.y) +
+                              SQ(player->actor.world.pos.z - this->actor.world.pos.z)) <= 25.0f) {
                         spBA = 5;
                         func_8002F6D4(play, &this->actor, 3.0f, this->actor.world.rot.y, 0.0f, 0x30);
                         SoundSource_PlaySfxAtFixedWorldPos(play, &this->actor.world.pos, 40,
@@ -4575,7 +4658,12 @@ void func_808E2544(Actor* thisx, PlayState* play) {
             zDiff = dorf->unk_1FC.z - this->actor.world.pos.z;
 
             if (sqrtf(SQ(xDiff) + SQ(zDiff) + SQ(yDiff)) < 45.0f) {
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+                // A mirror's copy of Ganondorf is only a picture; the authority's one takes the hit.
+                Anchor_GanondorfBallReachedDorf(&dorf->actor);
+#else
                 BossGanon_SetupHitByLightBall(dorf, play);
+#endif
                 this->timers[0] = 150;
                 numEffects = 40;
                 this->unk_1C2 = 1;
@@ -5101,3 +5189,90 @@ void BossGanon_Reset(void) {
     sBossGanonCape = NULL;
     memset(sBossGanonEffectBuf, 0, sizeof(sBossGanonEffectBuf));
 }
+
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+// PHA-4054: what soh/Network/Anchor/BossAdapters/GanondorfAdapter.cpp needs from this file.
+
+// 0 intro (before the fight, Link is held by the cutscene), 1 fight, 2 defeated (the death cutscene).
+u8 BossGanon_CoopPhase(Actor* thisx) {
+    BossGanon* this = (BossGanon*)thisx;
+
+    if (this->actionFunc == BossGanon_DeathAndTowerCutscene) {
+        return 2;
+    }
+    if (this->actionFunc == BossGanon_IntroCutscene || this->actionFunc == BossGanon_SetupIntroCutscene) {
+        return 0;
+    }
+    return 1;
+}
+
+// An action code for the mirror: it decides the collider's type and whether he hurts on touch.
+u8 BossGanon_CoopAction(Actor* thisx) {
+    BossGanon* this = (BossGanon*)thisx;
+
+    if (this->actionFunc == BossGanon_Wait) return 1;
+    if (this->actionFunc == BossGanon_ChargeLightBall) return 2;
+    if (this->actionFunc == BossGanon_PlayTennis) return 3;
+    if (this->actionFunc == BossGanon_PoundFloor) return 4;
+    if (this->actionFunc == BossGanon_ChargeBigMagic) return 5;
+    if (this->actionFunc == BossGanon_Block) return 6;
+    if (this->actionFunc == BossGanon_HitByLightBall) return 7;
+    if (this->actionFunc == BossGanon_Vulnerable) return 8;
+    if (this->actionFunc == BossGanon_Damaged) return 9;
+    return 0;
+}
+
+// Mirroring ended without a defeat: carry on from the streamed pose.
+void BossGanon_CoopResume(Actor* thisx, PlayState* play) {
+    BossGanon_SetupWait((BossGanon*)thisx, play);
+}
+
+// A light ball sent back by the partner's sword has reached the authority's Ganondorf.
+void BossGanon_CoopHitByBall(Actor* thisx, PlayState* play) {
+    BossGanon_SetupHitByLightBall((BossGanon*)thisx, play);
+}
+
+// The authority's ball struck a Link on another machine: end it the way a hit on the
+// authority's own Link does (the spBA == 5 branch of the ball's update).
+void BossGanon_CoopBallHitPeer(Actor* ballActor, PlayState* play) {
+    BossGanon* ball = (BossGanon*)ballActor;
+    BossGanon* dorf = (BossGanon*)ballActor->parent;
+    s16 i;
+    Vec3f vel;
+
+    if (ball->unk_1A8 != 0 || dorf == NULL) {
+        return;
+    }
+    ball->unk_1A8 = 1;
+    SoundSource_PlaySfxAtFixedWorldPos(play, &ballActor->world.pos, 40, NA_SE_EN_GANON_HIT_THUNDER);
+    for (i = 0; i < 70; i++) {
+        vel.x = Rand_CenteredFloat(30.0f);
+        vel.y = Rand_CenteredFloat(30.0f);
+        vel.z = Rand_CenteredFloat(30.0f);
+        BossGanonEff_SpawnLightRay(play, &ballActor->world.pos, &vel, &sZeroVec, Rand_ZeroFloat(200.0f) + 500.0f,
+                                   15.0f, 0x1E);
+    }
+    if (dorf->actionFunc == BossGanon_PlayTennis) {
+        BossGanon_SetupWait(dorf, play);
+        dorf->timers[0] = 125;
+    }
+}
+
+// A mirrored Ganondorf's per-frame upkeep: the effects and the room lighting, which his
+// actions would otherwise drive from Update.
+void BossGanon_CoopMirrorUpdate(Actor* thisx, PlayState* play) {
+    BossGanon* this = (BossGanon*)thisx;
+
+    this->unk_1A2++;
+    this->unk_1A4++;
+    BossGanon_UpdateEffects(play);
+    BossGanon_UpdateEnvironment(this, play);
+}
+
+// Where the collider sits (the chest), for a mirror whose Update does not run.
+void BossGanon_CoopSetColliderPos(Actor* thisx) {
+    BossGanon* this = (BossGanon*)thisx;
+
+    BossGanon_SetColliderPos(&this->unk_1FC, &this->collider);
+}
+#endif

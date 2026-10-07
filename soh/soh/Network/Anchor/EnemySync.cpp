@@ -319,6 +319,10 @@ static s16* ProjectileTimer(Actor* actor) {
 // BOSS_TW (PHA-4053): the fire and ice pools the blasts leave (params 0x65 / 0x67, spawned on the host and replayed
 // on a mirror from the stream) and the death balls (0x68 / 0x69, spawned by each client's own death cutscene).
 // The fire and ice blasts themselves (0x64 / 0x66) are tracked dynamic spawns.
+// BOSS_GANON (PHA-4054): params 1 is the copy the tower-collapse cutscene uses; params >= 0xC8
+// are effects (charge sparks, the big-magic balls, the flash) that every client spawns from its
+// own copy of the fight (the Ganondorf adapter replays the authority's). The cape and the organ
+// are spawned by each client's own Ganondorf Init.
 // EN_VB_BALL: Volvagia's falling rocks (spawned from Fd's update) and the bones
 // that fall from Fd's Draw during the death. Every machine spawns its own (the
 // Volvagia adapter replays the rock timer), so tracking them would double-spawn.
@@ -329,7 +333,9 @@ static bool IsTrackingExcluded(Actor* actor) {
            (actor->id == ACTOR_EN_FHG_FIRE && (uint16_t)actor->params != 50) ||
            (actor->id == ACTOR_BOSS_TW && ((uint16_t)actor->params == TW_FIRE_BLAST_GROUND ||
                                            (uint16_t)actor->params == TW_ICE_BLAST_GROUND ||
-                                           (uint16_t)actor->params >= TW_DEATHBALL_KOTAKE));
+                                           (uint16_t)actor->params >= TW_DEATHBALL_KOTAKE)) ||
+           actor->id == ACTOR_EN_GANON_MANT || actor->id == ACTOR_EN_GANON_ORGAN ||
+           (actor->id == ACTOR_BOSS_GANON && ((uint16_t)actor->params == 1 || (uint16_t)actor->params >= 0xC8));
 }
 
 // Barinade (PHA-4048): one actor id, param-split parts. Parts spawned while
