@@ -24,7 +24,8 @@ extern PlayState* gPlayState;
 /**
  * Ganondorf (PHA-4054), the Gohma treatment. Boss_Ganon is one actor id with three kinds
  * of actor, told apart by params:
- *   0          Ganondorf himself (1 is the copy the tower-collapse cutscene uses: untracked)
+ *   < 0x64     Ganondorf himself (the room places him with params 0xFFFF, which the game
+ *              reads as -1; params 1 is the copy the tower-collapse cutscene uses: untracked)
  *   0x64-0xC7  the light ball he throws, the volley's tennis ball: a tracked dynamic spawn
  *   0xC8 up    effects that fly in and out of him (the charge sparks, the big-magic charge
  *              and the five big-magic balls, the flash and the thump): replayed, see below
@@ -117,13 +118,14 @@ struct GanondorfMirror {
 };
 static GanondorfMirror sMirror;
 
+// The room's Ganondorf has params 0xFFFF; the game reads them as the signed -1 (< 0x64).
 static bool GDF_IsDorf(Actor* a) {
-    return a->id == ACTOR_BOSS_GANON && (uint16_t)a->params < GDF_PARAM_LIGHT_BALL_MIN;
+    return a->id == ACTOR_BOSS_GANON && a->params < (int16_t)GDF_PARAM_LIGHT_BALL_MIN;
 }
 
 static bool GDF_IsBall(Actor* a) {
-    return a->id == ACTOR_BOSS_GANON && (uint16_t)a->params >= GDF_PARAM_LIGHT_BALL_MIN &&
-           (uint16_t)a->params < GDF_PARAM_EFFECT_MIN;
+    return a->id == ACTOR_BOSS_GANON && a->params >= (int16_t)GDF_PARAM_LIGHT_BALL_MIN &&
+           a->params < (int16_t)GDF_PARAM_EFFECT_MIN;
 }
 
 static float GDF_F(const nlohmann::json& x, const char* key, float def = 0.0f) {
@@ -495,7 +497,7 @@ extern "C" void Anchor_GanondorfIntroOver(Actor* dorf) {
 // file comment). Spawns made by a replay are never recorded again.
 extern "C" void Anchor_GanondorfSpawned(Actor* spawned) {
     if (sMirror.replaying || !EnemySync::IsLocalAuthority() || !EnemySync::HasSameScenePeer() ||
-        (uint16_t)spawned->params < GDF_PARAM_EFFECT_MIN) {
+        spawned->params < (int16_t)GDF_PARAM_EFFECT_MIN) {
         return;
     }
     GdfEvent& e = sMirror.ring[sMirror.nextSeq % GDF_RING];
@@ -538,7 +540,8 @@ extern "C" {
 // PHA-4054 boss rig. Reports Ganondorf's sync state on this client:
 // cmd 0 report only; 1 land a sword hit on the body collider the way the collision check
 // would (arg = dmgFlags, default sword); 2 set the boss health to arg (authority);
-// 3 un-clear this room; 4 teleport Link to (arg, 100, 0); 5 hit the tennis ball with a sword.
+// 3 un-clear this room; 4 teleport Link to (arg, 100, 0); 5 hit the tennis ball with a sword;
+// 6 start the death cutscene (authority); 7 a reflected ball reaches him (authority).
 EMSCRIPTEN_KEEPALIVE
 const char* anchor_test_gdf(int cmd, int arg) {
     static std::string out;
@@ -550,17 +553,19 @@ const char* anchor_test_gdf(int cmd, int arg) {
     BossGanon* boss = nullptr;
     BossGanon* ball = nullptr;
     int effects = 0, bigBalls = 0, hearts = 0, warps = 0, platformsFalling = 0;
+    nlohmann::json all = nlohmann::json::array();
     for (int cat = 0; cat < ACTORCAT_MAX; cat++) {
         for (Actor* a = gPlayState->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
             if (a->update == NULL) {
                 continue;
             }
             if (a->id == ACTOR_BOSS_GANON) {
+                all.push_back({ (uint16_t)a->params, a->category });
                 if (GDF_IsDorf(a)) {
                     boss = (BossGanon*)a;
                 } else if (GDF_IsBall(a)) {
                     ball = (BossGanon*)a;
-                } else if ((uint16_t)a->params >= 0x104 && (uint16_t)a->params < 0x12C) {
+                } else if (a->params >= 0x104 && a->params < 0x12C) {
                     bigBalls++;
                 } else {
                     effects++;
@@ -579,6 +584,7 @@ const char* anchor_test_gdf(int cmd, int arg) {
     j["iframes"] = player->invincibilityTimer;
     j["csAction"] = player->csAction;
     j["effects"] = effects;
+    j["all"] = all;
     j["bigBalls"] = bigBalls;
     j["hearts"] = hearts;
     j["warps"] = warps;
@@ -624,6 +630,11 @@ const char* anchor_test_gdf(int cmd, int arg) {
         boss->collider.info.acHitInfo = &sToucher;
     } else if (cmd == 2 && !EnemySync::IsSuppressed(&boss->actor)) {
         boss->actor.colChkInfo.health = arg;
+    } else if (cmd == 6 && !EnemySync::IsSuppressed(&boss->actor)) {
+        BossGanon_StartDefeat(&boss->actor, gPlayState);
+    } else if (cmd == 7 && !EnemySync::IsSuppressed(&boss->actor)) {
+        // a reflected ball reaching him
+        BossGanon_CoopHitByBall(&boss->actor, gPlayState);
     }
     j["phase"] = GDF_GetPhase(&boss->actor);
     j["hp"] = boss->actor.colChkInfo.health;

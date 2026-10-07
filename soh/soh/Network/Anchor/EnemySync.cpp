@@ -335,7 +335,7 @@ static bool IsTrackingExcluded(Actor* actor) {
                                            (uint16_t)actor->params == TW_ICE_BLAST_GROUND ||
                                            (uint16_t)actor->params >= TW_DEATHBALL_KOTAKE)) ||
            actor->id == ACTOR_EN_GANON_MANT || actor->id == ACTOR_EN_GANON_ORGAN ||
-           (actor->id == ACTOR_BOSS_GANON && ((uint16_t)actor->params == 1 || (uint16_t)actor->params >= 0xC8));
+           (actor->id == ACTOR_BOSS_GANON && (actor->params == 1 || actor->params >= 0xC8));
 }
 
 // Barinade (PHA-4048): one actor id, param-split parts. Parts spawned while
