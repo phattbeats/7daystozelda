@@ -407,6 +407,7 @@ const char* anchor_test_gn2(int cmd, int arg) {
     j["dying"] = EnemySync::IsDying(&boss->actor);
     j["pos"] = { boss->actor.world.pos.x, boss->actor.world.pos.y, boss->actor.world.pos.z };
     j["look"] = boss->unk_313;
+    j["head"] = { boss->unk_1B8.x, boss->unk_1B8.y, boss->unk_1B8.z };
     j["swing"] = boss->unk_312;
     j["pending"] = { sMirror.pendingDown, sMirror.pendingSword, sMirror.pendingDefeat };
     out = j.dump();
