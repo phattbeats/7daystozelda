@@ -1,4 +1,4 @@
-# 7 Days to Zelda: deployment runbook (PHA-3856)
+# 7 Days to Zelda: deployment runbook (#3856)
 
 Live at **https://zelda.phatt.vip** (Ship of Harkinian True Co-op, browser build). Deployed 2026-10-01 on PHATT-RAID.
 
@@ -42,8 +42,8 @@ Requested so b-mech can make his fairy black.
 
 ## Incident 2026-10-01: game crashes when a ROM is uploaded
 - **Symptom:** the page shows "Unpacking finished without producing game data", then "The game crashed".
-- **Cause:** the browser build's ROM extractor aborts (`Aborted()` in wasm) right after "ROM validated". I reproduced it in headless Chromium with Brandon's ROM, `Legend of Zelda, The - Ocarina of Time (USA) (Rev 2).z64` (NTSC 1.2, sha1 41b3bd…57c2). The ROM is fine and is a supported version, and the extractor tables for it are bundled. The bug is in the wasm build, which was never tested with a real ROM. Follow-up issue: PHA-3860.
-- **Fixed (PHA-3860, live 2026-10-02):** the wasm extractor now unpacks the .z64 in the browser. Players drop the ROM itself in the ROM box; the pre-extracted `oot.o2r` workaround is retired. A spare `oot.o2r` remains in the private Nextcloud folder `PHATT-TECH/Projects/7daystozelda/` but is not needed.
+- **Cause:** the browser build's ROM extractor aborts (`Aborted()` in wasm) right after "ROM validated". I reproduced it in headless Chromium with Brandon's ROM, `Legend of Zelda, The - Ocarina of Time (USA) (Rev 2).z64` (NTSC 1.2, sha1 41b3bd…57c2). The ROM is fine and is a supported version, and the extractor tables for it are bundled. The bug is in the wasm build, which was never tested with a real ROM. Follow-up issue: #3860.
+- **Fixed (#3860, live 2026-10-02):** the wasm extractor now unpacks the .z64 in the browser. Players drop the ROM itself in the ROM box; the pre-extracted `oot.o2r` workaround is retired. A spare `oot.o2r` remains in the private Nextcloud folder `PHATT-TECH/Projects/7daystozelda/` but is not needed.
 
 
 ## Change 2026-10-03: menu music on the lobby
@@ -66,7 +66,7 @@ Brandon asked for the MP3 instead of a YouTube player. This replaces the YouTube
 - Verified on the live site in headless Chromium: before a click the card says "tap anywhere to start"; a click starts audio at 15%; pause and resume work; a slider setting of 40 survives a reload; hiding the lobby closes the audio and removes the card; a phone-size tap also starts it; no page errors. /healthz 200, mp3 200, other sites unaffected.
 
 
-## Change 2026-10-03: invite key is on (PHA-3914)
+## Change 2026-10-03: invite key is on (#3914)
 Brandon OK'd printing the invite key in the 7DtZ devlog, which is for subscribers only.
 - Recreated `soh-web` from the same `soh-web:latest` image with the step 3 command, log options and the phattvip network. The only change is `-e ACCESS_KEY=<ACCESS_KEY>`.
 - Invite link: `https://zelda.phatt.vip/?key=<ACCESS_KEY>`. Room links take the key in front of the hash, for example `/?key=<ACCESS_KEY>#room=boys`.
@@ -75,9 +75,9 @@ Brandon OK'd printing the invite key in the 7DtZ devlog, which is for subscriber
 - **On every redeploy, keep `-e ACCESS_KEY=<ACCESS_KEY>`** in the run command. If you leave it out, the site is open again.
 
 
-## Change 2026-10-03: PHA-3935 game build (spec gaps)
-Brandon asked for a redeploy after PHA-3935.
-- Built from `main` at `54b3271` (includes PHA-3901 colors and PHA-3939 lobby pickers). Only `soh.js` and `soh.wasm` changed, plus fresh `.gz` copies. `soh.data` is byte-identical to the live one, so `soh.data` and `soh.o2r` (with the title pack) stay as they were.
+## Change 2026-10-03: #3935 game build (spec gaps)
+Brandon asked for a redeploy after #3935.
+- Built from `main` at `54b3271` (includes #3901 colors and #3939 lobby pickers). Only `soh.js` and `soh.wasm` changed, plus fresh `.gz` copies. `soh.data` is byte-identical to the live one, so `soh.data` and `soh.o2r` (with the title pack) stay as they were.
 - `public/index.html` is the live page with `soh.js?v=66c28587` (was `f23bbb19`), plus its `.gz`.
 - Deploy: tagged `soh-web:pha3939` as the rollback `soh-web:pre-pha3935`, then built `soh-web:pha3935` (also tagged `latest`) FROM the rollback with `COPY public/`. Build dir: `appdata/7daystozelda/deploy-pha3935/`. Recreated `soh-web` with the step 3 command, the log options, `-e ACCESS_KEY` copied from the old container, and `docker network connect phattvip`.
 - Verified on the live site: `/healthz` 200, bare `/` 403, keyed URL 200; Cloudflare serves the new `soh.js` (md5 matches) and `soh.wasm` 200; container healthy. In the game on zelda.phatt.vip (GPU Chrome, solo, an imported save): new piece types load from the save, Link walks through the player gate, a barricade upgrades to stone then iron, an iron wall is repaired and a new one crafted and placed, Navi's C-Up tip and evening warning show, and a raid night spawned 9 raiders all 335+ from a torch while the bomb traps went off 3 times.

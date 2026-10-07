@@ -3,7 +3,7 @@
 #ifdef __cplusplus
 
 /**
- * 7 Days to Zelda (PHA-3870). M4: materials, crafting, tunic colors.
+ * 7 Days to Zelda (#3870). M4: materials, crafting, tunic colors.
  * M5: placeables, the base, saving and the boarded-up village.
  * M6: raids on the base (gamestage budgets, ring spawns, routing to the
  *     workbench, barricade damage, the raid clock, the prologue's scripted
@@ -53,13 +53,13 @@ enum Material : uint8_t {
     MAT_WOOD,
     MAT_BONE,
     MAT_ROT,
-    MAT_ORE,  // PHA-3935: Megaton Hammer tier, from boulders
-    MAT_IRON, // PHA-3935: Silver Gauntlets tier, from silver rocks
+    MAT_ORE,  // #3935: Megaton Hammer tier, from boulders
+    MAT_IRON, // #3935: Silver Gauntlets tier, from silver rocks
     MAT_COUNT,
 };
-constexpr uint8_t MAT_LEGACY_COUNT = MAT_ROT + 1; // materials before PHA-3935 (Navi's firsts layout)
+constexpr uint8_t MAT_LEGACY_COUNT = MAT_ROT + 1; // materials before #3935 (Navi's firsts layout)
 
-// Tool/boss tiers that open gathering sources and recipes (PHA-3870 progression).
+// Tool/boss tiers that open gathering sources and recipes (#3870 progression).
 enum Unlock : uint8_t {
     UNLOCK_START,
     UNLOCK_DEKU_TREE,
@@ -146,13 +146,13 @@ void HandlePacket(const nlohmann::json& payload);
 // Navi lines (custom message table "SevenDays", text ids SEVEN_DAYS_TEXT_BASE+).
 // The table keeps the first line registered under an id, so blocks must not overlap:
 //   0x00 firsts, 0x08 raid lines, 0x14 raid eve, 0x17 new gather firsts, 0x19 ledge,
-//   0x20 village, 0x23 furniture (PHA-3962), 0x28 loot lines, 0x30 supply cache, 0x34 merchants,
+//   0x20 village, 0x23 furniture (#3962), 0x28 loot lines, 0x30 supply cache, 0x34 merchants,
 //   0x40 C-Up tips.
 constexpr uint16_t SEVEN_DAYS_TEXT_BASE = 0x9700;
 constexpr uint16_t SEVEN_DAYS_TEXT_COUNT = 0x50;
 bool IsSevenDaysText(uint16_t textId);
 // Every line in the table goes through here: an id registered twice is logged and kept
-// for sevendays_test_text_audit instead of silently showing the other line (PHA-4005).
+// for sevendays_test_text_audit instead of silently showing the other line (#4005).
 void AddText(const char* table, uint16_t textId, const CustomMessage& message);
 
 // Tunic colors (TunicColors.cpp)
@@ -175,13 +175,13 @@ enum PlaceableType : uint8_t {
     PLACEABLE_SIGN, // seeded only (the village's "Day 1" sign), no kit
     PLACEABLE_SCARECROW, // M10: decoy, raiders within 400 go for it first
     PLACEABLE_GUARDBABA, // M10: tamed Deku Baba that bites raiders within reach
-    PLACEABLE_TORCH,     // PHA-3935: lights the base; no raid spawns within TORCH_RADIUS
-    PLACEABLE_STONEWALL, // PHA-3935: a barricade with twice the HP
-    PLACEABLE_BOMBTRAP,  // PHA-3935: a bomb flower that blows up raiders who come close, then regrows
-    PLACEABLE_GATE,      // PHA-3935: a wall raiders must break, that swings open for players
-    PLACEABLE_IRONWALL,  // PHA-3935: Silver Gauntlets tier, twice a stone wall's HP
-    PLACEABLE_PALISADE,  // PHA-3904: a tall wall of upright logs (Majora's Mask practice logs)
-    // PHA-3945: floors, stairs and doors from Majora's Mask. Floors and stairs can be stood
+    PLACEABLE_TORCH,     // #3935: lights the base; no raid spawns within TORCH_RADIUS
+    PLACEABLE_STONEWALL, // #3935: a barricade with twice the HP
+    PLACEABLE_BOMBTRAP,  // #3935: a bomb flower that blows up raiders who come close, then regrows
+    PLACEABLE_GATE,      // #3935: a wall raiders must break, that swings open for players
+    PLACEABLE_IRONWALL,  // #3935: Silver Gauntlets tier, twice a stone wall's HP
+    PLACEABLE_PALISADE,  // #3904: a tall wall of upright logs (Majora's Mask practice logs)
+    // #3945: floors, stairs and doors from Majora's Mask. Floors and stairs can be stood
     // on, and other pieces stack on them, so a base can have a second storey.
     PLACEABLE_FLOOR_PLANK,  // plank floor (the Pirates' Fortress panel laid flat)
     PLACEABLE_FLOOR_RANCH,  // ranch floor (three Romani Ranch planks)
@@ -193,7 +193,7 @@ enum PlaceableType : uint8_t {
     PLACEABLE_DOOR_SWAMP,   // doors: the player gate's behaviour in Majora's Mask doors
     PLACEABLE_DOOR_MUSIC,
     PLACEABLE_DOOR_PIRATE,
-    // PHA-3962: furniture from Majora's Mask. Indestructible, so raiders leave it alone;
+    // #3962: furniture from Majora's Mask. Indestructible, so raiders leave it alone;
     // most of it does something on A (FurnitureUseOf).
     PLACEABLE_CHAIR_INN,     // sit: the Stock Pot Inn's chair
     PLACEABLE_CHAIR_MILKBAR, // sit: the Milk Bar's tall chair
@@ -221,20 +221,20 @@ struct PlaceableInfo {
 };
 const PlaceableInfo& GetPlaceableInfo(uint8_t type);
 int FindPlaceableTypeForKit(const std::string& kit); // -1 if none
-// PHA-3945
+// #3945
 constexpr int16_t STOREY_HEIGHT = 104; // a palisade (96) with a plank floor (8) on top
 bool IsFloorType(uint8_t type);    // a flat floor: tiles on a 120 grid, extends at the level Link stands on
 bool IsWalkOverType(uint8_t type); // low enough that raiders walk over it instead of breaking it
 bool IsDoorType(uint8_t type);     // swings open for players: the player gate and the doors
-// PHA-3962: what A does at a piece of furniture.
+// #3962: what A does at a piece of furniture.
 enum FurnitureUse : uint8_t { USE_NONE, USE_SIT, USE_SLEEP, USE_LIE, USE_DRINK, USE_STORAGE, USE_READ };
 FurnitureUse FurnitureUseOf(uint8_t type);
 int16_t FurnitureSeatHeight(uint8_t type); // the seat or mattress top Link rests on (0: none)
 
 constexpr int ERA_ADULT = 0; // == gSaveContext.linkAge
 constexpr int ERA_CHILD = 1;
-constexpr int ERA_RUINS = 2; // PHA-3935: the child base after the seven-year jump, seen as an adult
-// PHA-3916: pieces share chunked collision actors (Placeables.cpp). PHA-4062: the engine side (display-list
+constexpr int ERA_RUINS = 2; // #3935: the child base after the seven-year jump, seen as an adult
+// #3916: pieces share chunked collision actors (Placeables.cpp). #4062: the engine side (display-list
 // pools, collision lists, ids, sync) holds 256 pieces per scene and era, BASE_CAP_MAX. Frame time does not:
 // on the test rig the worst-case view fell from ~24 fps at 94 pieces to ~19 at 160 and ~6 at 192 and
 // up (docs/pha4062-render-budget.md). The cap in force is BaseCap(): BASE_CAP_DEFAULT unless the owner's
@@ -246,7 +246,7 @@ int BaseCap();
 constexpr int DYNA_BUDGET = 8192; // polys, vertices and poly nodes the play arena grows for a base (z_bgcheck.c)
 constexpr float BASE_RADIUS = 800.0f;
 constexpr float TORCH_RADIUS = 300.0f; // spec: no wave spawn point within 300 units of a torch
-// PHA-4038: torchlight. The field's own Stalchildren (En_Encount1's) sink back into the
+// #4038: torchlight. The field's own Stalchildren (En_Encount1's) sink back into the
 // ground within TORCHLIGHT_RADIUS of a torch, and none rise while Link stands within
 // TORCHLIGHT_SPAWNER_RADIUS of one (they come up 100-240 from him). Raiders aren't
 // affected: raids keep their TORCH_RADIUS rule and the ward.
@@ -261,7 +261,7 @@ struct Placeable {
     float pos[3] = {};
     int16_t rot = 0;
     uint16_t hp = 0;
-    bool stacked = false; // PHA-3945: stands on another piece, so it is never re-snapped to the ground
+    bool stacked = false; // #3945: stands on another piece, so it is never re-snapped to the ground
 };
 
 struct BaseCenter {
@@ -283,17 +283,17 @@ struct BaseState {
     uint32_t story = 0;
     uint32_t nightsFailed = 0;
     uint32_t raidInterval = 0; // days between raids, picked on a new save (0: not picked yet)
-    uint32_t seedRev = 0;      // PHA-3904: which village seeding the save has had (SEED_REV)
+    uint32_t seedRev = 0;      // #3904: which village seeding the save has had (SEED_REV)
     std::vector<uint32_t> lootOpened;    // M7: opened caches, paid Skulltula tens, paid bosses (LootKey)
     std::vector<std::string> blueprints; // M7: recipe ids the room has the blueprint for
-    // PHA-3935: tonight's raid record, kept here (saved and synced, in "counters") so an
+    // #3935: tonight's raid record, kept here (saved and synced, in "counters") so an
     // owner who drops mid-night hands it to the next one: the day it belongs to, a raid
     // fought at the base, the night lost, the night's gamestage.
     uint32_t nightDay = 0;
     bool nightFought = false;
     bool nightFailed = false;
     int32_t nightGamestage = 0;
-    bool nightWarded = false; // PHA-4006: the torch ring held the raid off when dawn came
+    bool nightWarded = false; // #4006: the torch ring held the raid off when dawn came
 };
 const BaseState& GetBase();
 nlohmann::json BaseToJson();
@@ -316,9 +316,9 @@ void ApplyTeamStateJson(const nlohmann::json& j);
 void BeginPlacement(uint8_t type);
 bool InPlacement();
 void RequestPackUp(uint16_t id);        // one piece back into a kit (a damaged one: part of its materials)
-void RequestRepair(uint16_t id);        // PHA-3935: back to full HP for materials (half with the Megaton Hammer)
+void RequestRepair(uint16_t id);        // #3935: back to full HP for materials (half with the Megaton Hammer)
 std::string RepairCost(uint16_t id);    // "2 Wood, 1 Fiber"; "" when it needs no repair
-// PHA-3935: Megaton Hammer upgrades in place, barricade -> stone wall -> iron wall, for the
+// #3935: Megaton Hammer upgrades in place, barricade -> stone wall -> iron wall, for the
 // difference between the two kits. -1 when the piece has no upgrade (or it isn't unlocked).
 int UpgradeTarget(uint16_t id);
 std::string UpgradeCost(uint16_t id);
@@ -334,7 +334,7 @@ int16_t GhostActorId();
 Actor* SpawnPlaceableActor(const Placeable& p);
 bool PlaceableActorIsRuin(Actor* actor); // what the actor was spawned as
 void OnPlaceableInteract(uint8_t type); // workbench / chest A-press
-// PHA-3962: Link sits, sleeps or lies down on a piece, or drinks from it (Rest.cpp).
+// #3962: Link sits, sleeps or lies down on a piece, or drinks from it (Rest.cpp).
 bool StartRest(Actor* piece, uint8_t type);
 bool Resting();
 void RestRegisterHooks(bool enabled);
@@ -353,7 +353,7 @@ constexpr uint16_t TEXT_SIGN_DAY = SEVEN_DAYS_TEXT_BASE + 0x20;
 constexpr uint16_t TEXT_WORKBENCH = SEVEN_DAYS_TEXT_BASE + 0x21;
 constexpr uint16_t TEXT_CHEST = SEVEN_DAYS_TEXT_BASE + 0x22;
 void RegisterVillageMessages(const char* table);
-void RegisterNaviTips(const char* table); // PHA-3935
+void RegisterNaviTips(const char* table); // #3935
 bool NaviTipText(uint16_t textId, CustomMessage& out); // OTRGlobals glue: a heard C-Up hint becomes a tip
 uint32_t CurrentDay(); // the village sign's "Day N" (days survived + 1)
 // [[raids]], [[days]], [[next]] and [[base]] in a line, filled in when it is shown.
@@ -371,7 +371,7 @@ void DamagePlaceable(uint16_t id, int amount); // owner applies; others report t
 std::vector<uint8_t> BreakPiece(uint16_t id);  // owner: break it and what stood on it; their types
 bool BaseAdoptIfNewer(const nlohmann::json& j, bool force);
 bool IsOutdoorScene(int16_t scene); // a scene a base can stand in (the raid clock's scenes)
-// PHA-4062: what a piece adds to the chunked collision lists (polygons and vertices, as FillChunk emits
+// #4062: what a piece adds to the chunked collision lists (polygons and vertices, as FillChunk emits
 // them), and the share of DYNA_BUDGET a scene's pieces may use before a placement is refused.
 struct CollisionCost {
     int polys;
@@ -392,10 +392,10 @@ enum RaidStory : uint32_t {
     STORY_DUSK_ACTIVE = 1 << 1,     // ...and its night isn't over yet
     STORY_FIRST_RAID = 1 << 2,      // Gohma is dead: the prologue is over, raids are scheduled
     STORY_FIRST_RAID_DONE = 1 << 3, // the first raid's dawn came
-    STORY_RUINS = 1 << 4,           // PHA-3935: the seven-year jump turned the child base into ruins
+    STORY_RUINS = 1 << 4,           // #3935: the seven-year jump turned the child base into ruins
 };
 
-// Navi's staged raid lines (PHA-3870 "Raids, explained in stages"), one save flag each.
+// Navi's staged raid lines (#3870 "Raids, explained in stages"), one save flag each.
 enum RaidLine : uint8_t {
     RAIDLINE_EVE,   // 1. the evening before the first raid
     RAIDLINE_START, // 2. the first raid starts
@@ -404,7 +404,7 @@ enum RaidLine : uint8_t {
     RAIDLINE_LOST,  //    the first lost night
     RAIDLINE_DUSK,  //    the Kokiri Sword's dusk
     RAIDLINE_ENEMY, // 5. each new enemy type's first raid (+ RaidEnemy)
-    RAIDLINE_WARD = RAIDLINE_ENEMY + 5, // PHA-4006: the first dawn after a night the torch ring warded off
+    RAIDLINE_WARD = RAIDLINE_ENEMY + 5, // #4006: the first dawn after a night the torch ring warded off
     RAIDLINE_COUNT,
 };
 enum RaidEnemy : uint8_t { RAIDENEMY_STALCHILD, RAIDENEMY_KEESE, RAIDENEMY_WOLFOS, RAIDENEMY_REDEAD, RAIDENEMY_GIBDO };
@@ -412,10 +412,10 @@ enum RaidEnemy : uint8_t { RAIDENEMY_STALCHILD, RAIDENEMY_KEESE, RAIDENEMY_WOLFO
 bool RaidsEnabled();
 void QueueRaidNavi(uint8_t line); // SevenDays.cpp: once per save
 void QueueNaviText(uint16_t textId); // SevenDays.cpp: a line Navi can say again (no firsts bit)
-// PHA-3935: Navi's warning the evening before every raid after the first (3 variants), and
+// #3935: Navi's warning the evening before every raid after the first (3 variants), and
 // her C-Up crafting and raid tips.
 constexpr uint16_t TEXT_RAID_EVE_EACH = SEVEN_DAYS_TEXT_BASE + 0x14;
-constexpr uint16_t TEXT_NAVI_TIPS = SEVEN_DAYS_TEXT_BASE + 0x40; // PHA-4005: was 0x30, under the caches
+constexpr uint16_t TEXT_NAVI_TIPS = SEVEN_DAYS_TEXT_BASE + 0x40; // #4005: was 0x30, under the caches
 constexpr uint16_t NAVI_TIP_COUNT = 12;
 static_assert(TEXT_NAVI_TIPS + NAVI_TIP_COUNT <= SEVEN_DAYS_TEXT_BASE + SEVEN_DAYS_TEXT_COUNT, "tip text ids");
 void RaidsRegisterMessages(const char* table);
@@ -428,7 +428,7 @@ void RaidHandleHordeEvent(const nlohmann::json& payload); // HORDE_EVENT with "r
 int32_t Gamestage();
 bool RaidTonight(); // tonight (or this day's night) is a raid night
 bool RaidWaveHere(); // a raid wave is being fought in this scene (ours or the authority's)
-// PHA-4006: the torch ward. Torches covering every spawn point of the ring around the
+// #4006: the torch ward. Torches covering every spawn point of the ring around the
 // workbench hold the raid back while they burn.
 bool RaidWardedHere();          // tonight's raid in this scene is warded off
 bool TorchWardLit(Actor* torch); // this torch burns blue: part of the ring, its turn in the ritual has come
@@ -457,7 +457,7 @@ struct CacheSpot {
     uint8_t tier;    // area tier (Unlock) for its rolls
 };
 const std::vector<CacheSpot>& GetCacheSpots();
-// PHA-3935: Hookshot tier, materials on ledges out of reach. A bundle sits on a ledge
+// #3935: Hookshot tier, materials on ledges out of reach. A bundle sits on a ledge
 // you can't walk to; hook it and it is pulled to Link and pays. Once a day each.
 struct LedgeBundle {
     int16_t scene;

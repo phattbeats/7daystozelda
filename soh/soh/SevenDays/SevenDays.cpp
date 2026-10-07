@@ -58,7 +58,7 @@ static const char* CUSTOM_MESSAGE_TABLE = "SevenDays";
 
 // Navi first-time lines, one save flag each.
 // The bits and text ids are saved with the file: materials added after the first
-// five (PHA-3935) keep their first-gather lines in GATHER_FIRST_BIT_NEW+ instead.
+// five (#3935) keep their first-gather lines in GATHER_FIRST_BIT_NEW+ instead.
 enum FirstLine : uint8_t {
     FIRST_GATHER_BASE = 0, // + material (the first MAT_LEGACY_COUNT)
     FIRST_CRAFT = MAT_LEGACY_COUNT,
@@ -1040,7 +1040,7 @@ const char* sevendays_test_state() {
     return out.c_str();
 }
 
-// PHA-4005: every line in the SevenDays table by id, and the ids registered twice.
+// #4005: every line in the SevenDays table by id, and the ids registered twice.
 EMSCRIPTEN_KEEPALIVE
 const char* sevendays_test_text_audit() {
     static std::string out;
@@ -1081,7 +1081,7 @@ static void RegisterSevenDaysM4() {
             // Only a rock that was broken: thrown (it left home) or smashed where it
             // sat (AC hit). Obj_Mure2 rock circles despawn their rocks with
             // Actor_Kill when Link walks away, which must not pay out. Small rocks
-            // pay Stone; silver rocks pay Iron with the Silver Gauntlets (PHA-3935).
+            // pay Stone; silver rocks pay Iron with the Silver Gauntlets (#3935).
             EnIshi* rock = (EnIshi*)actor;
             bool thrown = Math_Vec3f_DistXZ(&actor->world.pos, &actor->home.pos) > 10.0f;
             if (thrown || (rock->collider.base.acFlags & AC_HIT)) {

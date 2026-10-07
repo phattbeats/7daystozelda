@@ -1,4 +1,4 @@
-# PHA-3913: 7DtZ M9: the world reacts — towns and NPCs talk about the nights
+# #3913: 7DtZ M9: the world reacts — towns and NPCs talk about the nights
 
 Status at export (2026-10-03): done
 

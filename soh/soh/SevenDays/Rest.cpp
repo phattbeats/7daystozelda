@@ -21,7 +21,7 @@ void Player_Action_Idle(Player* thisx, PlayState* play);
 }
 
 /**
- * PHA-3962: Link uses the furniture. A on a chair or the bench sits him on it, a bed
+ * #3962: Link uses the furniture. A on a chair or the bench sits him on it, a bed
  * puts him to sleep, the rug lays him down and the milk can is drunk from. B, the
  * stick or anything that takes Link over (a hit, a cutscene, a void-out) gets him up.
  *
@@ -368,7 +368,7 @@ static const char* AnimName(Player* player) {
     return a != nullptr && strncmp(a, "__OTR__", 7) == 0 ? a : "";
 }
 
-// PHA-3962 tests: the rest state (phase, use, piece, health, where Link is held, his animation).
+// #3962 tests: the rest state (phase, use, piece, health, where Link is held, his animation).
 EMSCRIPTEN_KEEPALIVE
 const char* sevendays_test_rest_state() {
     static std::string out;

@@ -51,7 +51,7 @@ typedef struct EnFd {
     /* 0x0620 */ EnFdEffect effects[200];
 } EnFd; // size = 0x31E0
 
-// Co-op mirroring (PHA-4055)
+// Co-op mirroring (#4055)
 s32 EnFd_MirrorGetAction(EnFd* en);
 void EnFd_MirrorApplyAction(EnFd* en, s32 action);
 s32 EnFd_MirrorGetAnim(EnFd* en);

@@ -1,4 +1,4 @@
-// PHA-4060 capture: mirror everything sent to an AudioContext's speakers into a MediaStream, and record canvas+audio.
+// #4060 capture: mirror everything sent to an AudioContext's speakers into a MediaStream, and record canvas+audio.
 (() => {
   const conn = AudioNode.prototype.connect;
   AudioNode.prototype.connect = function (dst, ...rest) {

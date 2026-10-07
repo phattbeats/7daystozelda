@@ -37,7 +37,7 @@ typedef struct EnIk {
     /* 0x04D8 */ char unk_4D8[0x04];
 } EnIk; // size = 0x04DC
 
-// Co-op mirroring (PHA-4055)
+// Co-op mirroring (#4055)
 s32 EnIk_MirrorIsFight(EnIk* en);
 s32 EnIk_MirrorGetState(EnIk* en);
 s32 EnIk_MirrorGetArmor(EnIk* en);

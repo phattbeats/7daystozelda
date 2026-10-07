@@ -9,7 +9,7 @@ extern "C" {
 
 /**
  * Balancing tables for 7 Days to Zelda. Every number here is a placeholder to
- * tune on game night (PHA-3870 M8); logic reads only these tables.
+ * tune on game night (#3870 M8); logic reads only these tables.
  */
 
 namespace SevenDays {
@@ -62,7 +62,7 @@ static const std::vector<Recipe> sRecipes = {
     { "bombtrap",       "Bomb-flower trap", RECIPE_KIT,        { { MAT_STONE, 4 }, { MAT_ROT, 2 } },         2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG, true },
     { "gate",           "Player gate",      RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_STONE, 4 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_HOOKSHOT, true },
     { "ironwall",       "Iron wall",        RECIPE_KIT,        { { MAT_IRON, 4 }, { MAT_STONE, 4 }, { MAT_ORE, 2 } }, 3, ITEM_NONE, ITEM_NONE,   1,  UNLOCK_SILVER_GAUNTLETS },
-    // PHA-3945: floors, stairs and doors (Majora's Mask models). Floors and stairs need no
+    // #3945: floors, stairs and doors (Majora's Mask models). Floors and stairs need no
     // tier: a second storey is part of building from the start. The doors climb the tiers
     // like the player gate they re-skin, without its blueprint.
     { "floorplank",     "Plank floor",      RECIPE_KIT,        { { MAT_WOOD, 4 }, { MAT_FIBER, 1 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
@@ -75,7 +75,7 @@ static const std::vector<Recipe> sRecipes = {
     { "doorswamp",      "Swamp door",       RECIPE_KIT,        { { MAT_WOOD, 8 }, { MAT_FIBER, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_DEKU_TREE },
     { "doormusic",      "Music Box door", RECIPE_KIT,          { { MAT_WOOD, 8 }, { MAT_STONE, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_BOMB_BAG },
     { "doorpirate",     "Pirate door",      RECIPE_KIT,        { { MAT_WOOD, 6 }, { MAT_STONE, 4 }, { MAT_BONE, 2 } }, 3, ITEM_NONE, ITEM_NONE,   1,  UNLOCK_HOOKSHOT },
-    // PHA-3962: furniture (Majora's Mask models). Cheap and untiered: it's for living in the
+    // #3962: furniture (Majora's Mask models). Cheap and untiered: it's for living in the
     // base, not defending it. The milk can's milk is the one that costs something.
     { "chairinn",       "Inn chair",        RECIPE_KIT,        { { MAT_WOOD, 3 } },                          1, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
     { "chairmilkbar",   "Milk Bar chair",   RECIPE_KIT,        { { MAT_WOOD, 2 }, { MAT_STONE, 2 } },        2, ITEM_NONE,        ITEM_NONE,      1,  UNLOCK_START },
@@ -114,7 +114,7 @@ static const std::vector<Recipe> sRecipes = {
 };
 
 // Kokiri Forest has none: the prologue stays gathering-first. Goron City sells Ore
-// once the hammer opens it (PHA-3935).
+// once the hammer opens it (#3935).
 static const std::vector<Merchant> sMerchants = {
     // scene                   room anchor x, y, z      (beside)
     { SCENE_MARKET_DAY,        0,   393,   0,    264,   // a market-goer by the bazaar's side of the square
@@ -219,7 +219,7 @@ static const std::vector<CacheSpot> sCacheSpots = {
 };
 // clang-format on
 
-// PHA-3935: Hookshot-tier bundles on ledges that walking doesn't reach (adult era:
+// #3935: Hookshot-tier bundles on ledges that walking doesn't reach (adult era:
 // the Hookshot is an adult item). Found with a floor scan in game (flat tops with a
 // drop of 160+ on every side), then checked with screenshots.
 // clang-format off
@@ -327,7 +327,7 @@ const Recipe* FindRecipe(const std::string& id) {
 }
 
 // Tiers read the save: items owned, upgrades, boss flags. Hammer and Silver
-// Gauntlets open Ore and Iron (PHA-3935).
+// Gauntlets open Ore and Iron (#3935).
 bool IsUnlocked(Unlock unlock) {
     switch (unlock) {
         case UNLOCK_START:

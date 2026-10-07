@@ -14,7 +14,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Stalfos (EN_TEST, PHA-4055): the room-placed ones (types 0-3), the Forest Temple
+ * Stalfos (EN_TEST, #4055): the room-placed ones (types 0-3), the Forest Temple
  * fights (Bg_Mori_Bigst spawns a lone type 1, then a pair of type 5) and the
  * Ganon's-tower pair (En_Zl3, type 5).
  *

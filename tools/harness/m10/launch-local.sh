@@ -1,5 +1,5 @@
 #!/bin/bash
-# PHA-3915: local headless Chrome (browserless caps sessions ~5 min and is full). Persistent profile keeps the save.
+# #3915: local headless Chrome (browserless caps sessions ~5 min and is full). Persistent profile keeps the save.
 for f in /proc/[0-9]*/cmdline; do c=$(tr '\0' ' ' <$f 2>/dev/null); case "$c" in "python3 playd.py 19711"*) kill ${f//[^0-9]/} 2>/dev/null;; esac; done
 sleep 1; . /tmp/vlibs/env.sh; cd /tmp/m9tools
 setsid nohup python3 playd.py 19711 local "http://127.0.0.1:18110/" /tmp/vq-m10prof-local >/tmp/m10web/playd-local.log 2>&1 &

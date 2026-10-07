@@ -151,7 +151,7 @@ static uint32_t LobbyRaidInterval() {
     return 0;
 }
 
-// PHA-3856: no in-game popup (a controller couldn't reach it). Once per session, after
+// #3856: no in-game popup (a controller couldn't reach it). Once per session, after
 // the opening, a new save takes the lobby pick (or the RaidInterval setting), and the
 // room's host (or a solo player) also applies a changed lobby pick to an existing save.
 static void ApplyLobbyRaidInterval() {
@@ -201,7 +201,7 @@ static void DrawRaidIntervalRow() {
     }
 }
 
-// PHA-3935: Ore and Iron stay off the materials line until their tier opens (or the
+// #3935: Ore and Iron stay off the materials line until their tier opens (or the
 // pool has some), so the line still fits the page.
 static bool MaterialShown(uint8_t m) {
     if (m < MAT_LEGACY_COUNT || GetPool().materials[m] > 0) {
@@ -254,7 +254,7 @@ static void DrawBaseTab() {
         RequestPackUp(nearest);
     }
     ImGui::EndDisabled();
-    // PHA-3935: repairs, for materials (a damaged piece packs up into only part of its kit).
+    // #3935: repairs, for materials (a damaged piece packs up into only part of its kit).
     std::string cost = p != nullptr ? RepairCost(nearest) : "";
     ImGui::BeginDisabled(cost.empty());
     std::string repair = cost.empty() ? std::string("Repair (stand next to a damaged piece)")
@@ -416,7 +416,7 @@ constexpr s16 kRowHeight = 18;
 Color_RGB8 kPageDark = { 58, 36, 16 };
 Color_RGB8 kPageLight = { 128, 88, 44 };
 
-// PHA-3969: each kit's icon is its own piece, rendered in-game from the model it is built
+// #3969: each kit's icon is its own piece, rendered in-game from the model it is built
 // with (tools/harness/pha3969) and packed into soh.o2r under objects/7dtz_icons. Without
 // the pack the rows keep the vanilla item icons below.
 #define ICON(name) const ALIGN_ASSET(2) char gIcon_##name[] = "__OTR__objects/7dtz_icons/" #name
@@ -473,7 +473,7 @@ const char* KitIcon(const std::string& kit) {
     if (it != sKits.end()) {
         return it->second;
     }
-    // PHA-3962: furniture icons came in a later icon pack; each is checked on its own, so an
+    // #3962: furniture icons came in a later icon pack; each is checked on its own, so an
     // older pack keeps the vanilla icons for them.
     static std::map<std::string, std::string> sFurniture;
     static std::map<std::string, bool> sFound;
@@ -503,13 +503,13 @@ const char* RecipeIcon(const Recipe& recipe) {
         { "gate", gItemIconHookshotTex },         { "scarecrow", gItemIconSlingshotTex },
         { "guardbaba", gItemIconDekuNutTex },     { "ironwall", gItemIconSilverGauntletsTex },
         { "palisade", gItemIconHammerTex },
-        // PHA-3945
+        // #3945
         { "floorplank", gItemIconBootsKokiriTex },  { "floorranch", gItemIconBottleMilkFullTex },
         { "floorstone", gItemIconGoronsBraceletTex }, { "deck", gItemIconMaskKeatonTex },
         { "step", gItemIconBootsHoverTex },          { "ladder", gItemIconLongshotTex },
         { "stairs", gItemIconBootsIronTex },         { "doorswamp", gItemIconMagicBeanTex },
         { "doormusic", gItemIconOcarinaFairyTex },   { "doorpirate", gItemIconMaskGerudoTex },
-        // PHA-3962
+        // #3962
         { "chairinn", gItemIconMaskBunnyHoodTex },       { "chairmilkbar", gItemIconMaskZoraTex },
         { "bench", gItemIconDekuStickTex },          { "bedinn", gItemIconWeirdEggTex },
         { "bedmayor", gItemIconWeirdEggTex },      { "dresser", gMapChestIconTex },
@@ -611,7 +611,7 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
     }
     if (tab == PAGE_CRAFT || tab == PAGE_TRADE) {
         const PoolState& pool = GetPool();
-        // PHA-4018: base kits first, then consumables, so the pieces don't need a scroll.
+        // #4018: base kits first, then consumables, so the pieces don't need a scroll.
         std::vector<const Recipe*> order;
         for (const Recipe& recipe : GetRecipes()) {
             order.push_back(&recipe);
@@ -657,7 +657,7 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
     }
 
     // Base: place a kit (the pause menu closes for the ghost), how often raids come, or
-    // pack pieces up. PHA-4018: the kits come first, the ones in the pool ahead of the rest.
+    // pack pieces up. #4018: the kits come first, the ones in the pool ahead of the rest.
     const PoolState& pool = GetPool();
     std::vector<PageRow> empty;
     for (int t = 0; t < PLACEABLE_COUNT; t++) {
@@ -736,7 +736,7 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
     };
     rows.push_back(std::move(repair));
 
-    // PHA-3935: the Megaton Hammer rebuilds walls in place.
+    // #3935: the Megaton Hammer rebuilds walls in place.
     int upTo = p != nullptr ? UpgradeTarget(nearest) : -1;
     if (upTo >= 0) {
         PageRow up;
@@ -782,7 +782,7 @@ float TextWidth(const std::string& text, float scale) {
     return width;
 }
 
-// PHA-4029: every glyph is its own texture, and the renderer ends a draw call whenever the
+// #4029: every glyph is its own texture, and the renderer ends a draw call whenever the
 // texture changes, so drawing text letter by letter cost a draw call per letter (over a
 // thousand a frame with the shadows and the page on the side faces): choppy on phones.
 // DrawText queues the glyphs; FlushText draws them grouped by letter, one texture load per

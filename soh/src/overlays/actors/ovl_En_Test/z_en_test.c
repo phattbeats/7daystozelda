@@ -2063,7 +2063,7 @@ s32 EnTest_ReactToProjectile(PlayState* play, EnTest* this) {
     return false;
 }
 
-// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// ---- Co-op mirroring (#4055) -------------------------------------------------
 // The action is an actionFunc the suppressed mirror never leaves: it is streamed as an
 // index so a mirror whose stream stops resumes on a valid one, and the break-apart
 // states (types 4 and 5) are told apart by it.

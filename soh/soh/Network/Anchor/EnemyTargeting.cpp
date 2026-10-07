@@ -431,7 +431,7 @@ extern "C" s32 Anchor_EnemyTargetSwapActive(void) {
     return EnemyTargeting::SwapActive() ? 1 : 0;
 }
 
-// PHA-4047: the players a boss may pick its next attack against (see
+// #4047: the players a boss may pick its next attack against (see
 // BossDodongo_UpdateAim). The local Link always comes first, as GET_PLAYER;
 // living same-scene puppets follow while we run enemy AI for a peer.
 extern "C" s32 Anchor_BossAimTargets(PlayState* play, Actor** out, s32 max) {
@@ -452,7 +452,7 @@ extern "C" s32 Anchor_BossAimTargets(PlayState* play, Actor** out, s32 max) {
     return count;
 }
 
-// PHA-4050: the nearest (by XZ distance from `from`) of Anchor_BossAimTargets.
+// #4050: the nearest (by XZ distance from `from`) of Anchor_BossAimTargets.
 extern "C" Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from) {
     Actor* targets[8];
     s32 count = Anchor_BossAimTargets(play, targets, 8);
@@ -468,7 +468,7 @@ extern "C" Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from) {
     return best;
 }
 
-// PHA-4051: the client id behind a puppet actor from Anchor_BossAimTargets, 0 for the local Link.
+// #4051: the client id behind a puppet actor from Anchor_BossAimTargets, 0 for the local Link.
 extern "C" u32 Anchor_PuppetClientId(Actor* actor) {
     if (Anchor::Instance == nullptr) {
         return 0;

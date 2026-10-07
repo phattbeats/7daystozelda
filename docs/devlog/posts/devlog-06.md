@@ -7,7 +7,7 @@ publish: Day 6
 
 ---
 
-Day 6. Yesterday was the player's tour. Today we open the hood on the night itself. Almost all of this lives in one new file, `soh/soh/SevenDays/Raids.cpp`. Patch 0011 added it at 1,434 lines, and patch 0014 tuned it after I played it and complained. As with the rest of the project, an AI agent (Claude, running through Paperclip) wrote the code. I wrote the spec's wish list and did the yelling.
+Day 6. Yesterday was the player's tour. Today we open the hood on the night itself. Almost all of this lives in one new file, `soh/soh/SevenDays/Raids.cpp`. Patch 0011 added it at 1,434 lines, and patch 0014 tuned it after I played it and complained. As with the rest of the project, an AI agent (running through Paperclip) wrote the code. I wrote the spec's wish list and did the yelling.
 
 ![A Stalchild right next to Link by the ladder and sign in Kokiri Forest at night, Saria at the left edge](img/live-S17-night-village.png)
 *FIG 6-1 — Night in the village. A Stalchild has made it to the workbench area by Link's ladder.*
@@ -130,7 +130,7 @@ Damage builds up and only goes out in chunks of at least 4 HP. `DamagePlaceable`
 ![Diagram of enemy authority and room owner exchanging BASE_HP and BASE_DELTA](diagrams/devlog-06-authority.svg)
 *FIG 6-5 — Who decides what during a raid.*
 
-This was the design call that made the rest possible. The spec (PHA-3870) says both kinds of authority "already exist":
+This was the design call that made the rest possible. The spec (#3870) says both kinds of authority "already exist":
 
 - **Room owner** (`roomState.ownerClientId`) owns base-wide state: the base, the material pool, the night schedule, dawn, penalties.
 - **Scene enemy authority** is the lowest client ID in that scene (`EnemySync::IsLocalAuthority`, from Day 2's netcode). It runs anything alive in the scene: the budget, spawns, routing, the stuck check, barricade drain.

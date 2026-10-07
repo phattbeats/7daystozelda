@@ -32,8 +32,8 @@ extern PlayState* gPlayState;
  *   BASE_STATE     owner   -> room/joiner  the whole base
  *   BASE_REQUEST   joiner  -> owner    the joiner's cached copy; higher rev wins
  *   BASE_HP        enemy authority -> owner  id, hp (owner sequences it into a BASE_DELTA)
- *   REPAIR_REQUEST player  -> owner    id, hammer (PHA-3935: full HP for materials)
- *   UPGRADE_REQUEST player -> owner    id (PHA-3935: Megaton Hammer, wood -> stone -> iron in place)
+ *   REPAIR_REQUEST player  -> owner    id, hammer (#3935: full HP for materials)
+ *   UPGRADE_REQUEST player -> owner    id (#3935: Megaton Hammer, wood -> stone -> iron in place)
  *
  * Every client spawns its own copy of each placeable on OnSceneSpawnActors
  * (room -1, keyed by the stable id); only add/remove/HP events travel.
@@ -81,7 +81,7 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     //                         kit          name              halfX halfZ height maxHp
     /* PLACEABLE_BARRICADE */ { "barricade", "Barricade",      60,   10,   48,    100 },
     /* PLACEABLE_SPIKES    */ { "spikes",    "Spike strip",    45,   15,   8,     60  },
-    /* PLACEABLE_WORKBENCH */ { "workbench", "Workbench",      27,   18,   35,    0   }, // PHA-3856: 1.2x desk
+    /* PLACEABLE_WORKBENCH */ { "workbench", "Workbench",      27,   18,   35,    0   }, // #3856: 1.2x desk
     /* PLACEABLE_CHEST     */ { "chest",     "Storage chest",  26,   20,   44,    0   },
     /* PLACEABLE_SIGN      */ { "",          "Sign",           20,   5,    60,    0   },
     /* PLACEABLE_SCARECROW */ { "scarecrow", "Scarecrow decoy", 18,   18,   75,    80  },
@@ -92,7 +92,7 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     /* PLACEABLE_GATE      */ { "gate",      "Player gate",    60,   8,    90,    150 },
     /* PLACEABLE_IRONWALL  */ { "ironwall",  "Iron wall",      60,   30,   60,    400 },
     /* PLACEABLE_PALISADE  */ { "palisade",  "Palisade wall",  62,   16,   96,    150 },
-    // PHA-3945: floors tile on a 120 grid; the deck, ladder and stairs are a storey (104) tall.
+    // #3945: floors tile on a 120 grid; the deck, ladder and stairs are a storey (104) tall.
     /* PLACEABLE_FLOOR_PLANK */ { "floorplank", "Plank floor",  60,   60,   8,     100 },
     /* PLACEABLE_FLOOR_RANCH */ { "floorranch", "Ranch floor",  60,   60,   6,     80  },
     /* PLACEABLE_FLOOR_STONE */ { "floorstone", "Stone platform", 60, 60,   24,    200 },
@@ -103,7 +103,7 @@ static const PlaceableInfo sPlaceables[PLACEABLE_COUNT] = {
     /* PLACEABLE_DOOR_SWAMP  */ { "doorswamp",  "Swamp door",   60,   8,    100,   120 },
     /* PLACEABLE_DOOR_MUSIC  */ { "doormusic",  "Music Box door", 60, 8,    100,   150 },
     /* PLACEABLE_DOOR_PIRATE */ { "doorpirate", "Pirate door",  60,   8,    100,   200 },
-    // PHA-3962: furniture, Majora's Mask models at about 1.3x, sized to Link. The box is
+    // #3962: furniture, Majora's Mask models at about 1.3x, sized to Link. The box is
     // the whole piece; seats and beds collide only up to the seat (BuildShape).
     /* PLACEABLE_CHAIR_INN     */ { "chairinn",     "Inn chair",        16, 16, 57, 0 },
     /* PLACEABLE_CHAIR_MILKBAR */ { "chairmilkbar", "Milk Bar chair",   10, 11, 55, 0 },
@@ -249,7 +249,7 @@ static Placeable* FindPlaceableMut(uint16_t id) {
     return nullptr;
 }
 
-// PHA-3935 (M9): towns that board themselves up once the raids have started, like
+// #3935 (M9): towns that board themselves up once the raids have started, like
 // the Kokiri village. Decoration only: not in BaseState, so never packed up, damaged,
 // counted or saved. Ids from DECOR_ID_BASE; child era, after the first raid. Each pair
 // flanks the way in and leaves the path open. y is re-snapped to the floor on spawn.
@@ -321,11 +321,11 @@ static int CountEraIn(int era, int16_t scene) {
 
 static std::map<std::string, int> sRefusals; // owner: why placements were refused (sevendays_test_base)
 
-// PHA-4062: the chunked collision lists (Placeables.cpp) hold DYNA_BUDGET polygons, vertices and
+// #4062: the chunked collision lists (Placeables.cpp) hold DYNA_BUDGET polygons, vertices and
 // poly nodes per scene. The first two are exact sums; the nodes (one per polygon per grid cell it
 // crosses) are estimated from the polygon count, so a base of long, flat pieces cannot run them out
 // and silently lose collision (DynaSSNodeList_GetNextNodeIdx returns SS_NULL once the list is full).
-static constexpr int kCollisionNodesPerPolyQ = 5; // nodes = polys * 5 / 4: measured 1.03 per poly (mixed base), PHA-4062
+static constexpr int kCollisionNodesPerPolyQ = 5; // nodes = polys * 5 / 4: measured 1.03 per poly (mixed base), #4062
 static constexpr int kCollisionBudgetPercent = 90;
 
 static bool CollisionFits(int era, int16_t scene, uint8_t type) {
@@ -342,7 +342,7 @@ static bool CollisionFits(int era, int16_t scene, uint8_t type) {
     return polys <= cap && verts <= cap && polys * kCollisionNodesPerPolyQ / 4 <= cap;
 }
 
-// PHA-4027: outposts. Away from the base's scene, a workbench starts a camp, and
+// #4027: outposts. Away from the base's scene, a workbench starts a camp, and
 // pieces go within BASE_RADIUS of any of the era's workbenches in that scene. The
 // base itself (raids, the village) stays where its first workbench is.
 static bool NearOutpostWorkbench(int era, int16_t scene, float x, float z) {
@@ -499,7 +499,7 @@ static const Seed sVillageSeeds[] = {
     { PLACEABLE_BARRICADE, -150.0f, 380.0f, -1180.0f, 0x0000, 100 }, // Lost Woods ledge path, east side
     { PLACEABLE_BARRICADE,  300.0f,   0.0f,  500.0f, 0x1C72, 35  }, // the broken fence on the village green
 };
-// PHA-3904 (Brandon, 2026-10-04): palisade walls around the village. They carry the
+// #3904 (Brandon, 2026-10-04): palisade walls around the village. They carry the
 // barricade lines at both Lost Woods exits out toward the cliffs (the gaps stay open,
 // so the story route does too), and fence the north ramp and east edge of the dip by
 // Link's house, leaving a way in. 96 tall, so Link can't climb them; raiders break through.
@@ -713,7 +713,7 @@ static void OnPlaceResult(const nlohmann::json& payload) {
     sPlaceInFlight = {};
     uint8_t type = payload.value("ptype", (uint8_t)0);
     if (payload.value("ok", false)) {
-        // PHA-4018: placement stays open for the next kit of the same piece until B,
+        // #4018: placement stays open for the next kit of the same piece until B,
         // the pause menu, or the last kit.
         auto kit = GetPool().kits.find(GetPlaceableInfo(type).kit);
         uint32_t left = payload.value("left", kit != GetPool().kits.end() ? kit->second : 0u);
@@ -743,7 +743,7 @@ static void Reply(uint32_t requester, nlohmann::json result) {
 
 // The owner's placement check (spec "Anywhere bases"): kit in the pool, the
 // scene's clock runs, within 800 of the era's workbench (the first one sets the
-// center), one base per era plus workbench outposts elsewhere (PHA-4027), at most
+// center), one base per era plus workbench outposts elsewhere (#4027), at most
 // BaseCap() pieces per scene.
 static void ProcessPlaceRequest(const nlohmann::json& payload, uint32_t requester) {
     nlohmann::json result;
@@ -839,11 +839,11 @@ static void ProcessPlaceRequest(const nlohmann::json& payload, uint32_t requeste
 
     result["ok"] = true;
     result["id"] = p.id;
-    result["left"] = kit->second; // PHA-4018: the builder keeps placing while this is above 0
+    result["left"] = kit->second; // #4018: the builder keeps placing while this is above 0
     Reply(requester, result);
 }
 
-// PHA-3935: a piece's kit materials scaled by num/den, rounded down or up.
+// #3935: a piece's kit materials scaled by num/den, rounded down or up.
 static std::vector<RecipeInput> ScaledKit(const Placeable& p, uint32_t num, uint32_t den, bool roundUp) {
     std::vector<RecipeInput> out;
     const Recipe* r = FindRecipe(GetPlaceableInfo(p.type).kit);
@@ -1010,7 +1010,7 @@ static void ProcessPackRequest(const nlohmann::json& payload, uint32_t requester
     }
 }
 
-// PHA-3935: the Megaton Hammer rebuilds walls in place, wood -> stone -> iron. It costs
+// #3935: the Megaton Hammer rebuilds walls in place, wood -> stone -> iron. It costs
 // the difference between the two kits (never less than one of each new material),
 // and the piece keeps its id, place and share of HP.
 static int UpgradeTargetOf(uint8_t type) {
@@ -1173,7 +1173,7 @@ static void ApplyHp(uint16_t id, int hp) {
         delta["broken"] = true;
         Despawn(id);
         BroadcastDelta(delta);
-        DropPiecesOn(gone); // PHA-3945: what stood on it falls with it
+        DropPiecesOn(gone); // #3945: what stood on it falls with it
         return;
     } else {
         if (hp < p->hp) {
@@ -1396,10 +1396,10 @@ struct PlacementState {
     bool valid = false;
     std::string reason;
     int16_t room = -1;
-    bool stacked = false; // PHA-3945: on top of another piece
-    int16_t finalRot = 0; // PHA-3945: rot, or the angle a snap turned it to
+    bool stacked = false; // #3945: on top of another piece
+    int16_t finalRot = 0; // #3945: rot, or the angle a snap turned it to
     bool armed = false;   // A has been up since placement began: a held A doesn't place
-    bool unpaused = false; // PHA-4018: the pause menu has been shut since placement began
+    bool unpaused = false; // #4018: the pause menu has been shut since placement began
 };
 static PlacementState sPlace;
 
@@ -1494,7 +1494,7 @@ static bool NearExitOrDoor(PlayState* play, const Vec3f& at, f32 floorY) {
     return false;
 }
 
-// MARK: - PHA-3945: stacking and snapping
+// MARK: - #3945: stacking and snapping
 
 constexpr float TILE = 120.0f; // floors and the deck are 120 x 120
 
@@ -1717,7 +1717,7 @@ static const Placeable* UpgradeBlocker(const Placeable& p, uint8_t to) {
     return nullptr;
 }
 
-// PHA-3945: when a piece breaks, whatever stood on it with nothing else under it falls
+// #3945: when a piece breaks, whatever stood on it with nothing else under it falls
 // and breaks too (and in turn what stood on that). Floors that only reach out from the
 // level beside them stand on nothing, so they stay.
 static void DropPiecesOn(const Placeable& gone) {
@@ -1795,7 +1795,7 @@ static void Validate(PlayState* play, Player* player) {
     float y;
     const Placeable* under = IsFloorType(sPlace.type) ? PieceUnderLink(player) : nullptr;
     if (under != nullptr) {
-        // PHA-3945: a floor placed from up on the base goes in at the level Link stands
+        // #3945: a floor placed from up on the base goes in at the level Link stands
         // on, next to the tile he is on: that is how a second storey grows out.
         PieceBox b = BoxOf(*under);
         if (IsTileType(under->type)) {
@@ -1871,7 +1871,7 @@ static void Validate(PlayState* play, Player* player) {
         sPlace.reason = "Bases go outdoors, where the nights come";
         return;
     }
-    // PHA-3945: boxes that overlap in the footprint and in height are refused; touching
+    // #3945: boxes that overlap in the footprint and in height are refused; touching
     // ones are fine, and a piece on top of another (or under a floor) is too.
     PieceBox me = BoxAt(sPlace.type, x, y, z, rot);
     for (auto& p : sBase.placeables) {
@@ -1974,7 +1974,7 @@ void PlacementUpdate(Actor* ghost, PlayState* play) {
             return;
         }
         Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
-        // PHA-4018: the ghost stays up; OnPlaceResult ends placement on the last kit.
+        // #4018: the ghost stays up; OnPlaceResult ends placement on the last kit.
         SendPlaceRequest();
     }
 }
@@ -2071,7 +2071,7 @@ uint16_t NearestPlaceable(float maxDist) {
             continue;
         }
         float dx = p.pos[0] - player->actor.world.pos.x, dz = p.pos[2] - player->actor.world.pos.z;
-        // PHA-3945: with floors stacked over walls, the piece at Link's height wins.
+        // #3945: with floors stacked over walls, the piece at Link's height wins.
         PieceBox b = BoxOf(p);
         float y = player->actor.world.pos.y;
         float above = std::max(0.0f, std::max(b.y0 - (y + 40.0f), y - b.y1));
@@ -2086,7 +2086,7 @@ uint16_t NearestPlaceable(float maxDist) {
 
 // MARK: - Per frame / session
 
-// PHA-3935: the seven-year jump. The first time the owner is an adult, the child base
+// #3935: the seven-year jump. The first time the owner is an adult, the child base
 // becomes ruins (still standing in the adult era, broken and harmless) and half its
 // kits' materials go back into the pool (spec, "One base per era").
 static void RuinChildBase() {
@@ -2142,7 +2142,7 @@ void BaseOnFrame() {
     }
     if (sPlace.active && gPlayState != nullptr) {
         Player* player = GET_PLAYER(gPlayState);
-        // PHA-4018: placement repeats, so opening the pause menu is one of the ways out.
+        // #4018: placement repeats, so opening the pause menu is one of the ways out.
         // Placement starts while the Workbench page is still closing; only a pause that
         // opens after that counts.
         bool paused = gPlayState->pauseCtx.state != 0;
@@ -2338,7 +2338,7 @@ const char* sevendays_test_base() {
             n += a->id == PlaceableActorId();
         }
         j["placeableActors"] = n;
-        // PHA-3916: dynamic collision headroom (slots in use, the lists' size and
+        // #3916: dynamic collision headroom (slots in use, the lists' size and
         // fill) and the actor arena left after the bigger lists.
         DynaCollisionContext& dyna = gPlayState->colCtx.dyna;
         int slots = 0;

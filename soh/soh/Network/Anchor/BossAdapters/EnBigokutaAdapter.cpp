@@ -13,7 +13,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Big Octo (EN_BIGOKUTA, Jabu-Jabu's miniboss), PHA-4055.
+ * Big Octo (EN_BIGOKUTA, Jabu-Jabu's miniboss), #4055.
  *
  * Pose, joints and health stream generically. A suppressed mirror also needs:
  *  - The state machine. Draw reads actionFunc (stun flash, hurt shake, death

@@ -134,7 +134,7 @@ void Emit(Options notification) {
     if (notification.remainingTime == 0.0f) {
         notification.remainingTime = CVarGetFloat(CVAR_SETTING("Notifications.Duration"), 10.0f);
     }
-    // 7 Days to Zelda (PHA-3856): no ImGui toasts. Every notice is drawn in the game's
+    // 7 Days to Zelda (#3856): no ImGui toasts. Every notice is drawn in the game's
     // own message box style instead, on the overlay (SevenDays::PushNotice).
     SevenDays::PushNotice(notification);
     if (!notification.mute) {

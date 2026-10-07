@@ -29,7 +29,7 @@ volume over `/root/OOT-True-Co-op` after the first extract.
 - `JOBS=1` lowers peak memory if the host is tight.
 - Touching the randomizer table sources, or anything they include, triggers the 12 GB rebuild. Avoid that unless planned.
 
-## Rules (from PHA-3860)
+## Rules (from #3860)
 
 - No `std::thread` on web.
 - Packets carry JSON, never raw structs.

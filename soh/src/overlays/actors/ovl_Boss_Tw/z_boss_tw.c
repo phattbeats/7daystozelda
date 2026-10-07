@@ -5553,7 +5553,7 @@ void BossTw_Reset(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Anchor co-op (PHA-4053). soh/Network/Anchor/BossAdapters/TwinrovaAdapter.cpp drives these.
+// Anchor co-op (#4053). soh/Network/Anchor/BossAdapters/TwinrovaAdapter.cpp drives these.
 // ---------------------------------------------------------------------------
 
 BossTw* BossTw_AnchorGlobal(s32 which) {

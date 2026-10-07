@@ -677,7 +677,7 @@ void EnfHG_Done(EnfHG* this, PlayState* play) {
 }
 
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
-// PHA-4049: soh/Network/Anchor/BossAdapters/GanondrofAdapter.cpp
+// #4049: soh/Network/Anchor/BossAdapters/GanondrofAdapter.cpp
 s32 Anchor_GanondrofHorseMirrored(Actor* horse);
 #endif
 

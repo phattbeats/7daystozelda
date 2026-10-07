@@ -79,7 +79,7 @@ void Anchor::HandlePacket_EnemyHitRequest(nlohmann::json payload) {
         return;
     }
 
-    // An adapter event, not a hit (PHA-4047: King Dodongo swallowed the
+    // An adapter event, not a hit (#4047: King Dodongo swallowed the
     // requester's bomb). Old builds never send one.
     if (payload.contains("event")) {
         const ActorSyncAdapter* adapter = EnemySync::GetAdapter(actor->id);

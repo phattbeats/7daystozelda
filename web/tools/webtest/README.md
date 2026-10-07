@@ -1,6 +1,6 @@
 # webtest: headless browser tests for the web build
 
-What found and verified PHA-3860. Runs real Chromium (Playwright, software WebGL) against the bundle
+What found and verified #3860. Runs real Chromium (Playwright, software WebGL) against the bundle
 behind a SWAG-equivalent nginx and a local Anchor server.
 
 ## Setup (once)

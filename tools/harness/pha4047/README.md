@@ -1,8 +1,8 @@
-# Boss test rig (PHA-4047)
+# Boss test rig (#4047)
 
 Two local clients fight a boss together: a stock Anchor relay, `web/server.js`
 and two GPU headless Chromes (`playd-gpu.py`), each driven over HTTP. Built for
-King Dodongo; the boss adapters after it (PHA-4048 to 4054) reuse it. The
+King Dodongo; the boss adapters after it (#4048 to 4054) reuse it. The
 per-boss checklist is `docs/design/coop-boss-checklist.md`.
 
 The scripts use `/tmp/z4047/t` as the rig directory and `/tmp/mOOT-True-Co-op`
@@ -10,7 +10,7 @@ as the build tree. Change those paths (sed) for a new run.
 
 ## Setup
 
-1. Relay: copy the stock Anchor binary (see PHA-3934 in the harness notes) to
+1. Relay: copy the stock Anchor binary (see #3934 in the harness notes) to
    `anchor/anchor` and byte-replace its port with yours (`up.sh` uses :43447).
 2. `serve/`: soh.data, soh.o2r, index.html and the art from a previous rig;
    `install.sh` copies soh.js/soh.wasm from the build tree and bumps `soh.js?v=`.

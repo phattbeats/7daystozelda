@@ -97,7 +97,7 @@ void EnIshi_SpawnDustLarge(EnIshi* enIshi, PlayState* play);
 
 namespace {
 
-// PHA-4044: a switch a partner pressed only moves the flag on this client; its own copy of
+// #4044: a switch a partner pressed only moves the flag on this client; its own copy of
 // the switch never looks at the flag again (except a few subtypes). Make the idle copy
 // follow the flag, animating as if pressed but without calling SetOn/SetOff (no chime, no
 // re-broadcast). cooldownOn = false lets the press/release animation run at once.
@@ -483,7 +483,7 @@ void Anchor::RegisterHooks() {
         }
     });
 
-    // PHA-4044: breakables that set a switch flag but only read it at Init, so the partner's
+    // #4044: breakables that set a switch flag but only read it at Init, so the partner's
     // copy stayed whole (and in the way) until the room reloaded.
 
     // Dodongo's Cavern: the stairs the two bomb flowers drop.

@@ -9,7 +9,7 @@ publish: Day 4 (see schedule)
 
 Day 3 ended with Ocarina of Time running in a browser tab. Day 4 is about what happened when I actually tried to play it with the boys. Between about half past midnight and four in the morning on October 2nd, we hit five separate bugs. Two of them turned out to be the same bug wearing different masks.
 
-Quick reminder of who did what: the AI agent (Claude, running as "Vision Quest" through Paperclip) wrote most of this port. This night was different. Two of the three worst fixes, the extractor abort and the texture table, plus the audio rebuild, landed in commits under my name from my own PC, because that's where the build tree lived. The agent diagnosed, filed, deployed and nagged. I'll be clear about who did which part as we go.
+Quick reminder of who did what: the AI agent (running as "Vision Quest" through Paperclip) wrote most of this port. This night was different. Two of the three worst fixes, the extractor abort and the texture table, plus the audio rebuild, landed in commits under my name from my own PC, because that's where the build tree lived. The agent diagnosed, filed, deployed and nagged. I'll be clear about who did which part as we go.
 
 And as always with this project: you bring your own legally dumped ROM. The page unpacks it inside your browser and never uploads it. No Nintendo assets are distributed.
 
@@ -59,7 +59,7 @@ With B1 fixed, the extractor got further and died differently. The agent reprodu
 
 The agent's guesses were reasonable: a C++ throw in a no-exceptions build, a thread without pthreads, or an assert in ZAPD. It wanted a debug rebuild (`-sASSERTIONS=1 -g2 -sSAFE_HEAP=1 -fexceptions`) and figured that needed a 12 GB box. It filed a blocker on me for that.
 
-Turned out I didn't need the box. The heavy parts were already compiled on my PC, so each fix was a small rebuild of about 30 seconds. And the cause was my own fault. From my comment on PHA-3861:
+Turned out I didn't need the box. The heavy parts were already compiled on my PC, so each fix was a small rebuild of about 30 seconds. And the cause was my own fault. From my comment on #3861:
 
 > "That one was my mistake. When I ported the ROM extractor to the browser, I dropped zalo's browser-specific guards. So it tried to show an 'extracting…' popup on a background thread, and this build can't run threads, so it died silently right after 'ROM validated'."
 
@@ -177,7 +177,7 @@ The fix needed a wasm rebuild, so it came back to my PC. From libultraship patch
 
 The same patch raises the queue cap on web to 3x that target, so catch-up audio after a hitch isn't thrown away. OOT-True-Co-op patch 0008 adds the second half: when the queue drops below a third of the target, `OTRAudio_ProcessInline` mixes an extra update so it refills in one tick, and a `web_audio_queued()` export lets the test harness watch the queue. The headless A/B at the same 13 fps title screen: median queue went from 1184 to about 2720 samples, and empty samples from 21–23 to 9–10 out of 150.
 
-The agent deployed it at 03:47 and was upfront that headless Chromium has no audio output, so "I need your ears for that." Five minutes later I confirmed it was smooth, and PHA-3860 closed.
+The agent deployed it at 03:47 and was upfront that headless Chromium has no audio output, so "I need your ears for that." Five minutes later I confirmed it was smooth, and #3860 closed.
 
 ## 4.7 What I took away
 

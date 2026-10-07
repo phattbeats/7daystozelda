@@ -79,7 +79,7 @@ ReplayLatch sSceneLayerCsReplay; // kind 1, consumed by the OnSceneInit detector
 // can open on a chain of scene-layer cutscenes (a new file's intro dream, then "Wake
 // up!" in Link's house; a save made before that ended), but that is the loading
 // player's own start, not a story trigger: broadcasting it pulled teammates out of
-// wherever they were whenever someone (re)joined (PHA-4030).
+// wherever they were whenever someone (re)joined (#4030).
 bool sOpeningCutscenes = false;
 
 bool ConsumeLatch(ReplayLatch& latch, s32 entrance) {
@@ -355,7 +355,7 @@ void RegisterCutsceneSyncHooks(bool isConnected) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4030 tests: broadcast a CUTSCENE_SYNC as if this client had triggered it
+// #4030 tests: broadcast a CUTSCENE_SYNC as if this client had triggered it
 // (kind 1, scene 52, entrance 0xBB, cs 0xFFF0 pulls teammates into "Wake up!").
 EMSCRIPTEN_KEEPALIVE
 void anchor_test_cs_send(int kind, int sceneNum, int entrance, int cutsceneIndex) {

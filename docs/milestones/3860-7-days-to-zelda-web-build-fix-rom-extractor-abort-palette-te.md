@@ -1,4 +1,4 @@
-# PHA-3860: 7 Days to Zelda web build: fix ROM extractor abort + palette-texture corruption
+# #3860: 7 Days to Zelda web build: fix ROM extractor abort + palette-texture corruption
 
 Status at export (2026-10-03): done
 
@@ -10,10 +10,10 @@ Next step: rebuild the web target with `-sASSERTIONS=1 -g2` (and possibly `-fexc
 
 Constraint: the build needs about 12 GB of RAM plus swap. PHATT-RAID had only 6 GB free and a load average of about 18 on 12 cores, and /mnt/user is 100% full, so it should not be built there without planning. Build on Brandon's PC or another box.
 
-Current workaround is in the PHA-3856 deployment doc: players load oot.o2r made by desktop SoH 9.1.1.
+Current workaround is in the #3856 deployment doc: players load oot.o2r made by desktop SoH 9.1.1.
 
 ## Bug 2: palette-texture corruption in the web renderer (reported 2026-10-02)
-Brandon booted the game with the desktop-made oot.o2r and played into Kokiri Forest. A Kokiri girl has a solid green face, and her eyes and hair show blue/green static. Link and the Kokiri's clothes render normally. Screenshot: PHA-3856 comment 428aba9a, attachment 81b46b1d-ddf4-4ac4-a634-d54803ba455c.
+Brandon booted the game with the desktop-made oot.o2r and played into Kokiri Forest. A Kokiri girl has a solid green face, and her eyes and hair show blue/green static. Link and the Kokiri's clothes render normally. Screenshot: #3856 comment 428aba9a, attachment 81b46b1d-ddf4-4ac4-a634-d54803ba455c.
 
 Hypothesis (unconfirmed): CI4/CI8 textures pick up the wrong TLUT, here the tunic-green palette. That would be a texture-cache key collision in the Fast3D/libultraship texture cache that only appears on wasm32 (32-bit pointers or size_t), since desktop 64-bit renders the same o2r correctly.
 

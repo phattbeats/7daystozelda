@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pack the Workbench kit icons into soh.o2r (PHA-3969).
+"""Pack the Workbench kit icons into soh.o2r (#3969).
 
 The icons are the pieces' own models, rendered in-game by the icon studio
 (tools/harness/pha3969/capture.py) and cut out by tools/harness/pha3969/matte.py:

@@ -1,4 +1,4 @@
-# Co-op boss checklist (PHA-4043)
+# Co-op boss checklist (#4043)
 
 Every boss gets "the Gohma treatment": an `ActorSyncAdapter` in
 `soh/soh/Network/Anchor/BossAdapters/` (template: `GohmaAdapter.cpp`, fullest
@@ -45,18 +45,18 @@ in a two-client live test, with screenshots and logs. The rig is in
 
 | Boss | Issue | Status |
 |---|---|---|
-| Gohma | M3, PHA-4023 | Done (warp spot and crash handoff: PHA-4046) |
-| King Dodongo | PHA-4047 | **Done**, see below |
-| Barinade | PHA-4048 | **Done**, see below |
-| Phantom Ganon | PHA-4049 | **Done**, see below |
-| Volvagia | PHA-4050 | **Done**, see below |
-| Morpha | PHA-4051 | **Done**, see below |
-| Bongo Bongo | PHA-4052 | Not started |
-| Twinrova | PHA-4053 | **Done**, see below |
-| Ganondorf and Ganon | PHA-4054 | **Done**, see below |
-| Minibosses (Dark Link, Iron Knuckle, Dead Hand, Big Octo, Flare Dancer, Stalfos, Lizalfos) | PHA-4055 | See the miniboss section below |
+| Gohma | M3, #4023 | Done (warp spot and crash handoff: #4046) |
+| King Dodongo | #4047 | **Done**, see below |
+| Barinade | #4048 | **Done**, see below |
+| Phantom Ganon | #4049 | **Done**, see below |
+| Volvagia | #4050 | **Done**, see below |
+| Morpha | #4051 | **Done**, see below |
+| Bongo Bongo | #4052 | Not started |
+| Twinrova | #4053 | **Done**, see below |
+| Ganondorf and Ganon | #4054 | **Done**, see below |
+| Minibosses (Dark Link, Iron Knuckle, Dead Hand, Big Octo, Flare Dancer, Stalfos, Lizalfos) | #4055 | See the miniboss section below |
 
-## King Dodongo (PHA-4047)
+## King Dodongo (#4047)
 
 | Row | How | Live test (2026-10-06, two local clients) |
 |---|---|---|
@@ -76,7 +76,7 @@ Known limits:
   needs the real door.
 - Camera shake from his roll and wall hits plays only on the host.
 
-## Barinade (PHA-4048)
+## Barinade (#4048)
 
 One actor id, 19 parts (body -1, supports 0-2, zappers 3-5, Baris 6-15, stumps 16-18, door 19) sharing file-static fight state.
 
@@ -95,7 +95,7 @@ Known limits:
 - The mirror doesn't receive the host's spark, tumour and lightning-charge spawns (it ticks the shared array only).
 - A test warp into the boss room doesn't pull the partner in; boss co-entry needs the real door.
 
-## Volvagia (PHA-4050)
+## Volvagia (#4050)
 
 Boss_Fd (flying) and Boss_Fd2 (hole form) are both registered. They share one health pool (Fd's `colChkInfo.health`, spent by Fd2's collision check).
 
@@ -113,7 +113,7 @@ Boss_Fd (flying) and Boss_Fd2 (hole form) are both registered. They share one he
 Known limits:
 - Fd2's emerge knockback still pushes only the authority's Link.
 - The 7DtZ mod swaps the heart container for a blueprint, so the "A blueprint!" message shows instead of a heart.
-## Morpha (PHA-4051)
+## Morpha (#4051)
 
 | Row | How | Live test (2026-10-07, two local clients, fresh room so the intro runs) |
 |---|---|---|
@@ -128,7 +128,7 @@ Known limits:
 
 Open: defeat while a victim is held, and the bandwidth of the `jt` arrays, were not measured.
 
-## Phantom Ganon (PHA-4049)
+## Phantom Ganon (#4049)
 
 Boss_Ganondrof plus its horse (En_fHG, the painting-ride phase) and the energy ball (En_Fhg_Fire, params 50).
 
@@ -150,7 +150,7 @@ Known limits:
 - Not exercised live: a killing blow landed by the mirror (the same forwarded-hit and edge paths as above), and a host leaving mid-fight.
 - Warping Link outside the arena floor reloads the room and restarts the intro, as in the vanilla game.
 
-## Minibosses (PHA-4055)
+## Minibosses (#4055)
 
 Seven minibosses, each with an adapter in `BossAdapters/` (`EnTorch2`, `EnIk`, `EnZf`, `EnTest`, `EnDh` (body and hands), `EnBigokuta`, `EnFd` (dancer, core and fire ring)). Plain mirroring fell short for all of them: a suppressed mirror never runs Update, so every draw-state field, state machine and spawn that only Update drives was stale.
 
@@ -190,7 +190,7 @@ Hyrule Field and Kakariko, each miniboss spawned on the host through `anchor_tes
 
 Not exercised live: Iron Knuckle's raised shield blocking a mirror swing (the streamed state and colliders were checked, not a real swing), Nabooru's cutscenes, the Octo's first-fight platform, the partner's hookshot on the Flare Dancer, Dead Hand's grab on the partner, and a host leaving mid-fight. No desync canary, parse error or crash in either log from the adapters. A `null function` in `EnPeehat_Update` came from a test spawn of a Peehat with invalid params.
 
-## Twinrova (PHA-4053)
+## Twinrova (#4053)
 
 Live as `soh-web:pha4053` (`soh.js?v=ba384731`, FROM pha4055). Rollback tag `pre-pha4053` (= pha4055); the old container is kept stopped as `soh-web-pre-pha4053`.
 
@@ -213,7 +213,7 @@ Known limits:
 - The shield-pose reports are about 20 events a second while a shield holds a reflect.
 - `OnLocalResume` after a host change in the middle of a cutscene was not exercised.
 
-## Ganondorf and Ganon (PHA-4054)
+## Ganondorf and Ganon (#4054)
 
 Two adapters. Boss_Ganon (`GanondorfAdapter.cpp`, scene 25, entrance 0x41F) is Ganondorf, his tennis light ball, the big-magic balls and the falling platforms. Boss_Ganon2 (`Ganon2Adapter.cpp`, scene 79, entrance 0x517) is the beast in the ruins. Evidence: `docs/evidence/pha4054/` (screenshots, `logs.txt`, `adapter-log-excerpt.txt`); rig: `tools/harness/pha4054/`.
 

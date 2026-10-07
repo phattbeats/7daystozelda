@@ -15,7 +15,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Flare Dancer (PHA-4055): EN_FD (the dancer), EN_FW (its core) and EN_FD_FIRE (the
+ * Flare Dancer (#4055): EN_FD (the dancer), EN_FW (its core) and EN_FD_FIRE (the
  * fire ring). The dancer spawns the core (a child) when it is hit, and the core
  * spawns nothing; the fire ring is spawned by the dancer eight at a time. All three
  * spawn from Update, so they replicate through the generic dynamic-spawn path (with

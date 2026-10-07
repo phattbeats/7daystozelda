@@ -22,7 +22,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Ganon (PHA-4054, Boss_Ganon2), the beast, the Gohma treatment. One tracked boss. Every
+ * Ganon (#4054, Boss_Ganon2), the beast, the Gohma treatment. One tracked boss. Every
  * cutscene runs on every client; the fight itself is streamed.
  *
  * Phases (BossGanon2_CoopPhase), from the action and its cutscene state, never from the
@@ -321,7 +321,7 @@ extern "C" s32 Anchor_Ganon2SwordPickup(Actor* boss) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4054 boss rig. Reports Ganon's sync state on this client:
+// #4054 boss rig. Reports Ganon's sync state on this client:
 // cmd 0 report only; 1 land a hit on the head collider the way the collision check would
 // (arg = dmgFlags, default sword) on element 0 (front) or, with cmd 6, element 15 (tail);
 // 2 set the boss health to arg (authority); 3 un-clear this room; 4 teleport Link to (arg, y, z)

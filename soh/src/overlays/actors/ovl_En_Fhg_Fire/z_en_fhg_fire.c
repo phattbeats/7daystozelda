@@ -14,9 +14,9 @@
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
-// PHA-4049: soh/Network/Anchor/EnemyTargeting.cpp
+// #4049: soh/Network/Anchor/EnemyTargeting.cpp
 Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
-// PHA-4049: soh/Network/Anchor/BossAdapters/GanondrofAdapter.cpp
+// #4049: soh/Network/Anchor/BossAdapters/GanondrofAdapter.cpp
 void Anchor_GanondrofSpawned(Actor* fire);
 #endif
 

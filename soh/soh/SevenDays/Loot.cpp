@@ -633,7 +633,7 @@ static void RegisterCacheActor() {
     sCacheActorId = (int16_t)ActorDB::Instance->AddEntry(cache).entry.id;
 }
 
-// MARK: - PHA-3935: Hookshot-tier ledge bundles
+// MARK: - #3935: Hookshot-tier ledge bundles
 
 // A bundle of materials on a ledge out of reach. The Hookshot hooks it
 // (ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR + a hookable bumper) and drags it to Link, who
@@ -1150,7 +1150,7 @@ const char* sevendays_test_loot_state() {
     return out.c_str();
 }
 
-// PHA-3935 tests: the floor under (x, z) from yTop down (BGCHECK_Y_MIN: none), and the
+// #3935 tests: the floor under (x, z) from yTop down (BGCHECK_Y_MIN: none), and the
 // ledge bundles in this scene.
 EMSCRIPTEN_KEEPALIVE
 double sevendays_test_floor(double x, double z, double yTop) {

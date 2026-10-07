@@ -29,7 +29,7 @@ void ObjOshihiki_SetupPush(ObjOshihiki* objOshihiki, PlayState* play);
  * PUSH_BLOCK / PUSH_BLOCK_REQUEST
  *
  * Every client runs its own copy of a push block (ObjOshihiki), so without this each
- * player had to push the Deku Tree block under the Skulltula themselves (PHA-4020).
+ * player had to push the Deku Tree block under the Skulltula themselves (#4020).
  *
  * A block is identified by { sceneNum, room, params, origin } where origin is the
  * spawn position (its home before the first push). Both clients load the same room
@@ -324,7 +324,7 @@ void PushBlockTick() {
 #ifdef __EMSCRIPTEN__
 extern "C" {
 
-// PHA-4020 tests: every tracked block, and a push as Link's grab starts one (block index,
+// #4020 tests: every tracked block, and a push as Link's grab starts one (block index,
 // world yaw, +1 push / -1 pull). The block runs its own OnScene check next frame.
 EMSCRIPTEN_KEEPALIVE
 const char* anchor_test_push_blocks(int index, int yaw, int dir) {
@@ -349,7 +349,7 @@ const char* anchor_test_push_blocks(int index, int yaw, int dir) {
     return out.c_str();
 }
 
-// PHA-4020 tests: swap to a room the way a door does, then put Link at (x, y, z), so a
+// #4020 tests: swap to a room the way a door does, then put Link at (x, y, z), so a
 // test can reach a block behind locked doors.
 EMSCRIPTEN_KEEPALIVE
 void anchor_test_load_room(int room, double x, double y, double z) {

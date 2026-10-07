@@ -1,4 +1,4 @@
-# Player colors: fairy gradient and tunic (PHA-3901)
+# Player colors: fairy gradient and tunic (#3901)
 
 Each player picks three colors that everyone in the room sees:
 

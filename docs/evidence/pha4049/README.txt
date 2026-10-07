@@ -1,4 +1,4 @@
-PHA-4049 Phantom Ganon, two-client live test (rig: two GPU headless Chrome clients + local anchor).
+#4049 Phantom Ganon, two-client live test (rig: two GPU headless Chrome clients + local anchor).
 File prefix: in = intro, p/arrow/hit = painting phase and forwarded hits, rb = reflected energy ball
 (rb2-<returner>-<viewer>), d = defeat. Suffix -A / -B is the client that took the screenshot.
 Clients: B = authority (lowest clientId in scene), A = mirror.

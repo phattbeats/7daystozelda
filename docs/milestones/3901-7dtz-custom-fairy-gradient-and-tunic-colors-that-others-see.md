@@ -1,8 +1,8 @@
-# PHA-3901: 7DtZ: custom fairy gradient and tunic colors that others see
+# #3901: 7DtZ: custom fairy gradient and tunic colors that others see
 
 Status at export (2026-10-03): done
 
-Brandon (PHA-3871, 2026-10-02): "custom fairy color with gradient that shows in game to others; custom tunic color to distinguish links. These might exist somewhere already."
+Brandon (#3871, 2026-10-02): "custom fairy color with gradient that shows in game to others; custom tunic color to distinguish links. These might exist somewhere already."
 
 **What exists today** (patch 0014 tree):
 - The lobby has one color with four preset swatches (Green/Red/Blue/Purple), saved as `gRemote.Anchor.Color` and sent as `color` in Anchor client state.

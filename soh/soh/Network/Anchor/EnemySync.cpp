@@ -140,7 +140,7 @@ struct RemoteEnemyState {
     // enemy submitted no quad class this frame (the whole Deku Tree roster).
     std::vector<Vec3f> quadVerts;
     // Same for tris colliders (an Iron Knuckle's or Stalfos's shield): 3 Vec3f per
-    // element, element after element, collider after collider (PHA-4055).
+    // element, element after element, collider after collider (#4055).
     std::vector<Vec3f> trisVerts;
     // Per captured collider (st.colliders order), 4 values each: AT/AC/OC on-bits
     // and the cylinder's radius, height, yShift. Empty when not streamed.
@@ -269,7 +269,7 @@ static bool IsTrackedCategory(Actor* actor) {
 
 // The Big Octo's first fight starts as a PROP (its Init changes category before any hook
 // sees it) and only becomes an ENEMY when the fight begins, so it is tracked by id
-// (PHA-4055). Everything else is tracked by category.
+// (#4055). Everything else is tracked by category.
 static bool IsTrackedActor(Actor* actor) {
     return IsTrackedCategory(actor) || actor->id == ACTOR_EN_BIGOKUTA;
 }
@@ -316,10 +316,10 @@ static s16* ProjectileTimer(Actor* actor) {
 // (the authority from the AI, a mirror from the streamed flame count in the
 // King Dodongo adapter), and each flame burns only that machine's own Link
 // (it checks GET_PLAYER by distance; it has no collider to mirror).
-// BOSS_TW (PHA-4053): the fire and ice pools the blasts leave (params 0x65 / 0x67, spawned on the host and replayed
+// BOSS_TW (#4053): the fire and ice pools the blasts leave (params 0x65 / 0x67, spawned on the host and replayed
 // on a mirror from the stream) and the death balls (0x68 / 0x69, spawned by each client's own death cutscene).
 // The fire and ice blasts themselves (0x64 / 0x66) are tracked dynamic spawns.
-// BOSS_GANON (PHA-4054): params 1 is the copy the tower-collapse cutscene uses; params >= 0xC8
+// BOSS_GANON (#4054): params 1 is the copy the tower-collapse cutscene uses; params >= 0xC8
 // are effects (charge sparks, the big-magic balls, the flash) that every client spawns from its
 // own copy of the fight (the Ganondorf adapter replays the authority's). The cape and the organ
 // are spawned by each client's own Ganondorf Init.
@@ -338,7 +338,7 @@ static bool IsTrackingExcluded(Actor* actor) {
            (actor->id == ACTOR_BOSS_GANON && (actor->params == 1 || actor->params >= 0xC8));
 }
 
-// Barinade (PHA-4048): one actor id, param-split parts. Parts spawned while
+// Barinade (#4048): one actor id, param-split parts. Parts spawned while
 // the room loads keep their occurrence keys. Runtime spawns (the Bari jellies)
 // are spawned by every client's own copy of the fight — the authority's from
 // its AI, a mirror's from the streamed Bari mask — so they get a key derived
@@ -378,7 +378,7 @@ static uint64_t LocalKeyedKey(Actor* actor) {
 // links unguarded every frame. They are created together and, in vanilla, only
 // ever killed together (EnFloormas_SetupSmWait). Sync must keep it that way:
 // every kill sync performs on a Floormaster goes through KillFloormasGroup, so no
-// hand is ever left pointing at a freed one (PHA-4045).
+// hand is ever left pointing at a freed one (#4045).
 static bool IsFloormas(Actor* actor) {
     return actor->id == ACTOR_EN_FLOORMAS;
 }
@@ -659,7 +659,7 @@ static void OnColliderSetup(Actor* actor, Collider* collider) {
     // Ring it whatever the category: some enemies only switch to ACTORCAT_ENEMY
     // at the end of their own init (En_Sw wall Skulltulas start as NPCs), after
     // their colliders are set up. Uncaptured, a mirror that never ran the AI has
-    // no hitbox to submit or to land a remote death on (PHA-4019).
+    // no hitbox to submit or to land a remote death on (#4019).
     colliderSetupRing[colliderSetupRingIndex] = { actor, collider };
     colliderSetupRingIndex = (colliderSetupRingIndex + 1) % 16;
 }
@@ -826,7 +826,7 @@ void ApplyRemoteHit(Actor* actor, uint8_t damage, uint32_t dmgFlags, Vec3s hitPo
     // A mirror suppressed since its first frame never ran CollisionCheck_SetAC,
     // so acCollider is unset. Use the captured hurtbox instead: the direct-health
     // fallback below leaves an enemy whose death is driven by AC_HIT (En_Sw) at
-    // 0 HP, alive and unhittable — a ghost (PHA-4019).
+    // 0 HP, alive and unhittable — a ghost (#4019).
     if (state.acCollider == nullptr) {
         for (Collider* col : state.colliders) {
             if (col != nullptr && col->actor == actor && (col->acFlags & AC_ON)) {
@@ -966,7 +966,7 @@ bool HandOffRemoteDefeat(Actor* actor) {
     TrackedState& st = it->second;
     // Never inject a lethal synthetic hit or force-kill: a boss whose stream
     // went stale is running local AI in a state that may not take damage, and
-    // Actor_Kill without the defeat sequence leaves no blue warp (PHA-4023).
+    // Actor_Kill without the defeat sequence leaves no blue warp (#4023).
     st.pendingKillFrames = 0;
     if (st.dying) {
         return true; // defeat already handed off (phase edge or earlier packet)
@@ -1519,7 +1519,7 @@ static nlohmann::json SnapshotEnemy(Actor* actor, TrackedState& st) {
             e["qv"] = qv;
         }
     }
-    // Tris AT/AC vertices (PHA-4055): a shield's triangles are placed in
+    // Tris AT/AC vertices (#4055): a shield's triangles are placed in
     // PostLimbDraw, which the mirror's suppressed AI never drives, so without
     // these the mirror's swords go through a raised Iron Knuckle / Stalfos shield.
     // Same qualifying predicate and capture order as SubmitColliders.
@@ -1648,7 +1648,7 @@ void IngestEnemyState(const nlohmann::json& payload) {
                     SPDLOG_WARN("[EnemySync] Bad qv size {} for key={:#x}", n, key);
                 }
             }
-            // Tris AT/AC vertices (PHA-4055), cleared like quadVerts. Whole elements
+            // Tris AT/AC vertices (#4055), cleared like quadVerts. Whole elements
             // (multiple of 9 floats); two elements per tris collider, a handful of
             // tris colliders at most.
             r.trisVerts.clear();
@@ -2573,11 +2573,11 @@ void RegisterHooks(bool isConnected) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4019 tests: list tracked enemies (id, key, captured colliders, mirror
+// #4019 tests: list tracked enemies (id, key, captured colliders, mirror
 // state). kill >= 0 lands a lethal hit on the actor with that id, the way a
 // local sword hit would, through its captured hurtbox. kill -2 forgets each
 // enemy's AC collider (a mirror that never ran the AI); -3 also drops the
-// captured colliders (what the pre-PHA-4019 capture left for En_Sw).
+// captured colliders (what the pre-#4019 capture left for En_Sw).
 EMSCRIPTEN_KEEPALIVE
 const char* anchor_test_enemies(int kill) {
     static std::string out;
@@ -2614,7 +2614,7 @@ const char* anchor_test_enemies(int kill) {
 }
 }
 
-// PHA-4022 tests: per-enemy collider/projectile detail (sync state the scrub
+// #4022 tests: per-enemy collider/projectile detail (sync state the scrub
 // seeds depend on), and a reflected-nut launcher.
 extern "C" {
 
@@ -2709,7 +2709,7 @@ int anchor_test_reflect_nut(const char* keyStr, int dist) {
 
 s32 Object_Spawn(ObjectContext* objectCtx, s16 objectId); // z_scene.c
 
-// PHA-4045 tests. "list" (or ""): every tracked Floormaster hand with its key,
+// #4045 tests. "list" (or ""): every tracked Floormaster hand with its key,
 // action index, params, visibility, scale and ring links. "obj": load the
 // Wallmaster object (do it on every client before "spawn"). "spawn:x,y,z":
 // spawn a big Floormaster there. "hit:<key>[,dmg]": land a local sword hit on
@@ -2813,7 +2813,7 @@ const char* anchor_test_floormas(const char* cmd) {
 }
 
 
-// PHA-4055 miniboss tests. anchor_test_mini(cmd):
+// #4055 miniboss tests. anchor_test_mini(cmd):
 //  "list"                         every tracked enemy: id, params, key (string), category,
 //                                 suppressed/dying, health, pos, its collider list (shape, AT, AC,
 //                                 hard) and the adapter's streamed extras.

@@ -72,7 +72,7 @@ typedef enum {
 } BossVaParam;
 
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
-// PHA-4048: co-op sync access to the file-static fight state (BarinadeAdapter.cpp).
+// #4048: co-op sync access to the file-static fight state (BarinadeAdapter.cpp).
 typedef struct BossVaSyncState {
     s8 csState;
     u8 fightPhase;

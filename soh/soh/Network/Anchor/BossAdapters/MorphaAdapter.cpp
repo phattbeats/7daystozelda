@@ -12,7 +12,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Morpha (PHA-4051), the Gohma treatment. The core and both tentacles are all ACTOR_BOSS_MO, so every hook
+ * Morpha (#4051), the Gohma treatment. The core and both tentacles are all ACTOR_BOSS_MO, so every hook
  * tells them apart by params (tentacles are >= BOSSMO_TENTACLE; the core is 0 after its Init).
  *
  * Phases come from the core's csState: the intro states are PREFIGHT, MO_BATTLE is FIGHT, MO_DEATH_START and
@@ -407,7 +407,7 @@ extern "C" s32 Anchor_MorphaDefeatPending(Actor* actor) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4051 boss rig. Reports Morpha's sync state on this client; cmd 0 report only; 1 land a Kokiri Sword hit
+// #4051 boss rig. Reports Morpha's sync state on this client; cmd 0 report only; 1 land a Kokiri Sword hit
 // on the core the way the collision check would; 2 (host) make tentacle 1 swing now; 3 (host) set the core's
 // health to arg; 4 un-clear this room (so she is back on the next visit); 5 (host) park the core in the
 // stunned state so a hit lands. Every call returns the report.

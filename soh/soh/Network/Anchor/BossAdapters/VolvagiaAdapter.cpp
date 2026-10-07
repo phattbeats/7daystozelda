@@ -26,7 +26,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Volvagia (PHA-4050), the Gohma treatment. Two tracked bosses: BOSS_FD, the
+ * Volvagia (#4050), the Gohma treatment. Two tracked bosses: BOSS_FD, the
  * flying body, and BOSS_FD2, the hole form (a child of Fd). They share one
  * health pool, Fd's colChkInfo.health, which Fd2's collision check spends.
  *
@@ -421,7 +421,7 @@ extern "C" void Anchor_VolvagiaIntroOver(Actor* fdActor) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4050 boss rig. Reports Volvagia's sync state on this client:
+// #4050 boss rig. Reports Volvagia's sync state on this client:
 // cmd 0 report only; 1 land a hammer hit on Fd2's face collider the way the
 // collision check would (host); 2 land a sword hit (host); 3 set the shared
 // health to arg (host); 4 un-clear this room (so he is back on the next visit);

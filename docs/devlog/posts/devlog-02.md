@@ -19,7 +19,7 @@ We're building on [bghill95/OOT-True-Co-op](https://github.com/bghill95/OOT-True
 
 So when my buddy walks up to a ReDead, the ReDead turns around and walks over to me. On his screen it's silent. That's not a horde game.
 
-M3 was the milestone to fix that. It shipped as three commits (the Linux build fix from Day 1 plus two feature commits), **+1,633 lines across 19 files**. To be clear about who did what: the Claude agent wrote all of this code. I set the goal and reviewed what came back. The agent's own summary is honest about the status at the time:
+M3 was the milestone to fix that. It shipped as three commits (the Linux build fix from Day 1 plus two feature commits), **+1,633 lines across 19 files**. To be clear about who did what: the agent wrote all of this code. I set the goal and reviewed what came back. The agent's own summary is honest about the status at the time:
 
 > **WARNING**
 > "Compile-verified on Linux; **not play-tested**. An independent code review found 7 real bugs, all fixed before commit."

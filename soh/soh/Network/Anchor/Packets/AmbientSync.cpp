@@ -33,7 +33,7 @@ void EnDog_FollowPlayer(EnDog* enDog, PlayState* play);
  *
  * Every client runs its own copy of a town's wandering actors, so each player saw
  * Kakariko's cuccos (and the dogs, the carpenters, the guards...) somewhere else
- * (PHA-4042). These actors now follow one client's copy:
+ * (#4042). These actors now follow one client's copy:
  *
  * - The driver streams pos/rot/focus/speed and the skeleton pose every frame. The
  *   driver is the scene authority EnemySync already elects (lowest same-scene
@@ -561,7 +561,7 @@ void AmbientSyncTick() {
 #ifdef __EMSCRIPTEN__
 extern "C" {
 
-// PHA-4042 tests: every tracked ambient actor with its mode (0 local, 1 drive,
+// #4042 tests: every tracked ambient actor with its mode (0 local, 1 drive,
 // 2 claim, 3 soft mirror, 4 hard mirror) and stream age. index >= 0 claims that
 // actor as if the local player had picked it up and moves it by (dx, dz), so a
 // test can check that the partner's copy follows.

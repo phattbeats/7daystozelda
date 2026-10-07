@@ -55,7 +55,7 @@ extern PlayState* gPlayState;
  * four minutes pass. The prologue's nights are scripted (RAID_SCRIPT), the way
  * the Sun's Song sets the time.
  *
- * One clock for the room (PHA-4025): the owner's. It sends its time and speed every
+ * One clock for the room (#4025): the owner's. It sends its time and speed every
  * second; a peer outdoors runs a little faster or slower until it matches (and jumps
  * when it's far off), a peer indoors just takes the time. While a peer is outdoors,
  * the owner's clock doesn't stop for its own interiors, pause screen or text boxes.
@@ -89,7 +89,7 @@ constexpr f32 RING_MIN = 600.0f, RING_MAX = 900.0f;
 constexpr double STUCK_WINDOW = 5.0;
 constexpr f32 STUCK_GAIN = 20.0f;
 constexpr double DUSK_MAX_SECONDS = 120.0;
-// PHA-4006: the torch ward. The ritual: the ring's torches turn blue one after another,
+// #4006: the torch ward. The ritual: the ring's torches turn blue one after another,
 // sweeping round from Link's side, then the red night clears.
 constexpr double WARD_CHECK_SECONDS = 2.0;
 constexpr double WARD_SWEEP_SECONDS = 4.0;
@@ -104,7 +104,7 @@ static double HoldSeconds() {
     return (double)std::max(0, CVarGetInteger(CVAR_SEVEN_DAYS("RaidHoldSeconds"), 240));
 }
 // A day is 0x8000 of daylight plus 0x8000 of night at double speed: 49152 / speed frames
-// at 20 fps, so 2 makes a day about 20 minutes (PHA-4015; 5 was about 8).
+// at 20 fps, so 2 makes a day about 20 minutes (#4015; 5 was about 8).
 static uint16_t RaidClockSpeed() {
     return (uint16_t)std::clamp(CVarGetInteger(CVAR_SEVEN_DAYS("RaidClockSpeed"), 2), 0, 30);
 }
@@ -258,7 +258,7 @@ enum WaveStatus : uint8_t {
     WAVE_INCOMING, // announced, first spawns pending
     WAVE_ASSAULT,  // spawning / fighting
     WAVE_CLEARED,  // budget spent and every raider down
-    WAVE_WARDED,   // PHA-4006: held back by the torch ring, nothing spawns while it burns
+    WAVE_WARDED,   // #4006: held back by the torch ring, nothing spawns while it burns
 };
 static const char* StatusName(uint8_t s) {
     switch (s) {
@@ -340,7 +340,7 @@ struct PeerWave {
 };
 static PeerWave sPeer;
 
-// PHA-4006: this client's view of the ward's ritual (authority and peers alike).
+// #4006: this client's view of the ward's ritual (authority and peers alike).
 struct WardRitual {
     double since = -1;      // when the ring closed here (-1: not warded)
     Vec3f center = {};      // the workbench
@@ -357,7 +357,7 @@ static bool sTransition = false;
 static uint16_t sTransitionTo = 0;
 static int sPrevNight = -1; // owner's dawn/dusk edges (-1: not sampled yet)
 
-// PHA-4025: one clock for the room, the owner's. Peers follow its time and speed.
+// #4025: one clock for the room, the owner's. Peers follow its time and speed.
 struct OwnerClock {
     double heardAt = -100.0;
     uint16_t t = 0;
@@ -372,7 +372,7 @@ static double sClockSetAt = -100.0; // a peer: when its Sun's Song went to the o
 
 // Owner, per night (not saved: a reload mid-night just forgets them).
 // Tonight's record (fought at the base, lost, gamestage) lives in BaseState, keyed by
-// the day, so it is saved and reaches whoever is owner at dawn (PHA-3935).
+// the day, so it is saved and reaches whoever is owner at dawn (#3935).
 static BaseState& Night() {
     BaseState& b = Net::MutableBase();
     if (b.nightDay != CurrentDay()) {
@@ -499,7 +499,7 @@ static bool FloorAt(f32 x, f32 z, f32 refY, f32 maxRise, Vec3f* out) {
     return true;
 }
 
-// PHA-3935: a torch keeps raid spawns TORCH_RADIUS away (spec, "Torch").
+// #3935: a torch keeps raid spawns TORCH_RADIUS away (spec, "Torch").
 static bool NearTorch(const Vec3f& point) {
     for (auto& [id, actor] : SpawnedPlaceables()) {
         const Placeable* p = FindPlaceable(id);
@@ -560,7 +560,7 @@ static bool PickSpawnPoint(Vec3f* out, const Vec3f* avoid) {
     return false;
 }
 
-// PHA-4038: torchlight. Building in Hyrule Field at night meant a Stalchild every few
+// #4038: torchlight. Building in Hyrule Field at night meant a Stalchild every few
 // seconds, torches or not. A torch's light now keeps the field's own spawns away
 // (see TORCHLIGHT_RADIUS), so a base or a torch-lit work spot is a quiet place at night.
 static bool Torchlit(const Vec3f& point, f32 radius) {
@@ -600,7 +600,7 @@ extern "C" s32 SevenDays_StalchildTorchlit(Actor* actor) {
     return Torchlit(actor->world.pos, TORCHLIGHT_RADIUS);
 }
 
-// PHA-4006: every floor point of the spawn ring is within a torch's reach, so the
+// #4006: every floor point of the spawn ring is within a torch's reach, so the
 // dead have nowhere to come up. Checked on a grid finer than SampleRing's spread.
 static bool WardComplete() {
     if (!sDir.baseHere) {
@@ -889,7 +889,7 @@ static void StartWave(uint8_t kind) {
     sDir.status = inherited ? WAVE_ASSAULT : WAVE_INCOMING;
     sDir.lastWardCheck = Now();
     if (!inherited && kind == KIND_RAID && !sDir.prologue && WardComplete()) {
-        // PHA-4006: the ring was ready before dark. No "Raid!": the ritual instead.
+        // #4006: the ring was ready before dark. No "Raid!": the ritual instead.
         sDir.status = WAVE_WARDED;
         BeginRitual(sDir.center);
     } else if (!inherited) {
@@ -1002,7 +1002,7 @@ static void DrainBarricades() {
     std::vector<DrainPiece> pieces;
     for (auto& [id, actor] : SpawnedPlaceables()) {
         const Placeable* p = FindPlaceable(id);
-        // Spikes and low floors are walked over (spikes bite back); PHA-3945.
+        // Spikes and low floors are walked over (spikes bite back); #3945.
         if (p != nullptr && GetPlaceableInfo(p->type).maxHp != 0 && !IsWalkOverType(p->type) && !IsRuin(*p)) {
             pieces.push_back({ id, actor, &GetPlaceableInfo(p->type) });
         }
@@ -1028,7 +1028,7 @@ static void DrainBarricades() {
             f32 lx = dx * c - dz * s, lz = dx * s + dz * c;
             // Body radius + the wall push-out margin. Raiders crowd a scarecrow about 60 out
             // (its collider plus theirs) instead of pressing in like at a wall, so it needs
-            // a longer reach or a Stalchild-only crowd stands there forever (PHA-3915).
+            // a longer reach or a Stalchild-only crowd stands there forever (#3915).
             const f32 r = infoPtr == &GetPlaceableInfo(PLACEABLE_SCARECROW) ? 64.0f : 32.0f;
             if (fabsf(lx) < info.halfX + r && fabsf(lz) < info.halfZ + r) {
                 f32& owed = sPendingDrain[id];
@@ -1055,7 +1055,7 @@ static bool TouchingBarricade(Actor* a) {
         if (p == nullptr || GetPlaceableInfo(p->type).maxHp == 0 || IsRuin(*p) || IsFloorType(p->type)) {
             continue;
         }
-        // PHA-3945: a floor up on the walls is out of reach.
+        // #3945: a floor up on the walls is out of reach.
         f32 dy = a->world.pos.y - actor->world.pos.y;
         if (dy < -30.0f || dy > GetPlaceableInfo(p->type).height + 60.0f) {
             continue;
@@ -1199,7 +1199,7 @@ static void WaveTick() {
 
     int alive = CountRaiders();
     bool budgetSpent = sDir.spent >= sDir.budget;
-    // PHA-4006: closing the ring holds back whatever is left of the wave once the field
+    // #4006: closing the ring holds back whatever is left of the wave once the field
     // is clear; a torch broken or packed up opens it again and the raid comes on.
     if (sDir.kind == KIND_RAID && !sDir.prologue && Now() - sDir.lastWardCheck > WARD_CHECK_SECONDS &&
         (sDir.status == WAVE_WARDED || (alive == 0 && !budgetSpent && sDir.status != WAVE_CLEARED))) {
@@ -1318,7 +1318,7 @@ bool RaidWardedHere() {
     return sPeer.scene == gPlayState->sceneNum && Now() - sPeer.heardAt < 12.0 && sPeer.status == WAVE_WARDED;
 }
 
-// PHA-4006: the end of the ritual's sweep, and a reminder now and then while it holds.
+// #4006: the end of the ritual's sweep, and a reminder now and then while it holds.
 static void WardTick() {
     if (sWard.since < 0) {
         return;
@@ -1353,7 +1353,7 @@ static void StartTransition(uint16_t to) {
     }
 }
 
-// MARK: - One clock for the room (PHA-4025)
+// MARK: - One clock for the room (#4025)
 
 constexpr double CLOCK_SEND_SECONDS = 1.0;
 constexpr double CLOCK_STALE_SECONDS = 3.5;
@@ -1632,7 +1632,7 @@ static void OwnerDawn() {
     b.story &= ~STORY_DUSK_ACTIVE;
     if (!PrologueOver()) {
         // The prologue's nights (the Kokiri Sword's dusk, Hyrule Field's own clock) are
-        // story, not survival: Day 1 lasts until the first raid's dawn (PHA-4015).
+        // story, not survival: Day 1 lasts until the first raid's dawn (#4015).
         b.nightDay = 0;
         b.nightFought = b.nightFailed = b.nightWarded = false;
         b.nightGamestage = 0;
@@ -1857,7 +1857,7 @@ static void StoryTriggers() {
     }
 }
 
-// PHA-3935: Navi warns the evening before every raid (spec, "Warning"). The first raid
+// #3935: Navi warns the evening before every raid (spec, "Warning"). The first raid
 // has its own staged line (RAIDLINE_EVE); this covers every one after it.
 constexpr uint16_t EVE_TIME = 0xB000; // about 16:30
 static uint32_t sEveWarnedDay = 0;
@@ -1872,7 +1872,7 @@ static void EveWarning() {
     QueueNaviText(TEXT_RAID_EVE_EACH + (uint16_t)(RaidNumber() % 3));
 }
 
-// PHA-3935 (M9): on a raid night the other towns' folk bar themselves indoors too:
+// #3935 (M9): on a raid night the other towns' folk bar themselves indoors too:
 // the townsfolk, carpenters and the Cucco girl, never a quest NPC or a guard.
 static bool IsTownScene(int16_t scene) {
     switch (scene) {
@@ -2096,7 +2096,7 @@ const char* sevendays_test_raid_state() {
                         { "age", Now() - sOwnerClock.heardAt },
                         { "following", gPlayState != nullptr && FollowingOwnerClock() } };
     if (gPlayState != nullptr) {
-        // PHA-4038: the field spawner's Stalchildren (distance to Link) and whether Link is torchlit.
+        // #4038: the field spawner's Stalchildren (distance to Link) and whether Link is torchlit.
         Player* player = GET_PLAYER(gPlayState);
         nlohmann::json kids = nlohmann::json::array();
         for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
@@ -2128,7 +2128,7 @@ const char* sevendays_test_raid_state() {
     }
     j["eveWarnedDay"] = sEveWarnedDay;
     j["townsfolkHidden"] = sTownsfolkHidden;
-    j["rocks"] = nlohmann::json::array(); // PHA-3935 tests: boulders and rocks to break
+    j["rocks"] = nlohmann::json::array(); // #3935 tests: boulders and rocks to break
     if (gPlayState != nullptr) {
         for (int cat = 0; cat < ACTORCAT_MAX; cat++) {
             for (Actor* a = gPlayState->actorCtx.actorLists[cat].head; a != nullptr; a = a->next) {
@@ -2202,7 +2202,7 @@ void sevendays_test_raid(const char* cmdC) {
             }
         }
     } else if (cmd == "fling") {
-        // PHA-3969 tests: what a bomb blast did to a dying Stalchild, thrown out of the world.
+        // #3969 tests: what a bomb blast did to a dying Stalchild, thrown out of the world.
         for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != nullptr; a = a->next) {
             if (IsRaiderType(a->id) && a->update != nullptr) {
                 a->world.pos = a->prevPos = { 62000.0f, -25030.0f, a->world.pos.z };
@@ -2221,7 +2221,7 @@ void sevendays_test_raid(const char* cmdC) {
     } else if (cmd.rfind("raids:", 0) == 0) {
         const_cast<BaseState&>(GetBase()).hordeNightsSurvived = (uint32_t)std::stoul(cmd.substr(6));
     } else if (cmd.rfind("tier:", 0) == 0) {
-        // PHA-3935 tests: the tool that opens a tier, without the dungeon.
+        // #3935 tests: the tool that opens a tier, without the dungeon.
         std::string t = cmd.substr(5);
         if (t == "bomb") {
             Item_Give(gPlayState, ITEM_BOMB_BAG_20);
@@ -2234,7 +2234,7 @@ void sevendays_test_raid(const char* cmdC) {
             Item_Give(gPlayState, ITEM_GAUNTLETS_SILVER);
         }
     } else if (cmd.rfind("aim:", 0) == 0) {
-        // PHA-3935 tests: point first-person aim at a world point ("aim:x,y,z").
+        // #3935 tests: point first-person aim at a world point ("aim:x,y,z").
         float x = 0, y = 0, z = 0;
         sscanf(cmd.c_str() + 4, "%f,%f,%f", &x, &y, &z);
         Player* player = GET_PLAYER(gPlayState);
@@ -2245,19 +2245,19 @@ void sevendays_test_raid(const char* cmdC) {
             Math_Vec3f_Yaw(&eye, &at);
         player->actor.focus.rot.x = Math_Vec3f_Pitch(&eye, &at);
     } else if (cmd == "equip:hookshot") {
-        // PHA-3935 tests: the Hookshot on C-Left.
+        // #3935 tests: the Hookshot on C-Left.
         gSaveContext.equips.buttonItems[1] = ITEM_HOOKSHOT;
         gSaveContext.equips.cButtonSlots[0] = SLOT_HOOKSHOT;
         Interface_LoadItemIcon1(gPlayState, 1);
     } else if (cmd == "bomb") {
-        // PHA-3935 tests: a lit bomb 50 ahead of Link (boulders for Stone and Ore).
+        // #3935 tests: a lit bomb 50 ahead of Link (boulders for Stone and Ore).
         Player* player = GET_PLAYER(gPlayState);
         Vec3f at = player->actor.world.pos;
         at.x += Math_SinS(player->actor.shape.rot.y) * 50.0f;
         at.z += Math_CosS(player->actor.shape.rot.y) * 50.0f;
         Actor_Spawn(&gPlayState->actorCtx, gPlayState, ACTOR_EN_BOM, at.x, at.y, at.z, 0, 0, 0, 0, false);
     } else if (cmd == "age") {
-        SwitchAge(); // PHA-3935 tests: the seven-year jump without the Master Sword
+        SwitchAge(); // #3935 tests: the seven-year jump without the Master Sword
     } else if (cmd.rfind("bp:", 0) == 0) {
         BaseState& b = Net::MutableBase();
         std::string id = cmd.substr(3);

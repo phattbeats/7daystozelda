@@ -1,4 +1,4 @@
-# PHA-4054 live evidence (two clients, A = authority id 3, B = mirror id 4)
+# #4054 live evidence (two clients, A = authority id 3, B = mirror id 4)
 
 ## t6-A
 1 phase (0, 10)

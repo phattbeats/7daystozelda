@@ -14,9 +14,9 @@
 #include <string.h>
 
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
-// PHA-4054: soh/Network/Anchor/EnemyTargeting.cpp
+// #4054: soh/Network/Anchor/EnemyTargeting.cpp
 Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
-// PHA-4054: soh/Network/Anchor/BossAdapters/Ganon2Adapter.cpp
+// #4054: soh/Network/Anchor/BossAdapters/Ganon2Adapter.cpp
 void Anchor_Ganon2IntroOver(Actor* boss);
 s32 Anchor_Ganon2SwordPickup(Actor* boss);
 #endif
@@ -3204,7 +3204,7 @@ void BossGanon2_Reset(void) {
 }
 
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
-// PHA-4054: what soh/Network/Anchor/BossAdapters/Ganon2Adapter.cpp needs from this file.
+// #4054: what soh/Network/Anchor/BossAdapters/Ganon2Adapter.cpp needs from this file.
 
 // 0 intro cutscene, 1 fight (including Ganon lying downed with Link free), 2 the finale (the
 // Master Sword and the Sages), 3 the cutscene when he first goes down (Zelda's text), 4 the

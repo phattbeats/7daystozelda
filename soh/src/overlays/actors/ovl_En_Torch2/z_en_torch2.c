@@ -143,7 +143,7 @@ void EnTorch2_Init(Actor* thisx, PlayState* play2) {
     play->playerInit(this, play, &gDarkLinkSkel);
     // Player_InitCommon sets its skeleton up through SkelAnime_InitLink, which has no
     // skeleton-init hook: tell co-op EnemySync which joint table is Dark Link's
-    // so his pose can be streamed (PHA-4055).
+    // so his pose can be streamed (#4055).
     GameInteractor_ExecuteOnSkelAnimeInit(&this->skelAnime);
     this->actor.naviEnemyId = 0x26;
     this->cylinder.base.acFlags = AC_ON | AC_TYPE_PLAYER;
@@ -821,7 +821,7 @@ void EnTorch2_Draw(Actor* thisx, PlayState* play2) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// ---- Co-op mirroring (#4055) -------------------------------------------------
 // Dark Link's state machine lives in file statics that only his Update writes, and
 // Draw reads sAlpha (the fade-in, the fade-out of the death). A suppressed mirror
 // never runs Update, so EnemySync's Dark Link adapter carries these across.

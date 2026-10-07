@@ -1,4 +1,4 @@
-# PHA-4060 trailer capture kit
+# #4060 trailer capture kit
 
 How the first 7 Days to Zelda trailer and short-form clips were shot and cut. Finished
 videos, thumbnails and the raw takes live on Nextcloud at

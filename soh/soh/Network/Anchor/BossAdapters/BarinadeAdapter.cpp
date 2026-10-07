@@ -17,7 +17,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Barinade (PHA-4048), the Gohma treatment.
+ * Barinade (#4048), the Gohma treatment.
  *
  * One actor id, many parts: the body (params -1), three supports (0-2), three
  * zappers (3-5), ten Bari jellies (6-15), three stumps (16-18) and the door
@@ -339,7 +339,7 @@ void RegisterBarinadeAdapter() {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4048 boss rig. Reports Barinade's state on this client. cmd 1: sword hit
+// #4048 boss rig. Reports Barinade's state on this client. cmd 1: sword hit
 // on part `arg` (-1 body, 0-2 supports, 6-15 Baris); 2: boomerang hit on `arg`;
 // 3: (host) set fightPhase to arg; 4: (host) set phase4HP to arg; 5: un-clear
 // the room. Every call returns the report.

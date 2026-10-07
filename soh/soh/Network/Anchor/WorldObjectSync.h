@@ -4,7 +4,7 @@
 
 struct GetItemEntry;
 
-// World-object sync (PHA-4044): the pieces of the world the flag sync doesn't cover.
+// World-object sync (#4044): the pieces of the world the flag sync doesn't cover.
 // - A hidden grotto one player bombs open (DoorAna, no flag) opens for everyone in the
 //   room (WORLD_OBJECT).
 // - A heart, ammo or magic drop (EnItem00) belongs to whoever picks it up: every client

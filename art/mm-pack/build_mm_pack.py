@@ -1,4 +1,4 @@
-"""Build the 7 Days to Zelda Majora's Mask model pack (PHA-3904).
+"""Build the 7 Days to Zelda Majora's Mask model pack (#3904).
 
 Cuts a few models out of a Majora's Mask (USA) ROM and writes them as libultraship
 o2r resources under objects/7dtz_mm/, the paths Placeables.cpp draws:
@@ -8,7 +8,7 @@ o2r resources under objects/7dtz_mm/, the paths Placeables.cpp draws:
   objects/7dtz_mm/kgy/gMMSmithyBladeDL     workbench: a red-hot sword blank
   objects/7dtz_mm/gMMInnDeskDL             workbench: the Stock Pot Inn's desk (room geometry)
 
-PHA-3945, floors, stairs and doors:
+#3945, floors, stairs and doors:
   objects/7dtz_mm/taru/gMMPiratePanelDL       plank floor, wooden step: Pirates' Fortress breakable panel
   objects/7dtz_mm/gMMRanchPlankDL             ranch floor: a plank from the Romani Ranch house (room geometry)
   objects/7dtz_mm/raillift/gMMStonePlatformDL stone platform: a Woodfall Temple moving platform
@@ -19,7 +19,7 @@ PHA-3945, floors, stairs and doors:
   objects/7dtz_mm/kaizoku_obj/gMMPirateDoorDL   the Pirates' Fortress door
   objects/7dtz_mm/wdor05/gMMMusicBoxDoorDL      and the Music Box House door
 
-PHA-3962, furniture (room pieces are cut from the room meshes like the inn desk):
+#3962, furniture (room pieces are cut from the room meshes like the inn desk):
   objects/7dtz_mm/gMMInnChairDL                 Stock Pot Inn chair (room 2)
   objects/7dtz_mm/gMMInnBenchDL                 the inn lobby's long bench (room 0)
   objects/7dtz_mm/mbar_obj/gMMMilkBarChairDL    Milk Bar chair
@@ -171,7 +171,7 @@ def main():
         ctx = scene_ctx(scene, room)
         base = "objects/7dtz_mm/%s%d" % (scene[3:].lower(), room)
         # Each cut keeps different triangles of the same room lists: a second cut from a
-        # room gets its own folder, or it overwrites the first one's lists (PHA-3962).
+        # room gets its own folder, or it overwrites the first one's lists (#3962).
         room_folder = base + "/room" if base not in room_cuts else base + "/room_" + outname
         room_cuts.add(base)
         folders = {2: base + "/scene", 3: room_folder}
@@ -197,7 +197,7 @@ def main():
     export_object("object_kgy", 0x0600A1C0, "gMMSmithyHammerDL")  # En_Kgy's hammer limb
     export_object("object_kgy", 0x0600E8F0, "gMMSmithyBladeDL")   # the red-hot blade; calls segs 8/9
     export_room_box("Z2_YADOYA", 3, (-435, 210, 360), (-391, 239, 389), "gMMInnDeskDL")
-    # PHA-3945: floors, stairs and doors.
+    # #3945: floors, stairs and doors.
     export_object("object_taru", object_dl("object_taru", "gObjTaruBreakablePiratePanelDL"), "gMMPiratePanelDL")
     export_room_box("Z2_OMOYA", 1, (600, 57, -100), (640, 63, 64), "gMMRanchPlankDL")
     export_object("object_raillift", 0x06001E40, "gMMStonePlatformDL")
@@ -212,7 +212,7 @@ def main():
     export_object("object_kaizoku_obj", object_dl("object_kaizoku_obj", "gPiratesFortressDoorDL"), "gMMPirateDoorDL")
     export_object("object_wdor05", object_dl("object_wdor05", "gMusicBoxHouseDoorDL"), "gMMMusicBoxDoorDL")
 
-    # PHA-3962: furniture. Room boxes are each piece's bounds, 1 unit wider.
+    # #3962: furniture. Room boxes are each piece's bounds, 1 unit wider.
     export_room_box("Z2_YADOYA", 2, (-433, 209, -70), (-406, 255, -44), "gMMInnChairDL")
     export_room_box("Z2_YADOYA", 0, (284, -1, 119), (321, 31, 271), "gMMInnBenchDL")
     export_object("object_mbar_obj", 0x06000288, "gMMMilkBarChairDL")
@@ -231,7 +231,7 @@ def main():
     export_object("object_tokei_turret", object_dl("object_tokei_turret", "gClockTownTurretPlatformBaseDL"),
                   "gMMFestivalStallDL")
 
-    # PHA-3962: Majora's Mask Link animations (gameplay_keep's headers point into
+    # #3962: Majora's Mask Link animations (gameplay_keep's headers point into
     # link_animetion; the frames are big-endian s16 in the ROM, little-endian in o2r).
     anim_xml = open(os.path.join(xml_dir, "misc", "link_animetion.xml")).read()
 

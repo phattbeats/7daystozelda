@@ -1481,7 +1481,7 @@ const ActorInit En_Ik_InitVars = {
     NULL,
 };
 
-// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// ---- Co-op mirroring (#4055) -------------------------------------------------
 // A suppressed mirror never runs the fight update, so the fields Draw and the
 // armour break read are streamed: the animation state (unk_2F8: 9 = shield up),
 // the armour flags (unk_2FB = armour off, unk_2FA = last frame's), and the axe

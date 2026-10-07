@@ -24,7 +24,7 @@ typedef struct EnBigokuta {
     /* 0x02EC */ ColliderCylinder cylinder[2];
 } EnBigokuta; // size = 0x0384
 
-// Co-op mirroring (PHA-4055)
+// Co-op mirroring (#4055)
 s32 EnBigokuta_MirrorGetAction(EnBigokuta* en);
 void EnBigokuta_MirrorApplyAction(EnBigokuta* en, s32 action);
 void EnBigokuta_MirrorPositionColliders(EnBigokuta* en);

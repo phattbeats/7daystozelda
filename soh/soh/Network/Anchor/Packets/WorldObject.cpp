@@ -31,7 +31,7 @@ void DoorAna_WaitOpen(DoorAna* doorAna, PlayState* play);
  *
  * Switch, chest, collectible and Gold Skulltula flags already sync, and HookHandlers.cpp
  * makes the partner's copy of a flagged wall, boulder or switch follow its flag. This
- * file covers what has no flag (PHA-4044):
+ * file covers what has no flag (#4044):
  *
  * WORLD_OBJECT kind "grotto" { sceneNum, room, pos }: sent when a hidden grotto (DoorAna,
  *   bombed or hammered open; no flag) opens locally. Partners in the scene open their
@@ -133,7 +133,7 @@ void SendGrotto(Actor* actor) {
     }
 }
 
-// Gohma's blue warp and heart container (PHA-4046). Each client's defeat sequence picks
+// Gohma's blue warp and heart container (#4046). Each client's defeat sequence picks
 // the warp's spot from its own Link and Gohma poses, so the two copies landed in
 // different places. The enemy authority's spawn position wins: it is sent once, and the
 // partner snaps its copy to it, whether the copy already spawned or spawns later.
@@ -295,7 +295,7 @@ void WorldObjectTick() {
 #ifdef __EMSCRIPTEN__
 extern "C" {
 
-// PHA-4044 tests: every tracked grotto (closed = still hidden). open=<index> lands a hit
+// #4044 tests: every tracked grotto (closed = still hidden). open=<index> lands a hit
 // on that grotto's collider, as a bomb would.
 EMSCRIPTEN_KEEPALIVE
 const char* anchor_test_grottos(int open) {
@@ -317,7 +317,7 @@ const char* anchor_test_grottos(int open) {
     return out.c_str();
 }
 
-// PHA-4044 tests. cmd 0: spawn actor `a` with params `b` `c` units in front of Link
+// #4044 tests. cmd 0: spawn actor `a` with params `b` `c` units in front of Link
 // (c = 0: at his feet). cmd 1 / 3: set / clear switch flag `a` the way gameplay does
 // (broadcasts).
 // Always returns this client's view: switches, tokens, rocks, ammo and token count.

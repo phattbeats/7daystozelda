@@ -1,4 +1,4 @@
-# Workbench icon studio (PHA-3969)
+# Workbench icon studio (#3969)
 
 The Workbench rows show each kit as its own piece. These scripts make those icons
 from the game itself, so they always match the models the pieces are built with.

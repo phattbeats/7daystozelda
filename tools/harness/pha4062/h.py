@@ -40,7 +40,7 @@ def CAM(mode=0, e0=(0,0,0), a0=(0,0,0), e1=None, a1=None, n=1, fov0=60, fov1=Non
     _cc('sevendays_test_cam',None,['number']*17,[mode,*e0,*a0,*e1,*a1,n,fov0,fov1,hud])
 def FPS(t=3):
     return ev('''new Promise(r=>{let n=0;const f=()=>{n++;if(performance.now()-t0<%d)requestAnimationFrame(f);else r(n/%f)};const t0=performance.now();requestAnimationFrame(f)})'''%(t*1000,t))
-# --- PHA-4060 recorder: CDP screencast JPEGs + MediaRecorder audio-only, synced by wall clock ---
+# --- #4060 recorder: CDP screencast JPEGs + MediaRecorder audio-only, synced by wall clock ---
 import base64, os
 if '_REC' not in globals():
     _REC = {'on': False}

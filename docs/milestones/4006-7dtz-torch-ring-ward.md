@@ -1,6 +1,6 @@
-# PHA-4006: 7DTZ balance: a ring of 12 torches stops raids from spawning, and the empty night still pays out
+# #4006: 7DTZ balance: a ring of 12 torches stops raids from spawning, and the empty night still pays out
 
-Found while writing the strategy guide (PHA-3996). If 12 torches stand 750 from the workbench, one every 30°, every point of the 600–900 spawn band is within `TORCH_RADIUS` (300) of a torch. `SampleRing` keeps no points, `TrySpawnRaider` retries every 5 frames, the clock holds for 240 s, and at dawn the raid still counts as survived and pays out.
+Found while writing the strategy guide (#3996). If 12 torches stand 750 from the workbench, one every 30°, every point of the 600–900 spawn band is within `TORCH_RADIUS` (300) of a torch. `SampleRing` keeps no points, `TrySpawnRaider` retries every 5 frames, the clock holds for 240 s, and at dawn the raid still counts as survived and pays out.
 
 ## Decision (Brandon, 2026-10-05)
 

@@ -111,7 +111,7 @@ typedef enum {
     /* 5 */ STALFOS_TYPE_5
 } StalfosType;
 
-// Co-op mirroring (PHA-4055)
+// Co-op mirroring (#4055)
 s32 EnTest_MirrorGetAction(EnTest* en);
 void EnTest_MirrorApplyAction(EnTest* en, s32 action);
 void EnTest_MirrorStartBreak(EnTest* en, PlayState* play);

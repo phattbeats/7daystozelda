@@ -108,7 +108,7 @@ void Graph_UCodeFaultClient(Gfx* workBuf) {
 #endif
 }
 
-// PHA-4062: display-list pools.
+// #4062: display-list pools.
 //
 // The stock pools are the N64's (POLY_OPA 0x2FC0 commands, POLY_XLU 0x1000, overlay 0x800, work 0x100).
 // The macros write into them with no bounds check, and the opaque list shares its buffer with the

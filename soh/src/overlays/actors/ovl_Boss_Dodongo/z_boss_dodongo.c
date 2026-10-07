@@ -50,9 +50,9 @@ void BossDodongo_UpdateAim(BossDodongo* this, PlayState* play);
 void BossDodongo_UpdateAmbience(BossDodongo* this, PlayState* play, s32 isMirror);
 
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
-// PHA-4047: soh/Network/Anchor/EnemyTargeting.cpp
+// #4047: soh/Network/Anchor/EnemyTargeting.cpp
 s32 Anchor_BossAimTargets(PlayState* play, Actor** out, s32 max);
-// PHA-4047: soh/Network/Anchor/BossAdapters/KingDodongoAdapter.cpp
+// #4047: soh/Network/Anchor/BossAdapters/KingDodongoAdapter.cpp
 s32 Anchor_KingDodongoDefeatPending(Actor* actor);
 #endif
 
@@ -1093,7 +1093,7 @@ void BossDodongo_Update(Actor* thisx, PlayState* play2) {
     BossDodongo_UpdateAmbience(this, play, false);
 }
 
-// 7DtZ co-op (PHA-4047): the room's lava, the fire-breath glow and the body
+// 7DtZ co-op (#4047): the room's lava, the fire-breath glow and the body
 // wobble, split out of Update so a co-op mirror (whose Update is replaced by
 // the host's stream) still runs them. The mirror skips the magma spawns: the
 // host's are replayed on its screen (EnemyFxSync).
@@ -1457,7 +1457,7 @@ void BossDodongo_PlayerYawCheck(BossDodongo* this, PlayState* play) {
     }
 }
 
-// 7DtZ co-op (PHA-4047): King Dodongo never aims at a position. He walks a
+// 7DtZ co-op (#4047): King Dodongo never aims at a position. He walks a
 // fixed path between the corners, rolls into whoever is in his way, and his
 // fire runs along the walls; only the choice to attack reads the player. In
 // co-op the host decides for everyone, so feed that choice every living player

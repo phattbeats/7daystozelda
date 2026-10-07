@@ -9,15 +9,15 @@ publish: Day 7 (see schedule)
 
 Day 7. In *7 Days to Die* this is horde night. Here it's the night I explain how this got built, because "an Ocarina of Time co-op horde mod in a browser in about three days" needs an asterisk.
 
-The asterisk: I didn't write most of the code. AI agents did, Claude running inside Paperclip, mostly one agent called Vision Quest. I directed, I play-tested, I complained a lot, and I fixed a few of the nastiest bugs myself (the ROM extractor, the texture table and the audio buffer, all back in [Day 4](/7dtz-devlog-04-the-terrifying-kokiri/)).
+The asterisk: I didn't write most of the code. AI agents did, running inside Paperclip, mostly one agent called Vision Quest. I directed, I play-tested, I complained a lot, and I fixed a few of the nastiest bugs myself (the ROM extractor, the texture table and the audio buffer, all back in [Day 4](/7dtz-devlog-04-the-terrifying-kokiri/)).
 
 ## 1. Issues as milestones
 
-Everything lived as Paperclip issues. The epic was PHA-3856. The game design spec was PHA-3870, and when it was done the agent split it into a chain:
+Everything lived as Paperclip issues. The epic was #3856. The game design spec was #3870, and when it was done the agent split it into a chain:
 
-> Split into milestones, chained in order: PHA-3871 M4 (todo, starts now) → PHA-3872 M5 → PHA-3873 M6 (first playable raid) → PHA-3874 M7 → PHA-3875 M8.
+> Split into milestones, chained in order: #3871 M4 (todo, starts now) → #3872 M5 → #3873 M6 (first playable raid) → #3874 M7 → #3875 M8.
 
-Every milestone sat behind its own setting (`gSevenDays.Enabled`, then `gSevenDays.Raids`, `gSevenDays.Loot`, `gSevenDays.Nights` and so on) and had to leave the old `COOP-M3-TEST-GUIDE.md` passing. Side quests got their own issues and ran in parallel: PHA-3901 for fairy and tunic colors, PHA-3904 for real OoT art, PHA-3906 for the logo, PHA-3902 for the GPU.
+Every milestone sat behind its own setting (`gSevenDays.Enabled`, then `gSevenDays.Raids`, `gSevenDays.Loot`, `gSevenDays.Nights` and so on) and had to leave the old `COOP-M3-TEST-GUIDE.md` passing. Side quests got their own issues and ran in parallel: #3901 for fairy and tunic colors, #3904 for real OoT art, #3906 for the logo, #3902 for the GPU.
 
 The single most useful thing I typed all week was one line on the spec, at 4 AM:
 
@@ -81,7 +81,7 @@ Parallel agents did step on each other. The colors run built in its own copy of 
 
 Every 7 Days to Zelda patch (0009 to 0019) is authored as `phattbeats`, with no AI trailers. When I shipped my audio fix, the agent flagged it:
 
-> One note: the 0007 patch has `Co-Authored-By` and `Claude-Session` trailers. Strip them before committing it to any `phattbeats/*` repo.
+> One note: the 0007 patch has `Co-Authored-By` and session trailers. Strip them before committing it to any `phattbeats/*` repo.
 
 The patch headers show the rule held. Here's the top of patch 0019:
 
@@ -90,14 +90,14 @@ From 76965437270509fde7fc56ae8a236be3f12e0dfc Mon Sep 17 00:00:00 2001
 From: phattbeats <...>
 Date: Fri, 2 Oct 2026 17:10:20 -0400
 Subject: [PATCH 19/19] 7 Days to Zelda: custom fairy gradient and tunic colors
- that others see (PHA-3901)
+ that others see (#3901)
 ```
 
 Patches 0001 to 0008 (the netcode and web port) carry my own name. Either way, the identity on a patch is repo hygiene, not a claim about who typed it. This series exists to say who did what.
 
 ## 5. The GPU that didn't help (and the bug that did)
 
-The agents' browser was browserless, rendering with SwiftShader on the CPU. I asked for GPU passthrough (PHA-3902). The research verdict was "yes, this is possible," and after a couple rounds of me clicking around in Unraid ("done. ch-ch-check it.") Chrome was on the Quadro K2200. Only one path worked: ANGLE on Vulkan. Plain `--use-gl=egl` stayed on SwiftShader. The final container setting:
+The agents' browser was browserless, rendering with SwiftShader on the CPU. I asked for GPU passthrough (#3902). The research verdict was "yes, this is possible," and after a couple rounds of me clicking around in Unraid ("done. ch-ch-check it.") Chrome was on the Quadro K2200. Only one path worked: ANGLE on Vulkan. Plain `--use-gl=egl` stayed on SwiftShader. The final container setting:
 
 ```
 DEFAULT_LAUNCH_ARGS=["--use-angle=vulkan","--enable-features=Vulkan","--ignore-gpu-blocklist","--enable-gpu"]
@@ -111,11 +111,11 @@ Then I looked at the CPU graph:
 
 The agent found browserless at **~420% CPU**. Three sessions were leftover 7 Days to Zelda playtest tabs, game loops still running nonstop. It closed them over CDP and the container dropped to **3–15%**.
 
-> **WARNING** — A GPU moves drawing off the CPU. It does nothing for JavaScript, WASM game logic, audio or networking, which is what a running SoH tab actually burns. If your headless box is pegged, count your tabs first. The prevention (always close the browser, one-shot calls, session timeouts) is filed as PHA-3909.
+> **WARNING** — A GPU moves drawing off the CPU. It does nothing for JavaScript, WASM game logic, audio or networking, which is what a running SoH tab actually burns. If your headless box is pegged, count your tabs first. The prevention (always close the browser, one-shot calls, session timeouts) is filed as #3909.
 
 ## 6. The art pass: OoT models only
 
-Through M5 and M6 the base pieces were placeholder shapes. My rule for PHA-3904: models from OoT or Majora's Mask only, never online assets, and Majora only with my approval. The agent swapped in:
+Through M5 and M6 the base pieces were placeholder shapes. My rule for #3904: models from OoT or Majora's Mask only, never online assets, and Majora only with my approval. The agent swapped in:
 
 | Placeable | Model (from OoT) | Collision box | Menu icon |
 | --- | --- | --- | --- |
@@ -138,7 +138,7 @@ This was also, in the agent's words, "the first time 7 Days to Zelda itself is l
 
 ## 7. N64-pilled
 
-My entire brief for PHA-3906 was "make the homepage more nostalgic and n64 pilled." The agent added the logo, the blood-moon fort concept art with CRT scanlines, a four-color controller stripe, and N64 buttons: Join is the blue A button, Solo is the green B.
+My entire brief for #3906 was "make the homepage more nostalgic and n64 pilled." The agent added the logo, the blood-moon fort concept art with CRT scanlines, a four-color controller stripe, and N64 buttons: Join is the blue A button, Solo is the green B.
 
 Then I asked "replace it in game?" and it did, without touching the game binary:
 
@@ -156,7 +156,7 @@ It's rendered at native 160×160 "because the 4× high-res version came out scra
 
 Late on October 1, b-mech wanted a black fairy. So I asked: "can you make a gradient fairy picker so that b-mech can make his black." Eight minutes later the lobby had a Custom option starting at black, plus an honest caveat: "If pure black shows as no glow, pick a near-black like `1A1A1A`."
 
-That grew into PHA-3901: separate fairy core, fairy aura and tunic colors that *other players* see. The protocol change is small and backwards compatible. From patch 0019, the client-state parser:
+That grew into #3901: separate fairy core, fairy aura and tunic colors that *other players* see. The protocol change is small and backwards compatible. From patch 0019, the client-state parser:
 
 ```cpp
 // Older clients only send `color`: it is their aura and their tunic, with a white core.
@@ -176,8 +176,8 @@ Here's the board as of Day 7.
 
 | Item | State | Done when |
 | --- | --- | --- |
-| M8: tuning (PHA-3875) | Blocked on us | Costs, HP, unlocks, loot and wave curves set by real game nights |
-| M9: the world reacts (PHA-3913) | Backlog | Towns outside Kokiri get lines that change with raids, some get boarded up, townsfolk hide on raid nights, Gossip Stones and Navi give base tips |
+| M8: tuning (#3875) | Blocked on us | Costs, HP, unlocks, loot and wave curves set by real game nights |
+| M9: the world reacts (#3913) | Backlog | Towns outside Kokiri get lines that change with raids, some get boarded up, townsfolk hide on raid nights, Gossip Stones and Navi give base tips |
 | King Dodongo boss sync | Backlog | Two players beat him together; either player's bomb stuns him |
 | Windows desktop build | Backlog | A Windows player joins a browser player's room |
 | Real-phone pass | Backlog | One full horde night on iPhone Safari and Android Chrome without a crash |

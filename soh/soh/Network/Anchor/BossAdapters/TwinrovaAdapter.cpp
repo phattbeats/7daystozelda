@@ -12,7 +12,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Twinrova (PHA-4053), the Gohma treatment. Three tracked actors share ACTOR_BOSS_TW, told apart by params:
+ * Twinrova (#4053), the Gohma treatment. Three tracked actors share ACTOR_BOSS_TW, told apart by params:
  * Kotake (0), Koume (1) and Twinrova (2); the blasts they throw are params 0x64 and up. All three are spawned
  * by Twinrova's own Init on every client, so they keep their room-occurrence keys (OnEnemyActorSpawn skips
  * params <= 2). Only the blasts are dynamic spawns.
@@ -643,7 +643,7 @@ void RegisterTwinrovaAdapter() {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4053 boss rig. Reports the Twinrova fight on this client and pokes it:
+// #4053 boss rig. Reports the Twinrova fight on this client and pokes it:
 // cmd 0 report only; 1 set the two witches' health to arg (authority; starts the merge once both fly);
 // 2 set Twinrova's health to arg (authority); 3 clear the "began battle" flag and un-clear the room;
 // 4 teleport Link to (arg, 240, 0); 5 set this machine's shield charge to arg (fire if blast type 1, else ice);

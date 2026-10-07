@@ -707,7 +707,7 @@ void Flags_SetSwitch(PlayState* play, s32 flag) {
  */
 void Flags_UnsetSwitch(PlayState* play, s32 flag) {
     // != 0: the getter returns the flag's bit, which a u8 truncates to 0 for flags 8 and up,
-    // so the unset hook (and the co-op UNSET_FLAG) never fired for them (PHA-4044).
+    // so the unset hook (and the co-op UNSET_FLAG) never fired for them (#4044).
     u8 previouslyOn = Flags_GetSwitch(play, flag) != 0;
     if (flag < 0x20) {
         play->actorCtx.flags.swch &= ~(1 << flag);
@@ -796,7 +796,7 @@ void Flags_SetClear(PlayState* play, s32 flag) {
  */
 void Flags_UnsetClear(PlayState* play, s32 flag) {
     // != 0: the getter returns the flag's bit, which a u8 truncates to 0 for flags 8 and up,
-    // so the unset hook (and the co-op UNSET_FLAG) never fired for them (PHA-4044).
+    // so the unset hook (and the co-op UNSET_FLAG) never fired for them (#4044).
     u8 previouslyOn = Flags_GetClear(play, flag) != 0;
     play->actorCtx.flags.clear &= ~(1 << flag);
     if (previouslyOn) {
@@ -2774,7 +2774,7 @@ void Actor_FaultPrint(Actor* actor, char* command) {
     FaultDrawer_Printf("ACTOR NAME %08x:%s", actor, name);
 }
 
-// PHA-4062: commands of room an actor needs left in the opaque and translucent pools before it may draw.
+// #4062: commands of room an actor needs left in the opaque and translucent pools before it may draw.
 // A frame can only overrun (and be thrown away, see Graph_Update) if one draw takes more than this, and
 // the effects, HUD and sync commands that follow the actors fit in it too.
 #define ACTOR_DRAW_RESERVE_CMDS 2048

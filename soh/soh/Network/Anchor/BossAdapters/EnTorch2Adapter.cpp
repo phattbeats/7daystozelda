@@ -12,7 +12,7 @@ extern "C" {
 }
 
 /**
- * Dark Link (EN_TORCH2, PHA-4055).
+ * Dark Link (EN_TORCH2, #4055).
  *
  * Dark Link is a Player struct driven by a fake controller. Every input he
  * "presses" is worked out from GET_PLAYER: he copies the sword animation Link

@@ -17,9 +17,9 @@
 #include <string.h>
 
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
-// PHA-4054: soh/Network/Anchor/EnemyTargeting.cpp
+// #4054: soh/Network/Anchor/EnemyTargeting.cpp
 Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
-// PHA-4054: soh/Network/Anchor/BossAdapters/GanondorfAdapter.cpp
+// #4054: soh/Network/Anchor/BossAdapters/GanondorfAdapter.cpp
 void Anchor_GanondorfSpawned(Actor* spawned);
 void Anchor_GanondorfPlatformCheck(Vec3f* pos);
 void Anchor_GanondorfBallReachedDorf(Actor* dorf);
@@ -5191,7 +5191,7 @@ void BossGanon_Reset(void) {
 }
 
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
-// PHA-4054: what soh/Network/Anchor/BossAdapters/GanondorfAdapter.cpp needs from this file.
+// #4054: what soh/Network/Anchor/BossAdapters/GanondorfAdapter.cpp needs from this file.
 
 // 0 intro (before the fight, Link is held by the cutscene), 1 fight, 2 defeated (the death cutscene).
 u8 BossGanon_CoopPhase(Actor* thisx) {

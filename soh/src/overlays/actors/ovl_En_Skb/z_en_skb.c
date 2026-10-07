@@ -4,7 +4,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
 
-s32 SevenDays_StalchildTorchlit(Actor* actor); // PHA-4038: soh/SevenDays/Raids.cpp
+s32 SevenDays_StalchildTorchlit(Actor* actor); // #4038: soh/SevenDays/Raids.cpp
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 

@@ -72,7 +72,7 @@ bool MirroringEnabled();
 // ENEMY_STATE receipt: the sender is streaming, i.e. it elected itself. Fresh
 // claims feed the election so two clients that disagree about who is in charge
 // (split brain) both settle on the lowest claimant instead of each running its
-// own copy of every enemy (PHA-4023).
+// own copy of every enemy (#4023).
 void NoteAuthorityClaim(uint32_t clientId);
 
 uint32_t CurrentAuthorityId();

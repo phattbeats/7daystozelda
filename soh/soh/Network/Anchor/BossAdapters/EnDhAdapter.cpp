@@ -14,7 +14,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Dead Hand (EN_DH, the body) and its two hands (EN_DHA), PHA-4055.
+ * Dead Hand (EN_DH, the body) and its two hands (EN_DHA), #4055.
  *
  * The body is invisible and unhittable on a suppressed mirror: it starts buried
  * (shape.yOffset -15000), lens-only (ACTOR_FLAG_REACT_TO_LENS) and in WAIT, and

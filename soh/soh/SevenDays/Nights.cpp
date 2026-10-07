@@ -118,7 +118,7 @@ static f32 CardAlpha() {
     return 1.0f;
 }
 
-// "4:32 PM": the room's time of day (PHA-4025: there was no way to read it).
+// "4:32 PM": the room's time of day (#4025: there was no way to read it).
 static std::string TimeOfDay() {
     s32 minutes = (s32)((u32)gSaveContext.dayTime * 24 * 60 / 0x10000);
     return fmt::format("{}:{:02} {}", ((minutes / 60) + 11) % 12 + 1, minutes % 60, minutes < 12 * 60 ? "AM" : "PM");
@@ -129,7 +129,7 @@ std::string PauseCountersLine() {
     std::string line = fmt::format("Day {}  -  {}  -  Days survived: {}  -  Raids survived: {}", CurrentDay(),
                                    TimeOfDay(), b.daysSurvived, b.hordeNightsSurvived);
     if (gPlayState != nullptr && RaidWardedHere()) {
-        line += "  -  Tonight: warded"; // PHA-4006
+        line += "  -  Tonight: warded"; // #4006
     }
     return line;
 }
@@ -161,7 +161,7 @@ static bool RaidNightLook() {
     if (gPlayState == nullptr || !IS_NIGHT || !IsOutdoorScene(gPlayState->sceneNum) || gPlayState->envCtx.indoors) {
         return false;
     }
-    // PHA-4006: the torch ward cleanses the red night while it holds.
+    // #4006: the torch ward cleanses the red night while it holds.
     return (RaidTonight() || RaidWaveHere()) && !RaidWardedHere();
 }
 
@@ -395,7 +395,7 @@ static void DrawPauseLine(PlayState* play, GraphicsContext* gfx) {
                    4, 255, 230, 160, 255, 0.7f);
 }
 
-// MARK: - PHA-3856: notices in the game's own text box
+// MARK: - #3856: notices in the game's own text box
 //
 // No ImGui toasts: every Notification::Emit (gathering, loot, building, raids,
 // co-op) lands here and shows as a small OoT text box at the bottom of the
@@ -576,7 +576,7 @@ static void DrawNoticeIcon(GraphicsContext* gfx, const char* icon, s32 x, s32 y,
     CLOSE_DISPS(gfx);
 }
 
-// PHA-4028: every glyph costs about 17 display-list commands (its font texture load,
+// #4028: every glyph costs about 17 display-list commands (its font texture load,
 // the shadow and the letter), and the notices, the clock and the card run to a few
 // hundred glyphs. The game's overlay list holds 0x800 commands and the HUD shares it:
 // three long placement notices ran it past its end into the frame's root list, and
@@ -771,7 +771,7 @@ const char* sevendays_test_nights_state() {
                   { "raid", sCard.raid },
                   { "counts", sCard.counts + " / " + sCard.counts2 } };
     j["clockAlpha"] = sClockAlpha;
-    j["overlayGfxPeak"] = sOverlayGfxPeak; // PHA-4028: commands in our own overlay list, at most
+    j["overlayGfxPeak"] = sOverlayGfxPeak; // #4028: commands in our own overlay list, at most
     j["notices"] = sNotices.size();
     j["red"] = sRed;
     j["moonScale"] = gSevenDaysMoonScale;

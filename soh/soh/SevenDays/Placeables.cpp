@@ -33,7 +33,7 @@ extern PlayState* gPlayState;
 uint8_t ResourceMgr_FileExists(const char* resName);
 }
 
-// PHA-3904: models cut from Majora's Mask by art/mm-pack/build_mm_pack.py. They are
+// #3904: models cut from Majora's Mask by art/mm-pack/build_mm_pack.py. They are
 // not in oot.o2r or in the repo; the deploy appends them to the server's soh.o2r.
 // Each draw checks the pack is there and falls back to an OoT model when it isn't.
 static const ALIGN_ASSET(2) char gMMPracticeLogDL[] = "__OTR__objects/7dtz_mm/maruta/gMMPracticeLogDL";
@@ -50,7 +50,7 @@ static bool MMPackLoaded() {
     return sLoaded == 1;
 }
 
-// PHA-3945: floors, stairs and doors, from the same pack (a newer build of it).
+// #3945: floors, stairs and doors, from the same pack (a newer build of it).
 static const ALIGN_ASSET(2) char gMMPiratePanelDL[] = "__OTR__objects/7dtz_mm/taru/gMMPiratePanelDL";
 static const ALIGN_ASSET(2) char gMMRanchPlankDL[] = "__OTR__objects/7dtz_mm/gMMRanchPlankDL";
 static const ALIGN_ASSET(2) char gMMStonePlatformDL[] = "__OTR__objects/7dtz_mm/raillift/gMMStonePlatformDL";
@@ -61,7 +61,7 @@ static const ALIGN_ASSET(2) char gMMSwampDoorDL[] = "__OTR__objects/7dtz_mm/dor0
 static const ALIGN_ASSET(2) char gMMMusicBoxDoorDL[] = "__OTR__objects/7dtz_mm/wdor05/gMMMusicBoxDoorDL";
 static const ALIGN_ASSET(2) char gMMPirateDoorDL[] = "__OTR__objects/7dtz_mm/kaizoku_obj/gMMPirateDoorDL";
 
-// PHA-3962: furniture, from the same pack (a newer build of it).
+// #3962: furniture, from the same pack (a newer build of it).
 static const ALIGN_ASSET(2) char gMMInnChairDL[] = "__OTR__objects/7dtz_mm/gMMInnChairDL";
 static const ALIGN_ASSET(2) char gMMMilkBarChairDL[] = "__OTR__objects/7dtz_mm/mbar_obj/gMMMilkBarChairDL";
 static const ALIGN_ASSET(2) char gMMInnBenchDL[] = "__OTR__objects/7dtz_mm/gMMInnBenchDL";
@@ -115,12 +115,12 @@ static bool MMBuildPackLoaded() {
  *                        Drawn with OoT's own display lists (the horse-jump fence,
  *                        the treasure chest, the rectangular sign, the spike, the
  *                        wooden torch stand, push blocks, a bomb flower, Ingo's gate)
- *                        and, since PHA-3904, a few Majora's Mask models from the
+ *                        and, since #3904, a few Majora's Mask models from the
  *                        server's soh.o2r (palisade logs, the workbench's desk and
  *                        hammer). It has no collision of its own: see
  *                        SevenDays_BaseCollision.
- *   SevenDays_BaseCollision  PHA-3916: the pieces' boxes (8 vertices, 12 triangles
- *                        each; PHA-3945: a ramp for the stairs, a slab on posts for
+ *   SevenDays_BaseCollision  #3916: the pieces' boxes (8 vertices, 12 triangles
+ *                        each; #3945: a ramp for the stairs, a slab on posts for
  *                        the deck), merged into one CollisionHeader per 640-unit
  *                        chunk of the base and registered with DynaPoly_SetBgActor,
  *                        so Link and enemies collide with them like scenery. A base
@@ -152,7 +152,7 @@ struct PlaceableActor {
     f32 babaLunge;     // 0 upright .. 1 fully extended
     f32 babaAim;       // direction of the lunge, world units from the stalk's base
     bool babaBit;      // this lunge already landed
-    // PHA-3935: the torch's light, the bomb-flower trap and the gate.
+    // #3935: the torch's light, the bomb-flower trap and the gate.
     LightNode* lightNode;
     LightInfo lightInfo;
     ColliderCylinder blastCollider;
@@ -163,7 +163,7 @@ struct PlaceableActor {
     bool gatePassable;   // left out of the base collision while a player walks through
     bool ruin;           // the child base after the seven-year jump: drawn broken, does nothing
     bool ghost;          // the placement preview (SevenDays_Ghost), which only draws
-    bool wardLit;        // PHA-4006: a torch of the ward's ring, burning blue
+    bool wardLit;        // #4006: a torch of the ward's ring, burning blue
 };
 
 enum { BABA_IDLE, BABA_WINDUP, BABA_LUNGE, BABA_RECOVER };
@@ -177,7 +177,7 @@ constexpr f32 GATE_REACH = 70.0f;    // a player this far in front of or behind 
 static int16_t sPlaceableId = -1;
 static int sTrapBlasts = 0; // tests: bomb-flower traps set off
 static int16_t sGhostId = -1;
-// PHA-3969 tests: the icon studio draws one piece in front of the camera on a flat backdrop.
+// #3969 tests: the icon studio draws one piece in front of the camera on a flat backdrop.
 static int16_t sStudioId = -1;
 static Actor* sStudio = nullptr;
 static int sStudioType = -1;      // a PLACEABLE_* type, STUDIO_SMALL_CRATE, STUDIO_LARGE_CRATE, or -1: off
@@ -202,7 +202,7 @@ int16_t SevenDays::GhostActorId() {
 
 // MARK: - Collision: one shape per type, built once
 
-// Surface 0: wood-ish floor sound, normal walls. Surface 1 (PHA-3945): the same with
+// Surface 0: wood-ish floor sound, normal walls. Surface 1 (#3945): the same with
 // wall type 2, a ladder (wall flags 1 | 2): Link climbs it when he walks into it.
 static SurfaceType sSurfaces[2];
 
@@ -297,7 +297,7 @@ static void BuildShape(ShapeCollision& shape, uint8_t type) {
         case PLACEABLE_BENCH:
         case PLACEABLE_BED_INN:
         case PLACEABLE_BED_MAYOR:
-            // PHA-3962: only up to the seat or the mattress, which Link sits or lies on.
+            // #3962: only up to the seat or the mattress, which Link sits or lies on.
             AddBox(shape, -hx, hx, 0, FurnitureSeatHeight(type), -hz, hz);
             break;
         default:
@@ -497,9 +497,9 @@ static void Collision_Update(Actor* thisx, PlayState* play) {
     RebuildBaseCollision(play);
 }
 
-// PHA-3916: grow the dynamic collision lists where a base can stand
+// #3916: grow the dynamic collision lists where a base can stand
 // (BgCheck_Allocate, z_bgcheck.c). DYNA_BUDGET polys/vertices/nodes (8192: about 210 KB of the
-// play arena, PHA-4062 for 256 pieces) next to the scene's own movers.
+// play arena, #4062 for 256 pieces) next to the scene's own movers.
 extern "C" s32 SevenDays_DynaBudget(s16 sceneNum) {
     return BaseEnabled() && IsOutdoorScene(sceneNum) ? SevenDays::DYNA_BUDGET : 0;
 }
@@ -631,7 +631,7 @@ static void DrawPalisade(PlayState* play, float hpFrac, bool ruin) {
 
 // Workbench: the Stock Pot Inn's desk with drawers (44 x 29 x 29 in the room, at
 // -435..-391, 210..239, 360..389), scaled 1.2x, with Gabora's smithing hammer and a
-// red-hot sword blank from the Mountain Village smithy lying on top. PHA-3856: it was
+// red-hot sword blank from the Mountain Village smithy lying on top. #3856: it was
 // 1.8x (52 tall), over child Link's head; 1.2x puts the top at 35, an adult's hip and a
 // child's chest, and a child still clambers up onto it.
 static void DrawWorkbench(PlayState* play, bool ruin) {
@@ -674,7 +674,7 @@ static void DrawWorkbench(PlayState* play, bool ruin) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// MARK: - PHA-3945: floors, stairs and doors
+// MARK: - #3945: floors, stairs and doors
 
 // Without the pack: OoT's push block (8000 units square at scale 1) stretched over the box.
 static void DrawFallbackBox(PlayState* play, uint8_t type) {
@@ -857,7 +857,7 @@ static void DrawDoor(PlayState* play, Gfx* leaf, f32 open, bool ruin) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// MARK: - PHA-3962: furniture
+// MARK: - #3962: furniture
 
 // A model cut from a Majora's Mask room or object, moved so that its footprint is centred
 // on the origin with its bottom at y = 0 (native `at` is that point in the model's own
@@ -1411,7 +1411,7 @@ static ColliderCylinderInit sBlastCylinderInit = {
     { 110, 80, -10, { 0, 0, 0 } },
 };
 
-// PHA-3962: the furniture Link uses straight away offers A with no textbox (0xFFFF).
+// #3962: the furniture Link uses straight away offers A with no textbox (0xFFFF).
 constexpr uint16_t TEXT_NONE_USE = 0xFFFF;
 
 static uint16_t TextFor(uint8_t type) {
@@ -1460,7 +1460,7 @@ static void Placeable_Init(Actor* thisx, PlayState* play) {
     Actor_SetScale(thisx, 1.0f);
     thisx->shape.rot = thisx->world.rot = { 0, p->rot, 0 };
 
-    // Re-snap to the floor under it (seeded pieces carry an approximate y). PHA-3945:
+    // Re-snap to the floor under it (seeded pieces carry an approximate y). #3945:
     // not a piece stacked on another, whose collision may not be built yet.
     Vec3f probe = { p->pos[0], p->pos[1] + 80.0f, p->pos[2] };
     CollisionPoly* poly = nullptr;
@@ -1666,7 +1666,7 @@ static void BabaUpdate(PlaceableActor* self, PlayState* play) {
 
 // Torch: flickers like ObjSyokudai's lit torches.
 static void TorchUpdate(PlaceableActor* self, PlayState* play) {
-    // PHA-4006: the ward's ritual reaches this torch: it flares up blue.
+    // #4006: the ward's ritual reaches this torch: it flares up blue.
     bool ward = SevenDays::TorchWardLit(&self->actor);
     if (ward && !self->wardLit) {
         Audio_PlayActorSound2(&self->actor, NA_SE_EV_FLAME_IGNITION);
@@ -1725,7 +1725,7 @@ static void TrapUpdate(PlaceableActor* self, PlayState* play) {
     }
 }
 
-// Player gate (and PHA-3945's doors): swings open while a player stands in front of or
+// Player gate (and #3945's doors): swings open while a player stands in front of or
 // behind it, and its box leaves the base collision so they walk through. Raiders have to
 // break it.
 static void GateUpdate(PlaceableActor* self, PlayState* play) {
@@ -1760,7 +1760,7 @@ static void Placeable_Update(Actor* thisx, PlayState* play) {
 
     if (thisx->textId != 0) {
         if (self->type == PLACEABLE_MILKCAN && !self->talking) {
-            // PHA-3962: once a day; until tomorrow it just says it's empty.
+            // #3962: once a day; until tomorrow it just says it's empty.
             thisx->textId = MilkCanEmpty(self->id) ? TEXT_MILK_EMPTY : TEXT_NONE_USE;
         }
         if (self->talking) {
@@ -1770,7 +1770,7 @@ static void Placeable_Update(Actor* thisx, PlayState* play) {
             }
         } else if (Actor_ProcessTalkRequest(thisx, play)) {
             if (thisx->textId == TEXT_NONE_USE) {
-                StartRest(thisx, self->type); // PHA-3962: sit, sleep, lie down or drink
+                StartRest(thisx, self->type); // #3962: sit, sleep, lie down or drink
             } else {
                 self->talking = 1;
             }
@@ -1898,7 +1898,7 @@ static void DrawWorn(PlayState* play, PlaceableActor* self, float hpFrac) {
     }
 }
 
-// PHA-4062: the pieces draw before the enemies, Link's gear and the effects (actor list order), so a
+// #4062: the pieces draw before the enemies, Link's gear and the effects (actor list order), so a
 // big base must not spend the display-list room they need. Below this share of the opaque or
 // translucent pool, a piece skips its draw for the frame; the engine's own reserve in Actor_Draw
 // is the hard stop behind it.
@@ -1986,7 +1986,7 @@ static void Ghost_Draw(Actor* thisx, PlayState* play) {
 
 // MARK: - SevenDays_IconStudio (tests)
 
-// PHA-3969: the Workbench icons are the pieces' own models. The studio draws one through
+// #3969: the Workbench icons are the pieces' own models. The studio draws one through
 // its own orthographic camera, turned three-quarters and tipped toward it, on a black or
 // white backdrop; tools/harness/pha3969 shoots both and keeps the difference as alpha. The
 // backdrop writes the front of the depth range over the whole screen, so nothing the game
@@ -2273,7 +2273,7 @@ void SevenDays::RegisterVillageMessages(const char* table) {
         table, TEXT_CHEST,
         CustomMessage("The village storage chest. Everything the village has gathered is in here.", TEXTBOX_TYPE_BLACK,
                       TEXTBOX_POS_BOTTOM));
-    // PHA-3962: furniture
+    // #3962: furniture
     AddText(table, TEXT_BOOKSHELF, CustomMessage("[[book]]", TEXTBOX_TYPE_BLACK, TEXTBOX_POS_BOTTOM));
     AddText(table, TEXT_PAINTING,
             CustomMessage("A masked imp, painted in a faraway land.^Its eyes seem to follow you around the room...",
@@ -2291,7 +2291,7 @@ void SevenDays::RegisterVillageMessages(const char* table) {
 // Flavor only: every replaced vanilla text was checked in the ROM's message table
 // to have no choice, event, item, ocarina or clock code, and none carries a quest
 // hint, a direction or the time. The line shows in a second box after the NPC's own
-// words (AfterVanilla), so it must not repeat them (PHA-4005).
+// words (AfterVanilla), so it must not repeat them (#4005).
 struct WorldLine {
     int16_t scene;  // -1: any scene
     uint16_t textId;
@@ -2317,10 +2317,10 @@ static const WorldLine sWorldLines[] = {
     { SCENE_MARKET_ENTRANCE_DAY, 0x7002, "The drawbridge closes at dusk, and these days we mean it. The field isn't safe at night.", "The patrols report [[raids]] on the forest. We raise the bridge early now." },
     { SCENE_MARKET_ENTRANCE_DAY, 0x7003, "Something's been testing the drawbridge at night.", "Red sky, red moon... Nobody should be out on nights like these." },
     { SCENE_HYRULE_CASTLE, 0x7002, "Rumor in the barracks says the night creatures are out in force.", "Rumor in the barracks: a forest base has held off [[raids]]." },
-    // PHA-3935: the castle gate's guard (EnHeishi2) and Impa in the courtyard (DemoIm's repeat line)
+    // #3935: the castle gate's guard (EnHeishi2) and Impa in the courtyard (DemoIm's repeat line)
     { SCENE_HYRULE_CASTLE, 0x7006, "Not with things crawling out of the field at night!", "And certainly not the dead. We've counted [[raids]] on the forest." },
     { -1, 0x708E, "The field is no place for a child after dark these days. Go home quickly.", "A forest village has held off [[raids]], I hear. The Sheikah are watching it." },
-    // PHA-3935: Talon (EnTa: awake at the ranch; asleep in Kakariko as an adult) and Anju (EnNiwLady)
+    // #3935: Talon (EnTa: awake at the ranch; asleep in Kakariko as an adult) and Anju (EnNiwLady)
     { -1, 0x2055, "Somebody's gotta mend the fences before the night things find 'em!", "Mended the fences twice since the raids started. Only napped through one of 'em!" },
     { -1, 0x5015, "Z Z Z... Bar the stable, Ingo...", "Z Z Z... [[raids]]... the walls held..." },
     { -1, 0x503D, "They're jumpy enough with all that scratching at night.", "They haven't laid a single egg since the sky went red." },
@@ -2345,10 +2345,10 @@ static const WorldLine sWorldLines[] = {
     { SCENE_GERUDO_VALLEY, 0x6069, "Night creatures or not, that's no place for a kid.", "We cut the bridge on red nights and fix it at dawn." },
     { SCENE_GERUDO_VALLEY, 0x601A, "At least the night things don't climb these cliffs.", "Hiding from the red nights too? Smart." },
     { SCENE_GERUDOS_FORTRESS, 0x6001, "Hylian creatures at night? Ha! Let them try our walls.", "Even we post double guards on red nights now. Don't tell anyone." },
-    // PHA-3935: the Training Ground's gate guard (EnGe1), unqualified / qualified
+    // #3935: the Training Ground's gate guard (EnGe1), unqualified / qualified
     { SCENE_GERUDOS_FORTRESS, 0x6070, "Not even if the dead come knocking.", "The red nights changed nothing!" },
     { SCENE_GERUDOS_FORTRESS, 0x6072, "Some of that treasure buys walls.", "We'll need that treasure if the dead ever cross the desert." },
-    // PHA-4006: the man stuck on the Kakariko roof (EnHy) half-remembers the torch ward.
+    // #4006: the man stuck on the Kakariko roof (EnHy) half-remembers the torch ward.
     { SCENE_KAKARIKO_VILLAGE, 0x5050, "Being stuck up here, you hear every old story in the village.^Come back when the stars are out. That's when I remember them.", "Being stuck up here, you hear every old story in the village.^Come back when the stars are out. That's when I remember them." },
     { SCENE_KAKARIKO_VILLAGE, 0x5051, "My grandpa sat up here too. He said the old Sheikah never bothered with walls.^They lit a dozen fires in a ring, way out where the dead crawl up, so close there was no dark left between them...^Then again, he also said he saw a fish fly.", "Grandpa said the Sheikah never bothered with walls. A dozen fires in a ring, way out, no dark between them...^Funny. Out over the forest, some nights, I could swear I see blue." },
     // Gossip stones (EnGs, the plain talk without the Mask of Truth)
@@ -2464,10 +2464,10 @@ void SevenDays::FillWorldText(CustomMessage& msg) {
                             : n == 1        ? std::string("tomorrow night")
                                             : fmt::format("in {} days", n));
     msg.Replace("[[base]]", home != nullptr ? fmt::format("someone built walls in {}", home) : "nobody has built walls yet");
-    msg.Replace("[[book]]", BookLine()); // PHA-3962: the bookshelf
+    msg.Replace("[[book]]", BookLine()); // #3962: the bookshelf
 }
 
-// MARK: - PHA-3935: Navi's C-Up tips
+// MARK: - #3935: Navi's C-Up tips
 
 // Crafting and raid tips, used when Navi has nothing new to say: once her story hint
 // for this point in the game has been heard, C-Up gives the next tip instead.
@@ -2541,7 +2541,7 @@ bool SevenDays::OverridesVanillaText(uint16_t textId) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4062: display-list pool usage. "" reads, "reset" clears the peaks, "force:N" makes the next N
+// #4062: display-list pool usage. "" reads, "reset" clears the peaks, "force:N" makes the next N
 // frames count as overrun (the failsafe path), "scale" is read and set through the cvar
 // gSevenDays.GfxPoolScale.
 EMSCRIPTEN_KEEPALIVE
@@ -2560,7 +2560,7 @@ int sevendays_test_last_text() {
     return sLastTextId;
 }
 
-// PHA-4005: every NPC line this mod adds to vanilla text: the NPC's own words, whether
+// #4005: every NPC line this mod adds to vanilla text: the NPC's own words, whether
 // the new line can go after them (AfterVanilla), and ids listed twice for one scene.
 EMSCRIPTEN_KEEPALIVE
 const char* sevendays_test_world_audit() {
@@ -2595,7 +2595,7 @@ int sevendays_test_trap_blasts() {
     return sTrapBlasts;
 }
 
-// PHA-3969: the icon studio. type: a PLACEABLE_* type, 100 small crate, 101 large crate,
+// #3969: the icon studio. type: a PLACEABLE_* type, 100 small crate, 101 large crate,
 // or -1 to put it away; white: the backdrop's shade; turn: the piece's yaw toward the camera.
 EMSCRIPTEN_KEEPALIVE
 void sevendays_test_icon_studio(int type, int white, int turn) {

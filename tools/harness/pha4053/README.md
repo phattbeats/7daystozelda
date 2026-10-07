@@ -1,4 +1,4 @@
-# Twinrova rig (PHA-4053)
+# Twinrova rig (#4053)
 
 Two local GPU Chromes and a stock Anchor relay, as in `tools/harness/pha4047`, with every path under
 `/tmp/z4053` (tree `/tmp/wOOT-True-Co-op`). Setup from nothing took about an hour; the pieces:

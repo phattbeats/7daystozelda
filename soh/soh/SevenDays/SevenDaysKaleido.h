@@ -2,7 +2,7 @@
 #define SEVEN_DAYS_KALEIDO_H
 
 /**
- * 7 Days to Zelda: the Workbench as a fifth pause-menu page (PHA-3871).
+ * 7 Days to Zelda: the Workbench as a fifth pause-menu page (#3871).
  *
  * The pause menu is a box with four faces; the camera sits inside and turns
  * from face to face. With the Workbench page on, five pages share those four

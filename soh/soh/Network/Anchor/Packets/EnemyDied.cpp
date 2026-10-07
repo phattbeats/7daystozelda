@@ -71,7 +71,7 @@ void Anchor::HandlePacket_EnemyDied(nlohmann::json payload) {
         return; // FindActorForPacket already logged the canary if it mattered
     }
     // Bosses with a remote-defeat handler start their own defeat sequence here
-    // if the streamed phase edge was missed (PHA-4023), and ignore the packet
+    // if the streamed phase edge was missed (#4023), and ignore the packet
     // if the defeat is already running.
     if (EnemySync::HandOffRemoteDefeat(actor)) {
         return;

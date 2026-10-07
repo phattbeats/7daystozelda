@@ -121,7 +121,7 @@ typedef struct EnZf {
     /* 0x04FC */ Vec3f bodyPartsPos[9];
 } EnZf; // size = 0x0568
 
-// Co-op mirroring (PHA-4055)
+// Co-op mirroring (#4055)
 s32 EnZf_MirrorGetAction(EnZf* en);
 void EnZf_MirrorSetAction(EnZf* en, s32 action);
 void EnZf_MirrorBeginDeath(EnZf* en, PlayState* play);

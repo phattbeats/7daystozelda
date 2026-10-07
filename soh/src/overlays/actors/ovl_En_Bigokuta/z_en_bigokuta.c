@@ -920,7 +920,7 @@ void EnBigokuta_Draw(Actor* thisx, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// ---- Co-op mirroring (#4055) -------------------------------------------------
 // Every state of the fight is an actionFunc the suppressed mirror never leaves, and
 // Draw keys the stun flash, the hurt shake and the death squash off which one it is.
 

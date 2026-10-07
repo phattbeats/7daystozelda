@@ -496,7 +496,7 @@ void EnFw_DrawDust(EnFw* this, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// ---- Co-op mirroring (#4055) -------------------------------------------------
 
 static EnFwActionFunc sMirrorActions[] = {
     EnFw_Bounce, EnFw_Run, EnFw_TurnToParentInitPos, EnFw_JumpToParentInitPos,

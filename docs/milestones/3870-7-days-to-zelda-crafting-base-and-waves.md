@@ -1,8 +1,8 @@
-# PHA-3870: 7 Days to Zelda: crafting, base and waves
+# #3870: 7 Days to Zelda: crafting, base and waves
 
 Status at export (2026-10-03): blocked
 
-Oct 2, 2026 · @Brandon Kelly
+Oct 2, 2026 · @phattbeats
 
 Build four systems on top of the shipped co-op layer, in this order: materials, crafting, placeables, waves. Every change to shared state is decided by one machine in the room. The first playable milestone is Kokiri Forest's boarded-up village holding its first raid.
 
@@ -112,7 +112,7 @@ Two kinds of authority, both already exist:
 
 Rules the browser build imposes:
 
-* **No `std::thread` and no blocking file I/O.** A stray thread is exactly what broke in-browser ROM extraction (PHA-3860).
+* **No `std::thread` and no blocking file I/O.** A stray thread is exactly what broke in-browser ROM extraction (#3860).
 * **Keep per-frame work small.** The browser build has a single thread.
 * **Packets carry JSON, never raw structs.** Desktop is 64-bit and the browser is 32-bit, and players on both share rooms.
 
@@ -186,7 +186,7 @@ Each placeable is a new actor type registered through SoH's `ActorDB::AddEntry(n
 * the scene's clock must run;
 * every piece sits within 800 units of the base's workbench;
 * one base per era;
-* outposts (PHA-4027): in any other outdoor scene, a workbench starts a camp, and pieces there sit within 800 units of one of the era's workbenches in that scene. Raids still go to the base. The piece cap counts per scene.
+* outposts (#4027): in any other outdoor scene, a workbench starts a camp, and pieces there sit within 800 units of one of the era's workbenches in that scene. Raids still go to the base. The piece cap counts per scene.
 
 Spawn placeables as scene-wide actors (room −1), not as children of one room, so they survive walking between rooms of the same scene. Packing up turns each piece back into a kit.
 
@@ -238,7 +238,7 @@ At dawn, wave enemies still clear, and survivors earn materials by gamestage.
 **5. The raid clock.** Read from the game data: vanilla's clock runs (time speed 10) only in Hyrule Field, Lake Hylia, Gerudo Valley and Hyrule Castle grounds. It is frozen (speed 0) in Kokiri Forest, the Lost Woods, Lon Lon Ranch, Kakariko, the Graveyard, the Market and every interior and dungeon. At speed 10 a full day lasts about 4 real minutes: about 2.6 minutes of day and 1.4 of night, because nights run at double speed.
 
 * **Prologue.** Kokiri Forest's nights are scripted to story beats (First ten minutes), setting `gSaveContext.dayTime` directly like the Sun's Song. The mod's own day counter counts them, since `totalDays` only rises at a natural dawn.
-* **After the prologue.** On scene load, the mod gives every outdoor scene the same time speed through `gTimeIncrement` (`RaidClockSpeed`, 2), Hyrule Field included, so a day lasts about 20 minutes everywhere (PHA-4015; it was 5, about 8 minutes, with the field on its own 10). The prologue's nights don't count as days: Day 1 lasts until the first raid's dawn. Dungeons and interiors stay frozen. NPCs that differ by time of day only refresh on scene re-entry, the same as arriving at night in vanilla.
+* **After the prologue.** On scene load, the mod gives every outdoor scene the same time speed through `gTimeIncrement` (`RaidClockSpeed`, 2), Hyrule Field included, so a day lasts about 20 minutes everywhere (#4015; it was 5, about 8 minutes, with the field on its own 10). The prologue's nights don't count as days: Day 1 lasts until the first raid's dawn. Dungeons and interiors stay frozen. NPCs that differ by time of day only refresh on scene re-entry, the same as arriving at night in vanilla.
 * **Raid nights hold the clock.** Night doesn't advance toward dawn until the wave is cleared or a minimum time passes (about 4 minutes), so a raid isn't over in 85 seconds.
 * **Raid scenes.** `HordeNight`'s fixed two-scene list becomes any outdoor scene with a base or players in it.
 
@@ -273,7 +273,7 @@ Ship in five milestones. Each one sits behind its own setting and leaves `COOP-M
 
 **Rebuilds.** Builds are incremental. The full 12 GB build is only for the randomizer tables, which never change, so after a source change it's a recompile plus a \~30 s link (`src/BUILD-WEB.md`). Browser crashes now print named stacks. Agents build from zelda-buildtree.tar.gz in the Nextcloud folder, using the Dockerfile in the bundle's src/buildtree/: the tree is frozen at its original paths, so a one-file change rebuilds in about 26 s on any Docker host.
 
-**Testing.** The test harness used for PHA-3860 drives two headless browser profiles into one room through a SWAG-like proxy and a local Anchor server. It creates saves by scripted input and boots straight into a scene with the debug warp settings (`gDeveloperTools.DebugEnabled`, `BootToDebugWarpScreen`, `gGeneral.BetterDebugWarpScreenCurrentScene`). It now ships in the bundle as `tools/webtest/`, with a README (Nextcloud: `soh-coop-web-2026-10-02-pha3860.tar.gz`).
+**Testing.** The test harness used for #3860 drives two headless browser profiles into one room through a SWAG-like proxy and a local Anchor server. It creates saves by scripted input and boots straight into a scene with the debug warp settings (`gDeveloperTools.DebugEnabled`, `BootToDebugWarpScreen`, `gGeneral.BetterDebugWarpScreenCurrentScene`). It now ships in the bundle as `tools/webtest/`, with a README (Nextcloud: `soh-coop-web-2026-10-02-pha3860.tar.gz`).
 
 **Open questions.**
 
@@ -286,7 +286,7 @@ Co-op loose ends to file in the 7 Days to Zelda project as backlog issues. Each 
 
 | Issue                                                                                                                                                    | Done when                                                                               |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Deploy the PHA-3860 build to zelda.phatt.vip; drop the oot.o2r workaround from the PHA-3856 deployment doc                                               | A fresh browser unpacks a ROM on the live site and loads a save                         |
+| Deploy the #3860 build to zelda.phatt.vip; drop the oot.o2r workaround from the #3856 deployment doc                                               | A fresh browser unpacks a ROM on the live site and loads a save                         |
 | King Dodongo boss sync: bomb-inhale request from the thrower, sync of his private fire-breath effects, phase-gated like Gohma (spec in the Notebook doc) | Two players beat him together; either player's bomb stuns him                           |
 | Release effect for grabbing enemies, so Dead Hand and Moblin can target players other than the host                                                      | A non-host player is grabbed and released correctly in Bottom of the Well               |
 | Windows desktop build: fork bghill95/OOT-True-Co-op, apply patches 1–7, let generate-builds.yml produce artifacts                                        | A Windows player joins a browser player's room                                          |

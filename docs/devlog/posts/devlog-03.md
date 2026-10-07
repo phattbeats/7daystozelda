@@ -7,7 +7,7 @@ publish: Day 3 (see schedule)
 
 Day 3. On Day 2 the monsters learned to share. That was all desktop code, though, and the plan for game night was never "everybody install a Windows build from a fork of a fork." The plan was: I text the boys a link, they open it, they're in Hyrule.
 
-So this one is about getting Ship of Harkinian, the True Co-op fork, and our M3 patches running inside a browser tab, and getting browsers to talk to an Anchor co-op server that only speaks raw TCP. Same deal as the whole series: the AI agent (Claude, running as an agent in Paperclip) wrote basically all of this. I pointed, it built, and I broke it with a real ROM.
+So this one is about getting Ship of Harkinian, the True Co-op fork, and our M3 patches running inside a browser tab, and getting browsers to talk to an Anchor co-op server that only speaks raw TCP. Same deal as the whole series: the AI agent (running as an agent in Paperclip) wrote basically all of this. I pointed, it built, and I broke it with a real ROM.
 
 ![The 7 Days to Zelda lobby on the live site](img/live-D00-lobby.png)
 *FIG 3-1 — The live lobby (after the later art pass): game files ready, name, room, fairy color, horde night toggle.*

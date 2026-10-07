@@ -33,7 +33,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * King Dodongo (PHA-4047), the Gohma treatment.
+ * King Dodongo (#4047), the Gohma treatment.
  *
  * Phases come from fields: health (his own s16, not colChkInfo) and unk_1BC,
  * which is non-zero while a cutscene owns him. The intro runs on every client
@@ -321,7 +321,7 @@ extern "C" s32 Anchor_KingDodongoDefeatPending(Actor* actor) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4047 boss rig. Reports King Dodongo's sync state on this client:
+// #4047 boss rig. Reports King Dodongo's sync state on this client:
 // cmd 0 report only; 1 spawn a lit bomb in his mouth (what a thrown bomb does
 // while he inhales); 2 land a Kokiri Sword hit on his head sphere the way the
 // collision check would; 3 make the host's copy inhale now; 4 set his health

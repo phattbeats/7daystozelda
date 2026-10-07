@@ -585,7 +585,7 @@ void EnDh_Draw(Actor* thisx, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// ---- Co-op mirroring (#4055) -------------------------------------------------
 // The mirror's copy never runs Update, so it adopts the host's action (and with it
 // a valid actionFunc, in case the stream stops and the local AI takes over).
 

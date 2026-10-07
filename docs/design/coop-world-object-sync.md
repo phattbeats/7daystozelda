@@ -1,4 +1,4 @@
-# Co-op world-object sync (PHA-4044)
+# Co-op world-object sync (#4044)
 
 Every client runs its own copy of every actor. What a partner sees depends on whether the
 object has a flag (switch, chest, collectible, Gold Skulltula), which Anchor syncs, and on
@@ -12,7 +12,7 @@ Rules:
 - **mirror**: one client drives it and the others follow a position stream. This applies to
   enemies, cuccos and push blocks, not to anything here.
 
-"Before" means main at 5209aac (PHA-4042); "after" means PHA-4044.
+"Before" means main at 5209aac (#4042); "after" means #4044.
 
 | Actor class | Rule | What the partner saw before | Now |
 |---|---|---|---|

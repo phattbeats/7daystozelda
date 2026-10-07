@@ -1,4 +1,4 @@
-# PHA-3863: [Brandon/host] 7DtZ web: rebuild with a bigger audio buffer to fix laggy audio (PHA-3860)
+# #3863: [Brandon/host] 7DtZ web: rebuild with a bigger audio buffer to fix laggy audio (#3860)
 
 Status at export (2026-10-03): done
 

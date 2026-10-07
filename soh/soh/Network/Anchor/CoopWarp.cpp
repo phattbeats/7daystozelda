@@ -39,7 +39,7 @@ constexpr auto WARP_EXPIRY = std::chrono::seconds(30);
 // cutsceneIndex (z_play.c:443). Writing cutsceneIndex here would make the scene we
 // are leaving start a cutscene on the next frame (Cutscene_UpdateAuto runs whenever it
 // is >= 0xFFF0) and run that scene's stale csCtx.segment script: the host tab crashed
-// when a teammate's save load pulled it out of Deku Tree B2 (PHA-4030).
+// when a teammate's save load pulled it out of Deku Tree B2 (#4030).
 void ExecuteEntranceWarp(const PendingWarp& w) {
     if (w.cutsceneIndex >= 0) {
         gSaveContext.nextCutsceneIndex = (u16)w.cutsceneIndex;
@@ -146,7 +146,7 @@ void RegisterCoopWarpHooks(bool isConnected) {
 #include <emscripten.h>
 extern "C" {
 
-// PHA-4030 tests: queue the same pull warp a CUTSCENE_SYNC packet queues.
+// #4030 tests: queue the same pull warp a CUTSCENE_SYNC packet queues.
 EMSCRIPTEN_KEEPALIVE
 void anchor_test_coop_warp(int entrance, int cutsceneIndex) {
     RequestEntranceWarp((s16)entrance, cutsceneIndex);

@@ -132,7 +132,7 @@ void RegisterGohmaAdapter() {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4046 rig. Reports Gohma's sync state and every Door_Warp1 / Item_B_Heart position
+// #4046 rig. Reports Gohma's sync state and every Door_Warp1 / Item_B_Heart position
 // on this client. cmd 1: start the defeat sequence here (host), as the killing blow does;
 // cmd 3: stand it near the room's centre (arg = x offset), where the warp spot is re-rolled;
 // cmd 2: end the intro's wait for the player to look at Gohma.

@@ -170,7 +170,7 @@ u16 ElfMessage_GetSariaText(PlayState* play) {
     return ElfMessage_GetTextFromMsgs(msgs);
 }
 
-u16 SevenDays_CUpText(u16 vanilla); // PHA-3935: 7 Days to Zelda's tips (Placeables.cpp)
+u16 SevenDays_CUpText(u16 vanilla); // #3935: 7 Days to Zelda's tips (Placeables.cpp)
 
 u16 ElfMessage_GetCUpText(PlayState* play) {
     if (play->cUpElfMsgs == NULL) {

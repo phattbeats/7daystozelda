@@ -1,4 +1,4 @@
-# PHA-3914: 7DTZ devlog. posts on ghost throughout the week
+# #3914: 7DTZ devlog. posts on ghost throughout the week
 
 Status at export (2026-10-03): in_review
 

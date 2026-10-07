@@ -1,4 +1,4 @@
-# PHA-4060 trailer fort v2: radius-600 octagon, gatehouse, 2-storey corner towers (piece list only)
+# #4060 trailer fort v2: radius-600 octagon, gatehouse, 2-storey corner towers (piece list only)
 import math
 CX, CZ, A_ = 150.0, 2000.0, 600.0
 T = dict(barricade=0, spikes=1, workbench=2, chest=3, scarecrow=5, guardbaba=6, torch=7, stonewall=8, bombtrap=9,

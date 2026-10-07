@@ -11,7 +11,7 @@ Four days in, and so far this series has been netcode, Emscripten and crash dump
 
 Quick recap: 7DtZ is browser Ocarina co-op with a 7 Days to Die layer on top. You play the actual story and the raids come to you. Players bring their own legally dumped ROM; nothing from Nintendo is shipped.
 
-Same disclaimer as always: an AI agent (Claude, running through Paperclip) wrote nearly all of this code. I wrote the design calls, played what I could, and kept saying "send me screenshots". A lot of the "play-testing" below was an agent driving headed Chrome with scripted input and test shortcuts. I'll flag those as we go.
+Same disclaimer as always: an AI agent (running through Paperclip) wrote nearly all of this code. I wrote the design calls, played what I could, and kept saying "send me screenshots". A lot of the "play-testing" below was an agent driving headed Chrome with scripted input and test shortcuts. I'll flag those as we go.
 
 ![The loop](diagrams/devlog-05-loop.svg)
 *FIG 5-1 — The whole game on one page. Every system below plugs into one of these boxes.*

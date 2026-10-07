@@ -1,8 +1,8 @@
-# PHA-3935: 7DtZ spec gaps: dead-end kits, era-jump ruins, Hammer/Silver/Hookshot tiers, repair, torch, town hiding
+# #3935: 7DtZ spec gaps: dead-end kits, era-jump ruins, Hammer/Silver/Hookshot tiers, repair, torch, town hiding
 
 Status (2026-10-03): all 12 items are shipped and checked in the game (local build). Nothing is deployed to zelda.phatt.vip yet.
 
-Gaps found in the 2026-10-03 review against the PHA-3870 spec and M9.
+Gaps found in the 2026-10-03 review against the #3870 spec and M9.
 
 ## Shipped
 

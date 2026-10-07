@@ -13,7 +13,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Floormaster (EN_FLOORMAS, PHA-4045).
+ * Floormaster (EN_FLOORMAS, #4045).
  *
  * One Floormaster is three actors from the start: the big hand spawns two
  * hidden small hands in its Init and links all three into a parent/child ring.

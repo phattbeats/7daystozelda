@@ -12,7 +12,7 @@ Everything needed to reproduce `public/` from upstream code.
   4. Web build (WebAssembly + Anchor over WebSocket)
   5. Web lobby UI, extraction fix, settings persistence, connection resilience
   6. Web mobile pass (ROM import, install, touch/controller, app-switch handoff)
-  7. Fix in-browser ROM extraction and the WebGL texture-table overflow (PHA-3860)
+  7. Fix in-browser ROM extraction and the WebGL texture-table overflow (#3860)
   8. Web audio: deeper buffers, underrun recovery
 - `libultraship/`, `ZAPDTR/`, `OTRExporter/` — patches on each submodule's pinned commit (zalo/shipwright-64's Emscripten commits, conflicts resolved for these versions).
 

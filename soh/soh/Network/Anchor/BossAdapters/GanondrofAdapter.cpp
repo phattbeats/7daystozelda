@@ -27,7 +27,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Phantom Ganon (PHA-4049), the Gohma treatment. One tracked boss: BOSS_GANONDROF
+ * Phantom Ganon (#4049), the Gohma treatment. One tracked boss: BOSS_GANONDROF
  * (params 1). Its horse, EN_FHG (ACTORCAT_BG, so never tracked), is the boss's child
  * and runs the intro cutscene and the painting phase; the adapter streams the horse
  * inside the boss's extras.
@@ -501,7 +501,7 @@ extern "C" void Anchor_GanondrofSpawned(Actor* spawned) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4049 boss rig. Reports Phantom Ganon's sync state on this client:
+// #4049 boss rig. Reports Phantom Ganon's sync state on this client:
 // cmd 0 report only; 1 land a sword hit on the body collider the way the collision
 // check would; 2 set the boss health to arg (authority); 3 un-clear this room;
 // 4 teleport Link to (arg, 100, 0); 5 hit the energy ball with a sword (mirror or

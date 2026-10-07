@@ -6,7 +6,7 @@
 
 // Uses the Player struct (from z64player.h)
 
-// Co-op mirroring (PHA-4055): the file statics Draw and the defeat read.
+// Co-op mirroring (#4055): the file statics Draw and the defeat read.
 s32 EnTorch2_MirrorGetState(void);
 s32 EnTorch2_MirrorGetAlpha(void);
 s32 EnTorch2_MirrorGetCounter(void);

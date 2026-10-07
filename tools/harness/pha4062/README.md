@@ -1,9 +1,9 @@
-# PHA-4062 rig: display-list overflow and large-base tests
+# #4062 rig: display-list overflow and large-base tests
 
 Scripts that reproduced the stock-build crash and measured the fix. Paths are hardcoded to `/tmp/z4062`
 (copy the directory there as `t/`, plus the relay binary in `t/anchor/`, four Chrome profiles
 `t/prof-A..E`, and a build served from `/tmp/z4062/<serve-dir>`). Chrome libs come from
-`/tmp/vlibs4055/gpu-env.sh` (see `tools/harness/pha4055`). The profiles are copies of the PHA-4060 saves
+`/tmp/vlibs4055/gpu-env.sh` (see `tools/harness/pha4055`). The profiles are copies of the #4060 saves
 (`tools/trailer/pha4060/rig`): four adult Links in Hyrule Field, room `trailer`.
 
 | Script | What it does |
@@ -11,7 +11,7 @@ Scripts that reproduced the stock-build crash and measured the fix. Paths are ha
 | `up.sh`, `down.py`, `restart.sh <serve>` | start/stop relay, `web/server.js`, four `playd-gpu.py` daemons; `restart.sh` also clears Chrome's cache (a stale `soh.wasm` fooled the first 256 run) and joins A, then B/C/D |
 | `x.py <A-D> 'code'` / `-f file` | run Python inside a client's page with the `h.py` helpers |
 | `h.py`, `gfx.py` | helpers; `GFX('')`, `GFX('reset')`, `GFX('force:N')` read/clear/force the pool counters (`sevendays_test_gfx`) |
-| `fortbuild.py` | the 94-piece PHA-4060 fort (fort2) |
+| `fortbuild.py` | the 94-piece #4060 fort (fort2) |
 | `fortbuildn.py` (`N`, `KIND` = mixed/heavy, `CAP`) | N pieces in rings inside BASE_RADIUS; prints placed count, dyna lists and the owner's refusal reasons |
 | `spawn24.py` | 24 ReDeads/Gibdos round the base (host side) |
 | `pressure.sh <scale> <raiders/24> <drawdist> <shrink>` | raiders, draw distance, posts, 40 s crash watch, then 30 s of fps/pool/memory per client |

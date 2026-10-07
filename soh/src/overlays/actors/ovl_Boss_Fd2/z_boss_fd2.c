@@ -79,7 +79,7 @@ static InitChainEntry sInitChain[] = {
 };
 
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
-// PHA-4050: soh/Network/Anchor/EnemyTargeting.cpp
+// #4050: soh/Network/Anchor/EnemyTargeting.cpp
 Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
 #endif
 

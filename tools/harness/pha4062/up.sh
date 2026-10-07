@@ -1,5 +1,5 @@
 #!/bin/bash
-# PHA-4060 capture rig: relay :43460, server :18471 (origin of the copied saves), sink :19460, daemons A..D :19461-19464
+# #4060 capture rig: relay :43460, server :18471 (origin of the copied saves), sink :19460, daemons A..D :19461-19464
 D=/tmp/z4062/t
 cd $D/anchor && (setsid ./anchor > $D/anchor.log 2>&1 < /dev/null &)
 (PORT=18471 ANCHOR_HOST=127.0.0.1 ANCHOR_PORT=43460 PUBLIC_DIR=$D/serve setsid node /tmp/z4055/web/server.js > $D/server.log 2>&1 < /dev/null &)

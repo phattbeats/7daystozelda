@@ -22,7 +22,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Ganondorf (PHA-4054), the Gohma treatment. Boss_Ganon is one actor id with three kinds
+ * Ganondorf (#4054), the Gohma treatment. Boss_Ganon is one actor id with three kinds
  * of actor, told apart by params:
  *   < 0x64     Ganondorf himself (the room places him with params 0xFFFF, which the game
  *              reads as -1; params 1 is the copy the tower-collapse cutscene uses: untracked)
@@ -538,7 +538,7 @@ extern "C" void Anchor_GanondorfBallReachedDorf(Actor* dorf) {
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 extern "C" {
-// PHA-4054 boss rig. Reports Ganondorf's sync state on this client:
+// #4054 boss rig. Reports Ganondorf's sync state on this client:
 // cmd 0 report only; 1 land a sword hit on the body collider the way the collision check
 // would (arg = dmgFlags, default sword); 2 set the boss health to arg (authority);
 // 3 un-clear this room; 4 teleport Link to (arg, 100, 0); 5 hit the tennis ball with a sword;

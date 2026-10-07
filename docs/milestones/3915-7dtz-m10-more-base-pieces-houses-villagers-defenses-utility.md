@@ -1,14 +1,14 @@
-# PHA-3915: 7DtZ M10: more base pieces: houses, villagers, defenses, utility
+# #3915: 7DtZ M10: more base pieces: houses, villagers, defenses, utility
 
 Status at export (2026-10-03): done
 
-Brandon asked on PHA-3870 (2026-10-03): "any other crafting or base items we could add? like maybe village houses or something?" This is the candidate list. Brandon picks which ones to build; the rest get cut.
+Brandon asked on #3870 (2026-10-03): "any other crafting or base items we could add? like maybe village houses or something?" This is the candidate list. Brandon picks which ones to build; the rest get cut.
 
 **Limits that apply to every piece.** A base holds at most about 24 pieces, because of the scene's dynamic-collision budget. Art comes from Ocarina of Time or Majora's Mask models only. Each piece is a new ActorDB placeable like the M5 pieces. OoT's houses are part of each scene's ground mesh, not separate models. A "house" would therefore be assembled from existing pieces (crates, fences, signs, roof planks) or reuse a standalone model such as a tent or hut, if the ROM has one that fits.
 
 **Shelter and village**
 - **Hut / house.** A respawn point for the base after a game-over, and it stops raid damage to anything inside it. Each house gives the base +1 villager slot.
-- **Villagers.** Rescued NPCs (refugee Kokiri, Kakariko carpenters) move into houses. Each gives a small material trickle at dawn and has a line about the last raid. Villagers hide indoors on raid nights. This ties in with PHA-3913.
+- **Villagers.** Rescued NPCs (refugee Kokiri, Kakariko carpenters) move into houses. Each gives a small material trickle at dawn and has a line about the last raid. Villagers hide indoors on raid nights. This ties in with #3913.
 - **Bed / campfire.** On a non-raid night, everyone sleeps to dawn, like the Sun's Song. Also heals a little.
 - **Flag in your tunic color.** Marks the base on the map. Each player can plant one.
 

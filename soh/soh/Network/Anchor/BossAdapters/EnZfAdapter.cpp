@@ -13,7 +13,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Lizalfos and Dinolfos (EN_ZF, PHA-4055): the lone Lizalfos, the miniboss pair
+ * Lizalfos and Dinolfos (EN_ZF, #4055): the lone Lizalfos, the miniboss pair
  * (types 0 and 1, tag-teaming) and the Dinolfos.
  *
  * Pose, joints, health and the sword quad stream generically. What a suppressed

@@ -439,7 +439,7 @@ const char* anchor_test_colors() {
                                { "y", elf->actor.world.pos.y },
                                { "z", elf->actor.world.pos.z } };
             }
-            // PHA-4021: whether our own Navi can hover over (and chime at) this player's puppet.
+            // #4021: whether our own Navi can hover over (and chime at) this player's puppet.
             if (client.player != nullptr && client.player->actor.update != NULL && gPlayState != nullptr) {
                 c["puppetAttention"] = (client.player->actor.flags & ACTOR_FLAG_ATTENTION_ENABLED) != 0;
                 c["naviHovering"] = gPlayState->actorCtx.targetCtx.arrowPointedActor == &client.player->actor;

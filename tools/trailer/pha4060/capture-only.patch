@@ -14,7 +14,7 @@
  }
  
  s32 sOOBTimer = 0;
-+// PHA-4060 trailer capture build only: a scripted main camera. Mode 1 flies from
++// #4060 trailer capture build only: a scripted main camera. Mode 1 flies from
 +// eye0/at0 to eye1/at1 in world space, mode 2 does the same relative to Link,
 +// mode 3 orbits at0..at1 with eye = (angle deg, height, radius). Eased over n frames.
 +s32 gTrailerCamMode = 0;
@@ -89,7 +89,7 @@
                                  gCounterDigit2Tex, gCounterDigit3Tex, gCounterDigit4Tex, gCounterDigit5Tex,
                                  gCounterDigit6Tex, gCounterDigit7Tex, gCounterDigit8Tex };
  
-+extern s32 gTrailerHideHud; // z_camera.c, PHA-4060 capture build
++extern s32 gTrailerHideHud; // z_camera.c, #4060 capture build
 +
  void Interface_Draw(PlayState* play) {
 +    if (gTrailerHideHud) {
@@ -108,7 +108,7 @@
 -    THGA_Ct(&gfxCtx->polyXlu, pool->polyXluBuffer, sizeof(pool->polyXluBuffer));
 -    THGA_Ct(&gfxCtx->overlay, pool->overlayBuffer, sizeof(pool->overlayBuffer));
 -    THGA_Ct(&gfxCtx->work, pool->workBuffer, sizeof(pool->workBuffer));
-+    // PHA-4060 capture build: 4x display-list pools. A full 94-piece base plus a raid
++    // #4060 capture build: 4x display-list pools. A full 94-piece base plus a raid
 +    // overran the stock POLY_OPA buffer ("Unhandled OP code" then a renderer SEGV).
 +    static Gfx sTrailerOpa[2][0x2FC0 * 4];
 +    static Gfx sTrailerXlu[2][0x1000 * 4];
@@ -137,7 +137,7 @@
  }
  
  // Draw all the name tags by leveraging a system heap buffer for majority of the graphics commands
-+extern "C" int32_t gTrailerHideHud; // z_camera.c, PHA-4060 capture build
++extern "C" int32_t gTrailerHideHud; // z_camera.c, #4060 capture build
 +
  void DrawNameTags() {
 +    if (gTrailerHideHud) {
@@ -152,7 +152,7 @@
  static uint32_t nextId = 0;
  static std::vector<Options> notifications = {};
  
-+extern "C" int32_t gTrailerHideHud; // z_camera.c, PHA-4060 capture build
++extern "C" int32_t gTrailerHideHud; // z_camera.c, #4060 capture build
 +
  void Window::Draw() {
 +    if (gTrailerHideHud) {
@@ -167,7 +167,7 @@
  extern f32 gSevenDaysMoonScale; // z_kankyo.c: Environment_DrawSunAndMoon
  extern u8 gSevenDaysMoonRed;
  extern s16 gSevenDaysTint[3][3]; // z_kankyo.c: Environment_Update, added to the adj colors
-+extern s32 gTrailerHideHud; // z_camera.c, PHA-4060 capture build: 1 hides all overlays, 2 keeps the day card, 3 keeps notices
++extern s32 gTrailerHideHud; // z_camera.c, #4060 capture build: 1 hides all overlays, 2 keeps the day card, 3 keeps notices
  }
  
  #include "textures/message_static/message_static.h"
@@ -201,7 +201,7 @@
  // raid buys at 1x gamestage, the third on at the spec's 1.5x.
  static int32_t WaveBudget(int32_t gamestage, int32_t raidNo, bool prologue) {
 +    if (int32_t trailer = CVarGetInteger(CVAR_SEVEN_DAYS("TrailerBudget"), 0); trailer > 0) {
-+        return trailer; // PHA-4060 capture build: a bigger wave for the trailer
++        return trailer; // #4060 capture build: a bigger wave for the trailer
 +    }
      if (prologue) {
          return 2 + CountReadyPlayers();
@@ -211,7 +211,7 @@
          gPlayState->transitionType = TRANS_TYPE_FADE_BLACK;
          gSaveContext.nextCutsceneIndex = 0xFFEF; // no entrance cutscene
 +    } else if (cmd.rfind("story:", 0) == 0) {
-+        // PHA-4060 capture build: skip the prologue (e.g. "story:12" = Gohma dead, first raid done).
++        // #4060 capture build: skip the prologue (e.g. "story:12" = Gohma dead, first raid done).
 +        Net::MutableBase().story |= (uint32_t)std::stoul(cmd.substr(6));
 +        Net::CommitBase();
      } else if (cmd.rfind("raids:", 0) == 0) {
@@ -224,7 +224,7 @@
                         "stairs, doors)";
      placeable.category = ACTORCAT_BG;
 -    placeable.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED;
-+    // PHA-4060 capture build: wide trailer shots draw the whole base.
++    // #4060 capture build: wide trailer shots draw the whole base.
 +    placeable.flags = ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED;
      placeable.objectId = OBJECT_GAMEPLAY_KEEP;
      placeable.instanceSize = sizeof(PlaceableActor);
@@ -236,7 +236,7 @@
          return;
      }
 +    if (CVarGetInteger(CVAR_SEVEN_DAYS("TrailerQuiet"), 0)) {
-+        sPendingNavi.clear(); // PHA-4060 capture build: no Navi lines over trailer shots
++        sPendingNavi.clear(); // #4060 capture build: no Navi lines over trailer shots
 +        return;
 +    }
      Player* player = GET_PLAYER(gPlayState);

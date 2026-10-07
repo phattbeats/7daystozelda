@@ -13,7 +13,7 @@ extern PlayState* gPlayState;
 }
 
 /**
- * Iron Knuckle (EN_IK, PHA-4055): the Spirit Temple Nabooru fight (params 0) and
+ * Iron Knuckle (EN_IK, #4055): the Spirit Temple Nabooru fight (params 0) and
  * the armoured knuckles (params 1-3) in the temple and the castle.
  *
  * Pose, health and the axe quad come from generic mirroring, and the shield's

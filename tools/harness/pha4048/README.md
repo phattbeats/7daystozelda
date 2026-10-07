@@ -1,4 +1,4 @@
-# Barinade test scripts (PHA-4048)
+# Barinade test scripts (#4048)
 
 Same rig as `../pha4047` (relay, `web/server.js`, two GPU Chromes, `drv.py`,
 `up.sh`, `join.py`). These files replace the King Dodongo loader:

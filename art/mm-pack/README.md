@@ -8,7 +8,7 @@
 | `kgy/gMMSmithyHammerDL` | Workbench | Gabora's hammer, Mountain Village smithy |
 | `kgy/gMMSmithyBladeDL` | Workbench | Red-hot sword blank, same object |
 | `gMMInnDeskDL` | Workbench (scaled 1.8x) | Stock Pot Inn room 3 desk, cut from the room mesh |
-| `taru/gMMPiratePanelDL` | Plank floor, wooden step (PHA-3945) | Pirates' Fortress breakable panel (object_taru) |
+| `taru/gMMPiratePanelDL` | Plank floor, wooden step (#3945) | Pirates' Fortress breakable panel (object_taru) |
 | `gMMRanchPlankDL` | Ranch floor (three planks) | A plank in the Romani Ranch house, room 1, cut from the room mesh |
 | `raillift/gMMStonePlatformDL` | Stone platform | Woodfall Temple moving platform (object_raillift) |
 | `tokei_turret/gMMFestivalDeckDL` | Festival deck | Top of the Clock Town carnival tower (object_tokei_turret) |

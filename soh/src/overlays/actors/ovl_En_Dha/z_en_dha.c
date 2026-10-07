@@ -467,7 +467,7 @@ void EnDha_Draw(Actor* thisx, PlayState* play) {
     SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnDha_OverrideLimbDraw, EnDha_PostLimbDraw, this);
 }
 
-// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// ---- Co-op mirroring (#4055) -------------------------------------------------
 
 static EnDhaActionFunc sMirrorActions[] = {
     EnDha_Wait,       // 0

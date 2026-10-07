@@ -46,7 +46,7 @@ typedef struct EnFw {
     /* 0x02A0 */ EnFwEffect effects[20];
 } EnFw; // size = 0x0700
 
-// Co-op mirroring (PHA-4055)
+// Co-op mirroring (#4055)
 s32 EnFw_MirrorGetAction(EnFw* en);
 void EnFw_MirrorApplyAction(EnFw* en, s32 action);
 s32 EnFw_MirrorGetAnim(EnFw* en);

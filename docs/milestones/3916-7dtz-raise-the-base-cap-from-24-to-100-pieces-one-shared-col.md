@@ -1,8 +1,8 @@
-# PHA-3916: 7DtZ: raise the base cap from 24 to 100+ pieces (one shared collision actor, bigger dyna budget)
+# #3916: 7DtZ: raise the base cap from 24 to 100+ pieces (one shared collision actor, bigger dyna budget)
 
 Status at export (2026-10-03): in_review
 
-Brandon on PHA-3870 (2026-10-03): "can we up the dynamic budget? 24 pieces is not much at all".
+Brandon on #3870 (2026-10-03): "can we up the dynamic budget? 24 pieces is not much at all".
 
 **What limits the cap today** (tree 4cf67f7)
 - `BASE_CAP = 24` (SevenDays.h:174) is our own safety margin. The engine does not impose it.

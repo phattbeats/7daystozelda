@@ -953,7 +953,7 @@ void EnFd_DrawDots(EnFd* this, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// ---- Co-op mirroring (#4055) -------------------------------------------------
 // The dancer's body is hidden while its action is EnFd_Reappear (the Init state), and
 // its fire and flame particles are aged only by Update, so a suppressed mirror needs
 // the action, the animation and a per-frame tick of its own.

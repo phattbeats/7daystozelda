@@ -10,7 +10,7 @@ publish: Day 1
 
 This is the first of seven devlogs, one for each day of the week, about a thing my friends and I have been calling **7 Days to Zelda**: Ocarina of Time, co-op, with the dead coming for your base every few nights. Seven days, seven posts. It felt right.
 
-Quick honesty up front, because it matters for the whole series: most of the code was written by AI agents (Claude, running through my Paperclip setup). I pitched it, made the design calls, played it, filed the angry bug reports, and fixed a few things myself (you'll get those stories on Day 4). Where "testing" meant an agent driving a browser with scripted inputs instead of a human with a controller, I'll say so.
+Quick honesty up front, because it matters for the whole series: most of the code was written by AI agents (running through my Paperclip setup). I pitched it, made the design calls, played it, filed the angry bug reports, and fixed a few things myself (you'll get those stories on Day 4). Where "testing" meant an agent driving a browser with scripted inputs instead of a human with a controller, I'll say so.
 
 ## 1. The pitch
 
@@ -89,7 +89,7 @@ The same doc found the other piece of plumbing: the Anchor relay server ships as
 
 ## 4. The design decisions
 
-The agents started on netcode right away (Day 2), but by 2026-10-02 there was enough working that I had to decide what the game actually *is*. That became the spec in PHA-3870, and its "Design decisions" section opens with a line I like: where anything below differs, this section wins.
+The agents started on netcode right away (Day 2), but by 2026-10-02 there was enough working that I had to decide what the game actually *is*. That became the spec in #3870, and its "Design decisions" section opens with a line I like: where anything below differs, this section wins.
 
 ### 4.1 The story, with raids added
 

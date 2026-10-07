@@ -141,7 +141,7 @@ static ColliderQuadInit sSwordQuadInit = {
         AT_ON | AT_TYPE_ENEMY,
         // The vanilla AI only ever submits this quad as AT, never AC, so the AC bits
         // do nothing there. Co-op mirrors stream the on-bits and a quad with AC_ON would
-        // be submitted as a hard, sword-bouncing hurtbox (PHA-4055).
+        // be submitted as a hard, sword-bouncing hurtbox (#4055).
         AC_NONE,
         OC1_NONE,
         OC2_NONE,
@@ -2435,7 +2435,7 @@ void EnZf_Reset(void) {
     D_80B4A1B0 = 0;
     D_80B4A1B4 = 1;
 }
-// ---- Co-op mirroring (PHA-4055) -------------------------------------------------
+// ---- Co-op mirroring (#4055) -------------------------------------------------
 
 // The mirror's copy never runs Update, so the action number is only a record of
 // the host's; the real state machine starts from a sane action when it resumes.

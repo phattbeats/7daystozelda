@@ -10,11 +10,11 @@
 <line x1="450" y1="90" x2="470" y2="90"/><line x1="600" y1="90" x2="620" y2="90"/>
 </g>
 <g fill="#1b2440">
-<text x="30" y="82">M4 PHA-3871</text><text x="30" y="102" font-size="11">materials, craft</text>
-<text x="180" y="82">M5 PHA-3872</text><text x="180" y="102" font-size="11">placeables, save</text>
-<text x="330" y="82">M6 PHA-3873</text><text x="330" y="102" font-size="11">raids</text>
-<text x="480" y="82">M7 PHA-3874</text><text x="480" y="102" font-size="11">loot, nights</text>
-<text x="630" y="82">M8 PHA-3875</text><text x="630" y="102" font-size="11">tuning (needs</text><text x="630" y="115" font-size="11">real nights)</text>
+<text x="30" y="82">M4 #3871</text><text x="30" y="102" font-size="11">materials, craft</text>
+<text x="180" y="82">M5 #3872</text><text x="180" y="102" font-size="11">placeables, save</text>
+<text x="330" y="82">M6 #3873</text><text x="330" y="102" font-size="11">raids</text>
+<text x="480" y="82">M7 #3874</text><text x="480" y="102" font-size="11">loot, nights</text>
+<text x="630" y="82">M8 #3875</text><text x="630" y="102" font-size="11">tuning (needs</text><text x="630" y="115" font-size="11">real nights)</text>
 </g>
 <text x="20" y="155" fill="#1b2440">EACH MILESTONE CLOSES ONLY AFTER:</text>
 <g fill="none" stroke="#1b2440" stroke-width="1.5">
@@ -32,5 +32,5 @@
 <text x="410" y="244" font-size="11" fill="#1b2440">"test with the live game for each stage"</text>
 <text x="410" y="258" font-size="11" fill="#1b2440">  (Brandon, 2026-10-02 04:02)</text>
 <text x="20" y="290" font-size="11" fill="#1b2440">Compile alone or headless webtest alone does NOT close a milestone.</text>
-<text x="20" y="306" font-size="11" fill="#1b2440">Side issues in parallel: PHA-3901 colors, PHA-3904 OoT art, PHA-3906 logo, PHA-3902 GPU. Next: PHA-3913 M9.</text>
+<text x="20" y="306" font-size="11" fill="#1b2440">Side issues in parallel: #3901 colors, #3904 OoT art, #3906 logo, #3902 GPU. Next: #3913 M9.</text>
 </svg>
