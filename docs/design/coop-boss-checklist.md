@@ -53,9 +53,6 @@ in a two-client live test, with screenshots and logs. The rig is in
 | Morpha | PHA-4051 | **Done**, see below |
 | Bongo Bongo | PHA-4052 | Not started |
 | Twinrova | PHA-4053 | **Done**, see below |
-| Ganondorf and Ganon | PHA-4054 | Not started |
-
-| Twinrova | PHA-4053 | Not started |
 | Ganondorf and Ganon | PHA-4054 | **Done**, see below |
 | Minibosses (Dark Link, Iron Knuckle, Dead Hand, Big Octo, Flare Dancer, Stalfos, Lizalfos) | PHA-4055 | See the miniboss section below |
 
