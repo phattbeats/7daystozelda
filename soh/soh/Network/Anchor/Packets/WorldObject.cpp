@@ -201,6 +201,11 @@ void Anchor::HandlePacket_WorldObject(nlohmann::json payload) {
 
     if (payload["kind"].get<std::string>() == "bossspot" && gPlayState->sceneNum == SCENE_DEKU_TREE_BOSS &&
         CVarGetInteger("gRemote.Anchor.BossSpotSync", 1)) {
+        // Only the elected authority decides where the warp lands; a spot from any other peer is ignored.
+        if (!payload.contains("clientId") || !payload.contains("actorId") || !payload.contains("pos") ||
+            payload["clientId"].get<uint32_t>() != EnemySync::CurrentAuthorityId()) {
+            return;
+        }
         s16 actorId = payload["actorId"].get<s16>();
         if (actorId != ACTOR_DOOR_WARP1 && actorId != ACTOR_ITEM_B_HEART) {
             return;

@@ -330,6 +330,7 @@ wss.on("connection", (ws, req) => {
       chunks = [];
       chunkBytes = 0;
       start = idx + 1;
+      if (ownId === null && packet.includes('"ALL_CLIENT_STATE"')) learnOwnId(packet);
       if (packet.length && ws.readyState === ws.OPEN) ws.send(packet.toString("utf8"));
     }
     if (start < chunk.length) {
@@ -339,12 +340,28 @@ wss.on("connection", (ws, req) => {
     }
   });
 
-  // Browser -> Anchor: append the NUL terminator Anchor expects.
-  ws.on("message", (data, isBinary) => {
-    alive = true;
-    const body = Buffer.isBuffer(data) ? data : Buffer.from(isBinary ? data : String(data));
-    // A NUL inside a packet would split it into garbage on the Anchor side.
-    if (body.indexOf(0) !== -1) return;
+  // The relay trusts the clientId inside each payload, so a browser could pose as another
+  // player (or as the enemy authority). The relay tells each connection its own id in
+  // ALL_CLIENT_STATE (the entry flagged "self"); every later packet from this browser
+  // is stamped with that id. Only the join packet goes out before the id is known;
+  // anything sent after it waits in heldForId until the id arrives.
+  let ownId = null;
+  let sentJoin = false;
+  const heldForId = [];
+  let heldBytes = 0;
+
+  const learnOwnId = (packet) => {
+    try {
+      const msg = JSON.parse(packet.toString("utf8"));
+      const me = Array.isArray(msg.state) ? msg.state.find((c) => c && c.self === true) : null;
+      if (!me || !Number.isSafeInteger(me.clientId)) return;
+      ownId = me.clientId;
+      for (const held of heldForId.splice(0)) forward(held);
+      heldBytes = 0;
+    } catch {}
+  };
+
+  const writeFramed = (body) => {
     const framed = Buffer.concat([body, Buffer.from([0])]);
     if (tcpReady) {
       tcp.write(framed);
@@ -353,6 +370,38 @@ wss.on("connection", (ws, req) => {
       if (pendingBytes > MAX_PACKET) return closeBoth(1013, "anchor not reachable");
       pendingToTcp.push(framed);
     }
+  };
+
+  const forward = (body) => {
+    let msg;
+    try {
+      msg = JSON.parse(body.toString("utf8"));
+    } catch {
+      return; // not JSON: the relay couldn't use it either
+    }
+    if (msg === null || typeof msg !== "object" || Array.isArray(msg)) return;
+    if (msg.clientId === ownId) return writeFramed(body);
+    msg.clientId = ownId;
+    writeFramed(Buffer.from(JSON.stringify(msg)));
+  };
+
+  // Browser -> Anchor: append the NUL terminator Anchor expects.
+  ws.on("message", (data, isBinary) => {
+    alive = true;
+    const body = Buffer.isBuffer(data) ? data : Buffer.from(isBinary ? data : String(data));
+    // A NUL inside a packet would split it into garbage on the Anchor side.
+    if (body.indexOf(0) !== -1) return;
+    if (!sentJoin) {
+      sentJoin = true;
+      return writeFramed(body);
+    }
+    if (ownId === null) {
+      heldBytes += body.length;
+      if (heldBytes > MAX_PACKET) return closeBoth(1013, "no client id from relay");
+      heldForId.push(body);
+      return;
+    }
+    forward(body);
   });
 
   tcp.on("error", (err) => {
