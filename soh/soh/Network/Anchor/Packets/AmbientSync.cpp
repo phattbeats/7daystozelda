@@ -287,6 +287,15 @@ void RestoreCull(Actor* actor, Ambient& st) {
     st.cullForced = false;
 }
 
+// A hard mirror switches the actor's Z-target flag off; put it back when the mirror
+// stretch ends by any route (partner released, partner left, sync turned off).
+void RestoreAttention(Actor* actor, Ambient& st) {
+    if (st.hadAttention) {
+        actor->flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+    }
+    st.hadAttention = false;
+}
+
 void Reset() {
     sTracked.clear();
     sByKey.clear();
@@ -328,7 +337,12 @@ void OnInit(Actor* actor) {
 
 void OnShouldUpdate(Actor* actor, bool* should) {
     auto it = sTracked.find(actor);
-    if (it == sTracked.end() || !SyncEnabled()) {
+    if (it == sTracked.end()) {
+        return;
+    }
+    if (!SyncEnabled()) {
+        RestoreAttention(actor, it->second);
+        it->second.mode = MODE_LOCAL;
         return;
     }
     Ambient& st = it->second;
@@ -345,9 +359,7 @@ void OnShouldUpdate(Actor* actor, bool* should) {
         ApplyPose(actor, st, *FreshRemote(st));
         *should = false;
     } else if (prev == MODE_HARD) {
-        if (st.hadAttention) {
-            actor->flags |= ACTOR_FLAG_ATTENTION_ENABLED;
-        }
+        RestoreAttention(actor, st);
         ResumeLocal(actor);
     }
 }
@@ -521,6 +533,7 @@ void AmbientSyncTick() {
     for (auto& [actor, st] : sTracked) {
         if (!peer) {
             RestoreCull(actor, st);
+            RestoreAttention(actor, st);
             st.mode = MODE_LOCAL;
             continue;
         }
