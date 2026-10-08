@@ -1,0 +1,8 @@
+C rounds [(0, 82, 81, 256, 5232, 5297), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (1, 82, 81, 256, 5232, 5297), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255)]
+C expect 256 ok overflow 0 guard 0 peakOpa 83240 minFree 307928 actorSkips 0 pieceSkips 0
+B rounds [(0, 82, 81, 256, 5232, 5297), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (1, 82, 81, 256, 5232, 5297), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255)]
+B expect 256 ok overflow 0 guard 0 peakOpa 32712 minFree 358456 actorSkips 0 pieceSkips 0
+D rounds [(0, 82, 81, 256, 5232, 5297), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (1, 82, 81, 256, 5232, 5297), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255)]
+D expect 256 ok overflow 0 guard 0 peakOpa 83240 minFree 307928 actorSkips 0 pieceSkips 0
+A rounds [(0, 82, 81, 256, 5232, 5297), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255), (1, 82, 81, 256, 5232, 5297), ('0x4400', 'moonRed', 255), ('0xC000', 'moonRed', 255), ('0x0', 'moonRed', 255)]
+A expect 256 ok overflow 0 guard 0 peakOpa 84040 minFree 307128 actorSkips 0 pieceSkips 0

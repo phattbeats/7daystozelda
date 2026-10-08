@@ -243,6 +243,16 @@ constexpr int ERA_RUINS = 2; // #3935: the child base after the seven-year jump,
 constexpr int BASE_CAP_DEFAULT = 160;
 constexpr int BASE_CAP_MAX = 256;
 int BaseCap();
+// #4063: how far a base piece draws. The engine culls an actor's draw past uncullZoneForward (1000)
+// plus uncullZoneScale (350) along the view axis; the pieces used those stock numbers, so a fort
+// vanished at ~1350 units. gSevenDays.DrawRange picks a tier (0 stock, 1 near, 2 far = default, 3 max);
+// big structural pieces get the full range, small furniture a share of it. Spawning, collision and
+// networking never look at it: it only moves the draw cutoff.
+constexpr int DRAW_RANGE_DEFAULT = 2;
+int DrawRangeTier();                                 // 0..3, from gSevenDays.DrawRange
+float DrawRangeForward(int tier);                    // the tier's forward cull distance for a full-size piece
+float PieceDrawForward(uint8_t type, bool wasDrawn); // forward cull distance for one piece, with hysteresis
+float PuppetNameTagRange(int tier);                  // how far a remote player's name tag still draws
 constexpr int DYNA_BUDGET = 8192; // polys, vertices and poly nodes the play arena grows for a base (z_bgcheck.c)
 constexpr float BASE_RADIUS = 800.0f;
 constexpr float TORCH_RADIUS = 300.0f; // spec: no wave spawn point within 300 units of a torch

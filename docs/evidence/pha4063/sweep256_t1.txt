@@ -1,0 +1,3 @@
+t1 90 1500 fps 9.0 {'tier': 1, 'spawned': 256, 'drawn': 226, 'farLod': 97, 'farthestDrawnZ': 2429.794677734375, 'nearestHiddenZ': 1646.2799072265625} [(1793, 1, False), (1793, 1, False), (2762, 1, False)]
+t1 90 2200 fps 40.0 {'tier': 1, 'spawned': 256, 'drawn': 171, 'farLod': 141, 'farthestDrawnZ': 3083.892822265625, 'nearestHiddenZ': 1592.9095458984375} [(2456, 1, False), (2456, 1, False), (2277, 1, False)]
+t1 90 3000 fps 37.5 {'tier': 1, 'spawned': 256, 'drawn': 88, 'farLod': 79, 'farthestDrawnZ': 3080.9130859375, 'nearestHiddenZ': 2275.815673828125} [(3232, 1, False), (3232, 1, False), (1881, 1, False)]

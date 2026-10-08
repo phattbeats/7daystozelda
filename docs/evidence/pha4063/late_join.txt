@@ -1,0 +1,4 @@
+Pix 52 Disconnected, retrying...
+E sees 256 pieces, actors 0 scene 52 {'chunks': 0, 'nodeMax': 500, 'nodes': 0, 'polyMax': 512, 'polys': 0, 'slots': 0, 'verts': 0, 'vtxMax': 512}
+E in HF 81 actors 0 spawned 0 drawn 0 farLod 0 puppets [(3928, 1, False), (3928, 1, False), (3928, 1, False)]
+D late 81 actors 256 spawned 256 drawn 47 farLod 0 tier 2 puppets [(0, 1, True), (0, 1, True), (844, 1, True)]

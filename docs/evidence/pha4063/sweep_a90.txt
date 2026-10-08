@@ -1,0 +1,22 @@
+t0 90 900 fps 13.0 {'tier': 0, 'zFar': 12800, 'spawned': 94, 'drawn': 66, 'farthestDrawnZ': 1344.012451171875, 'nearestHiddenZ': 1419.95458984375} [(1258, 1, False), (1258, 1, False), (1258, 1, False)]
+t0 90 1500 fps 32.5 {'tier': 0, 'zFar': 12800, 'spawned': 94, 'drawn': 29, 'farthestDrawnZ': 1349.037841796875, 'nearestHiddenZ': 1356.281005859375} [(1793, 1, False), (1793, 1, False), (1793, 1, False)]
+t0 90 2200 fps 44.0 {'tier': 0, 'zFar': 12800, 'spawned': 94, 'drawn': 0, 'farthestDrawnZ': 0.0, 'nearestHiddenZ': 1592.654541015625} [(2456, 1, False), (2456, 1, False), (2456, 1, False)]
+t0 90 3000 fps 33.0 {'tier': 0, 'zFar': 12800, 'spawned': 94, 'drawn': 0, 'farthestDrawnZ': 0.0, 'nearestHiddenZ': 2313.63671875} [(3232, 1, False), (3232, 1, False), (3232, 1, False)]
+t0 90 4000 fps 58.0 {'tier': 0, 'zFar': 12800, 'spawned': 94, 'drawn': 0, 'farthestDrawnZ': 0.0, 'nearestHiddenZ': 2795.96240234375} [(3741, 1, False), (3741, 1, False), (3741, 1, False)]
+5200 nofloor
+6500 nofloor
+t2 90 900 fps 18.0 {'tier': 2, 'zFar': 12800, 'spawned': 94, 'drawn': 94, 'farthestDrawnZ': 1787.258056640625, 'nearestHiddenZ': -1.0} [(1253, 1, True), (1253, 1, True), (1253, 1, True)]
+t2 90 1500 fps 4.5 {'tier': 2, 'zFar': 12800, 'spawned': 94, 'drawn': 94, 'farthestDrawnZ': 2392.42822265625, 'nearestHiddenZ': -1.0} [(1793, 1, True), (1793, 1, True), (1793, 1, True)]
+t2 90 2200 fps 21.5 {'tier': 2, 'zFar': 12800, 'spawned': 94, 'drawn': 89, 'farthestDrawnZ': 3013.359375, 'nearestHiddenZ': 2805.353271484375} [(2456, 1, True), (2456, 1, True), (2456, 1, True)]
+t2 90 3000 fps 15.0 {'tier': 2, 'zFar': 12800, 'spawned': 94, 'drawn': 77, 'farthestDrawnZ': 3681.562744140625, 'nearestHiddenZ': 2773.53271484375} [(3232, 1, False), (3232, 1, False), (3232, 1, False)]
+t2 90 4000 fps 7.5 {'tier': 2, 'zFar': 12800, 'spawned': 94, 'drawn': 63, 'farthestDrawnZ': 4035.29541015625, 'nearestHiddenZ': 2766.6484375} [(3706, 1, False), (3706, 1, False), (3706, 1, False)]
+5200 nofloor
+6500 nofloor
+t3 90 900 fps 31.0 {'tier': 3, 'zFar': 12800, 'spawned': 94, 'drawn': 94, 'farthestDrawnZ': 1788.4017333984375, 'nearestHiddenZ': -1.0} [(1253, 1, True), (1253, 1, True), (1253, 1, True)]
+t3 90 1500 fps 23.0 {'tier': 3, 'zFar': 12800, 'spawned': 94, 'drawn': 94, 'farthestDrawnZ': 2392.422119140625, 'nearestHiddenZ': -1.0} [(1793, 1, True), (1793, 1, True), (1793, 1, True)]
+t3 90 2200 fps 13.5 {'tier': 3, 'zFar': 12800, 'spawned': 94, 'drawn': 94, 'farthestDrawnZ': 3082.19140625, 'nearestHiddenZ': -1.0} [(2456, 1, True), (2456, 1, True), (2456, 1, True)]
+t3 90 3000 fps 11.5 {'tier': 3, 'zFar': 12800, 'spawned': 94, 'drawn': 94, 'farthestDrawnZ': 3748.038818359375, 'nearestHiddenZ': -1.0} [(3232, 1, True), (3232, 1, True), (3232, 1, True)]
+t3 90 4000 fps 7.5 {'tier': 3, 'zFar': 12800, 'spawned': 94, 'drawn': 91, 'farthestDrawnZ': 4122.58154296875, 'nearestHiddenZ': 3995.2470703125} [(3720, 1, True), (3720, 1, True), (3720, 1, True)]
+5200 nofloor
+6500 nofloor
+

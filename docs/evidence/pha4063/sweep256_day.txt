@@ -1,0 +1,8 @@
+day0 90 900 fps 4.5 {'tier': 0, 'spawned': 256, 'drawn': 180, 'farLod': 0, 'farthestDrawnZ': 1343.98828125, 'nearestHiddenZ': 1408.0023193359375} [(1258, 1, False), (1258, 1, False), (3243, 1, False)]
+day0 90 1500 fps 29.0 {'tier': 0, 'spawned': 256, 'drawn': 84, 'farLod': 0, 'farthestDrawnZ': 1348.844970703125, 'nearestHiddenZ': 1356.0865478515625} [(1793, 1, False), (1793, 1, False), (2762, 1, False)]
+day0 90 2200 fps 36.5 {'tier': 0, 'spawned': 256, 'drawn': 0, 'farLod': 0, 'farthestDrawnZ': 0.0, 'nearestHiddenZ': 1553.2313232421875} [(2456, 1, False), (2456, 1, False), (2277, 1, False)]
+day0 90 3000 fps 35.0 {'tier': 0, 'spawned': 256, 'drawn': 0, 'farLod': 0, 'farthestDrawnZ': 0.0, 'nearestHiddenZ': 2275.806884765625} [(3232, 1, False), (3232, 1, False), (1881, 1, False)]
+day2 90 900 fps 5.0 {'tier': 2, 'spawned': 256, 'drawn': 256, 'farLod': 43, 'farthestDrawnZ': 1838.315185546875, 'nearestHiddenZ': -1.0} [(1258, 1, True), (1258, 1, True), (3243, 1, False)]
+day2 90 1500 fps 3.0 {'tier': 2, 'spawned': 256, 'drawn': 256, 'farLod': 97, 'farthestDrawnZ': 2430.642578125, 'nearestHiddenZ': -1.0} [(1793, 1, True), (1793, 1, True), (2762, 1, False)]
+day2 90 2200 fps 10.0 {'tier': 2, 'spawned': 256, 'drawn': 241, 'farLod': 143, 'farthestDrawnZ': 3120.5732421875, 'nearestHiddenZ': 2691.13427734375} [(2456, 1, True), (2456, 1, True), (2277, 1, True)]
+day2 90 3000 fps 10.0 {'tier': 2, 'spawned': 256, 'drawn': 210, 'farLod': 143, 'farthestDrawnZ': 3768.853515625, 'nearestHiddenZ': 2684.901611328125} [(3232, 1, False), (3232, 1, False), (1881, 1, True)]

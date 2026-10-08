@@ -6,6 +6,7 @@
 #include "soh/Enhancements/custom-message/CustomMessageInterfaceAddon.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/ShipUtils.h"
+#include "soh/SevenDays/SevenDays.h"
 
 extern "C" {
 #include "z64.h"
@@ -36,6 +37,7 @@ static std::vector<Gfx> nameTagDl;
 static bool sMirrorWorldActive = false;
 
 void NameTag_RegisterHooks();
+void DummyPlayer_Update(Actor* actor, PlayState* play); // Network/Anchor/DummyPlayer.cpp
 
 void FreeNameTag(NameTag* nameTag) {
     if (nameTag->vtx != nullptr) {
@@ -55,17 +57,30 @@ void DrawNameTag(PlayState* play, const NameTag* nameTag) {
     }
 
     // Name tag is too far away to meaningfully read, don't bother rendering it
-    if (nameTag->actor->xyzDistToPlayerSq > 440000.0f) {
+    float farSq = 440000.0f;
+    float fadeSq = 360000.0f;
+    float scale = 75.0f / 100.f;
+    if (nameTag->actor->update == DummyPlayer_Update) {
+        // #4063: a remote player's tag follows the draw-range tier, so a teammate across the field
+        // is still named. Past the stock distance the text grows with range to stay legible.
+        float range = SevenDays::PuppetNameTagRange(SevenDays::DrawRangeTier());
+        farSq = range * range;
+        float fade = range * 0.85f;
+        fadeSq = fade * fade;
+        float dist = sqrtf(nameTag->actor->xyzDistToPlayerSq);
+        if (dist > 600.0f) {
+            scale *= std::min(dist / 600.0f, 3.0f);
+        }
+    }
+    if (nameTag->actor->xyzDistToPlayerSq > farSq) {
         return;
     }
 
     // Fade out name tags that are far away
     float alpha = 1.0f;
-    if (nameTag->actor->xyzDistToPlayerSq > 360000.0f) {
-        alpha = (440000.0f - nameTag->actor->xyzDistToPlayerSq) / 80000.0f;
+    if (nameTag->actor->xyzDistToPlayerSq > fadeSq) {
+        alpha = (farSq - nameTag->actor->xyzDistToPlayerSq) / (farSq - fadeSq);
     }
-
-    float scale = 75.0f / 100.f;
 
     size_t numChar = nameTag->processedText.length();
     // No text to render

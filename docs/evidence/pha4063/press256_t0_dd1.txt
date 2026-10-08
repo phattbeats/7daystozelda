@@ -1,0 +1,13 @@
+B fps [10.5, 12.5, 10.5, 16.5, 11.5, 12.5, 18, 16.5, 11.5, 12, 6.5, 6, 10, 9.5] scale 4 frames 602 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+B {'opa': (75408, 21456, 53952, 391168, 315760), 'xlu': (11464, 11464, 0, 131072, 119608), 'ovl': (2280, 2280, 0, 65536, 63256)} loopEnd 74168 11320
+B mem wasmHeapMB 368.8 jsHeapMB 111 arenaFree 2061328 dyna {'chunks': 10, 'nodeMax': 8192, 'nodes': 5297, 'polyMax': 8192, 'polys': 5232, 'slots': 14, 'verts': 3488, 'vtxMax': 8192}
+D fps [7.5, 10, 8.5, 12.5, 7.5, 7.5, 15, 14, 8.5, 9, 7, 5.5, 9, 6.5] scale 4 frames 607 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+D {'opa': (89400, 24712, 64688, 391168, 301768), 'xlu': (12512, 12512, 0, 131072, 118560), 'ovl': (2280, 2280, 0, 65536, 63256)} loopEnd 88160 12368
+D mem wasmHeapMB 368.8 jsHeapMB 111 arenaFree 2062256 dyna {'chunks': 10, 'nodeMax': 8192, 'nodes': 5297, 'polyMax': 8192, 'polys': 5232, 'slots': 14, 'verts': 3488, 'vtxMax': 8192}
+C fps [16.5, 17.5, 16, 18.5, 16.5, 17, 18.5, 18.5, 13, 16, 12.5, 9.5, 16.5, 14.5, 9.5] scale 4 frames 638 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+C {'opa': (72888, 20888, 52000, 391168, 318280), 'xlu': (11416, 11416, 0, 131072, 119656), 'ovl': (2280, 2280, 0, 65536, 63256)} loopEnd 71648 11272
+C mem wasmHeapMB 368.8 jsHeapMB 82 arenaFree 2060896 dyna {'chunks': 10, 'nodeMax': 8192, 'nodes': 5297, 'polyMax': 8192, 'polys': 5232, 'slots': 14, 'verts': 3488, 'vtxMax': 8192}
+A fps [7.5, 10, 11, 10, 12, 13, 16, 11.5, 10, 8.5, 6.5, 8, 10, 6.5] scale 4 frames 611 overflow 0 guard 0 actorSkips 0 pieceSkips 0
+A {'opa': (74072, 21112, 52960, 391168, 317096), 'xlu': (11256, 11256, 0, 131072, 119816), 'ovl': (2280, 2280, 0, 65536, 63256)} loopEnd 72832 11088
+A mem wasmHeapMB 368.8 jsHeapMB 87 arenaFree 2062208 dyna {'chunks': 10, 'nodeMax': 8192, 'nodes': 5297, 'polyMax': 8192, 'polys': 5232, 'slots': 14, 'verts': 3488, 'vtxMax': 8192}
+DONE

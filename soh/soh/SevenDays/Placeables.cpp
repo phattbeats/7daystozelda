@@ -163,6 +163,7 @@ struct PlaceableActor {
     bool gatePassable;   // left out of the base collision while a player walks through
     bool ruin;           // the child base after the seven-year jump: drawn broken, does nothing
     bool ghost;          // the placement preview (SevenDays_Ghost), which only draws
+    bool farLod;         // #4063: drawn as a plain box (beyond FAR_LOD_Z), with hysteresis
     bool wardLit;        // #4006: a torch of the ward's ring, burning blue
 };
 
@@ -1458,6 +1459,7 @@ static void Placeable_Init(Actor* thisx, PlayState* play) {
     self->wardLit = false;
     thisx->room = -1; // scene-wide: survives walking between rooms
     Actor_SetScale(thisx, 1.0f);
+    thisx->uncullZoneForward = PieceDrawForward(self->type, false); // #4063
     thisx->shape.rot = thisx->world.rot = { 0, p->rot, 0 };
 
     // Re-snap to the floor under it (seeded pieces carry an approximate y). #3945:
@@ -1757,6 +1759,7 @@ static void Placeable_Update(Actor* thisx, PlayState* play) {
     PlaceableActor* self = (PlaceableActor*)thisx;
     const PlaceableInfo& info = GetPlaceableInfo(self->type);
     RebuildBaseCollision(play);
+    thisx->uncullZoneForward = PieceDrawForward(self->type, thisx->isDrawn); // #4063
 
     if (thisx->textId != 0) {
         if (self->type == PLACEABLE_MILKCAN && !self->talking) {
@@ -1909,6 +1912,82 @@ extern "C" void Graph_GfxStatsReset(void);
 extern "C" void Graph_GfxForceOverflow(s32 frames);
 static constexpr s32 kPieceDrawFloorPercent = 35;
 
+// MARK: - Draw distance (#4063)
+
+int SevenDays::DrawRangeTier() {
+    return std::clamp(CVarGetInteger(CVAR_SEVEN_DAYS("DrawRange"), DRAW_RANGE_DEFAULT), 0, 3);
+}
+
+// Forward distances in world units along the view axis (func_800314D4's z test). Tier 0 is the
+// engine's stock 1000.
+float SevenDays::DrawRangeForward(int tier) {
+    static constexpr float kForward[4] = { 1000.0f, 2400.0f, 4200.0f, 7500.0f };
+    return kForward[std::clamp(tier, 0, 3)];
+}
+
+float SevenDays::PuppetNameTagRange(int tier) {
+    static constexpr float kRange[4] = { 663.0f, 1600.0f, 2600.0f, 4000.0f };
+    return kRange[std::clamp(tier, 0, 3)];
+}
+
+// Big pieces (walls, floors, towers) are the landmarks and get the whole range; furniture, torches
+// and signs read as specks from afar, so they stop sooner (down to 45%). A piece that drew last
+// frame keeps 15% extra, so one sitting on the edge does not flicker.
+float SevenDays::PieceDrawForward(uint8_t type, bool wasDrawn) {
+    int tier = DrawRangeTier();
+    if (tier == 0) {
+        return 1000.0f;
+    }
+    const PlaceableInfo& info = GetPlaceableInfo(type);
+    float big = (float)std::max({ 2 * info.halfX, 2 * info.halfZ, (int)info.height });
+    float share = std::clamp(big / 120.0f, 0.45f, 1.0f);
+    float fwd = DrawRangeForward(tier) * share;
+    if (wasDrawn) {
+        fwd *= 1.15f;
+    }
+    // The camera's far plane is the scene's fogFar: nothing past it is ever on screen, so asking
+    // for more only wastes work (a dim night field can end at 3200 units).
+    if (gPlayState != nullptr && gPlayState->lightCtx.fogFar > 0) {
+        fwd = std::min(fwd, (float)gPlayState->lightCtx.fogFar);
+    }
+    return std::max(1000.0f, fwd);
+}
+
+// MARK: - Far LOD (#4063)
+
+static constexpr float FAR_LOD_Z = 1350.0f; // the stock cull distance: past it (new range only) structural pieces draw as boxes
+
+// The big plain pieces a base is built from; furniture, torches, traps and animated pieces keep their models.
+static bool FarLodType(uint8_t type) {
+    switch (type) {
+        case PLACEABLE_BARRICADE:
+        case PLACEABLE_STONEWALL:
+        case PLACEABLE_IRONWALL:
+        case PLACEABLE_PALISADE:
+        case PLACEABLE_FLOOR_PLANK:
+        case PLACEABLE_FLOOR_RANCH:
+        case PLACEABLE_FLOOR_STONE:
+        case PLACEABLE_DECK:
+        case PLACEABLE_STEP:
+        case PLACEABLE_STAIRS:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static void DrawFarBox(PlayState* play, uint8_t type) {
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    CLOSE_DISPS(play->state.gfxCtx);
+    bool stone = type == PLACEABLE_STONEWALL || type == PLACEABLE_FLOOR_STONE;
+    bool iron = type == PLACEABLE_IRONWALL;
+    SetPieceTint(play, true, iron ? 95 : stone ? 135 : 140, iron ? 100 : stone ? 135 : 100, iron ? 112 : stone ? 130 : 65,
+                 175);
+    DrawFallbackBox(play, type);
+    SetPieceTint(play, false);
+}
+
 static void Placeable_Draw(Actor* thisx, PlayState* play) {
     PlaceableActor* self = (PlaceableActor*)thisx;
     if (!self->ghost && Graph_GfxRoomBelowPercent(play->state.gfxCtx, kPieceDrawFloorPercent)) {
@@ -1917,6 +1996,18 @@ static void Placeable_Draw(Actor* thisx, PlayState* play) {
     }
     const Placeable* p = FindPlaceable(self->id);
     const PlaceableInfo& info = GetPlaceableInfo(self->type);
+    if (!self->ghost && FarLodType(self->type) && !self->ruin && DrawRangeTier() > 0) {
+        // #4063: seen from far off, a wall or floor is a few pixels: a tinted box of its footprint
+        // costs a handful of triangles instead of the model's thousands. 12% hysteresis.
+        float z = thisx->projectedPos.z;
+        self->farLod = z > (self->farLod ? FAR_LOD_Z * 0.88f : FAR_LOD_Z);
+        if (self->farLod) {
+            DrawFarBox(play, self->type);
+            return;
+        }
+    } else {
+        self->farLod = false;
+    }
     DrawWorn(play, self, (p != nullptr && info.maxHp > 0) ? (float)p->hp / (float)info.maxHp : 1.0f);
 }
 
@@ -2553,6 +2644,74 @@ const char* sevendays_test_gfx(const char* cmd) {
         Graph_GfxForceOverflow(atoi(c.c_str() + 6));
     }
     return Graph_GfxStatsJson();
+}
+
+// #4063: what the draw-range tiers do right now. "tier:N" sets gSevenDays.DrawRange first. Returns
+// the scene's far plane and fog, how many base pieces are spawned/drawn, the farthest drawn piece
+// (distance along the view axis, the number the cull tests), and every remote player's distance,
+// whether it drew and whether its name tag range covers it.
+EMSCRIPTEN_KEEPALIVE
+const char* sevendays_test_draw(const char* cmd) {
+    static std::string out;
+    std::string c = cmd ? cmd : "";
+    if (c.rfind("tier:", 0) == 0) {
+        CVarSetInteger(CVAR_SEVEN_DAYS("DrawRange"), atoi(c.c_str() + 5));
+    }
+    nlohmann::json j;
+    j["tier"] = DrawRangeTier();
+    j["forward"] = DrawRangeForward(DrawRangeTier());
+    if (gPlayState == nullptr) {
+        out = j.dump();
+        return out.c_str();
+    }
+    j["zFar"] = gPlayState->lightCtx.fogFar;
+    j["fogNear"] = gPlayState->lightCtx.fogNear;
+    int spawned = 0, drawn = 0, lod = 0;
+    float farthestDrawn = 0.0f, nearestHidden = 1e9f, farthestSpawned = 0.0f;
+    int buckets[8] = {}, bucketDrawn[8] = {};
+    for (auto& pr : SpawnedPlaceables()) {
+        Actor* a = pr.second;
+        if (a == nullptr) {
+            continue;
+        }
+        spawned++;
+        float z = a->projectedPos.z;
+        farthestSpawned = std::max(farthestSpawned, z);
+        int b = std::clamp((int)(z / 1000.0f), 0, 7);
+        buckets[b]++;
+        if (a->isDrawn) {
+            drawn++;
+            lod += ((PlaceableActor*)a)->farLod ? 1 : 0;
+            bucketDrawn[b]++;
+            farthestDrawn = std::max(farthestDrawn, z);
+        } else if (z > 0.0f) {
+            nearestHidden = std::min(nearestHidden, z);
+        }
+    }
+    j["spawned"] = spawned;
+    j["drawn"] = drawn;
+    j["farLod"] = lod;
+    j["farthestDrawnZ"] = farthestDrawn;
+    j["nearestHiddenZ"] = nearestHidden > 1e8f ? -1.0f : nearestHidden;
+    j["farthestSpawnedZ"] = farthestSpawned;
+    j["bucketsPer1000"] = std::vector<int>(buckets, buckets + 8);
+    j["bucketsDrawn"] = std::vector<int>(bucketDrawn, bucketDrawn + 8);
+    j["puppets"] = nlohmann::json::array();
+    for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_NPC].head; a != nullptr; a = a->next) {
+        if (a->update != DummyPlayer_Update) {
+            continue;
+        }
+        float tagRange = PuppetNameTagRange(DrawRangeTier());
+        j["puppets"].push_back({ { "dist", sqrtf(a->xyzDistToPlayerSq) },
+                                 { "z", a->projectedPos.z },
+                                 { "drawn", a->isDrawn },
+                                 { "tag", sqrtf(a->xyzDistToPlayerSq) <= tagRange },
+                                 { "x", a->world.pos.x },
+                                 { "y", a->world.pos.y },
+                                 { "zpos", a->world.pos.z } });
+    }
+    out = j.dump();
+    return out.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE
