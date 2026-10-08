@@ -250,7 +250,9 @@ void RegisterWorldObjectHooks(bool isConnected) {
     COND_VB_SHOULD(VB_GIVE_ITEM_FROM_ITEM_00, isConnected, {
         EnItem00* item = va_arg(args, EnItem00*);
         if (*should) {
-            sPickupItem = PersonalItemFor(item->actor.params);
+            // A placed pickup carries a collectible flag, which syncs: the partner's copy
+            // vanishes, so they must be given the item. Only unflagged drops are personal.
+            sPickupItem = item->collectibleFlag == 0 ? PersonalItemFor(item->actor.params) : ITEM_NONE;
             sPickupUntil = sTick + PICKUP_WINDOW;
         }
     });
