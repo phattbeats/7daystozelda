@@ -54,6 +54,7 @@ void BossDodongo_UpdateAmbience(BossDodongo* this, PlayState* play, s32 isMirror
 s32 Anchor_BossAimTargets(PlayState* play, Actor** out, s32 max);
 // #4047: soh/Network/Anchor/BossAdapters/KingDodongoAdapter.cpp
 s32 Anchor_KingDodongoDefeatPending(Actor* actor);
+void Anchor_KingDodongoReset(Actor* actor);
 #endif
 
 const ActorInit Boss_Dodongo_InitVars = {
@@ -329,6 +330,9 @@ void BossDodongo_Init(Actor* thisx, PlayState* play) {
     u16* temp_s2;
     u32 temp_v0;
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    Anchor_KingDodongoReset(&this->actor);
+#endif
     play->specialEffects = &this->effects;
     Actor_ProcessInitChain(&this->actor, sInitChain);
     ActorShape_Init(&this->actor.shape, 9200.0f, ActorShadow_DrawCircle, 250.0f);
@@ -413,6 +417,9 @@ void BossDodongo_Init(Actor* thisx, PlayState* play) {
 void BossDodongo_Destroy(Actor* thisx, PlayState* play) {
     BossDodongo* this = (BossDodongo*)thisx;
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    Anchor_KingDodongoReset(&this->actor);
+#endif
     SkelAnime_Free(&this->skelAnime, play);
     Collider_DestroyJntSph(play, &this->collider);
 }

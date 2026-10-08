@@ -8,7 +8,9 @@ in a two-client live test, with screenshots and logs. The rig is in
 
 ## The checklist
 
-1. **Phases.** `GetPhase` reads fields, never `actionFunc`. The intro runs
+1. **Phases.** `GetPhase` reads fields, never `actionFunc` (an `OnRemoteEvent`
+   verdict check may read it for a one-shot timing window, as King Dodongo's
+   swallow does, but it must never decide what is streamed). The intro runs
    locally on each client; `ShouldMirror` is false until the local intro is
    over and the streamed phase is FIGHT. A client that arrives late plays its
    own intro, then mirrors.
@@ -66,7 +68,7 @@ in a two-client live test, with screenshots and logs. The rig is in
 | Defeat | `SetupDeathCutscene` + `Enemy_StartFinishingBlow` on the edge. A client still in its intro defers it (`Anchor_KingDodongoDefeatPending` at the end of the intro). | Killing blow from the mirror: both death cutscenes ran in lockstep and ended with the blue warp and the clear flag on each. Deferred case: B watched its own intro, then the death, and got its camera back; each client then had exactly one blue warp and one heart container. |
 | Children | EN_BDFIRE (fire breath) is excluded; each machine spawns its own flames from the streamed count, and each flame burns only its own Link. Bombs aren't synced, so the mirror reports a swallowed bomb (`KD_EVENT_SWALLOW`) and the host explodes him if he is still inhaling. BG_BREAKWALL, the heart container and the warp come from the local death. | B's bomb was swallowed on B's screen at inhale 31 and taken by the host at 33. |
 | Aggro | No puppet swap: the intro, the death and the lava move or read GET_PLAYER. His attacks don't aim at a position, so `BossDodongo_UpdateAim` feeds every living player into his choices (breathe fire at whoever is in his lane, turn back for whoever is behind, keep walking while anyone is ahead). Alone, the checks are vanilla. | With only B in his lane, the host's copy breathed fire at B; B burned and A didn't. |
-| Resume | `SetupWalk` from the streamed pose. | Not hit in the test (no stale stream). |
+| Resume | `SetupWalk` from the streamed pose. | Not tested live: authority loss, stale streams and host handoff mid-fight were never exercised (PHA-4047 review). Per-fight flags (`pendingDefeat`) are now reset in Init/Destroy via `Anchor_KingDodongoReset`. |
 | Live test | | No desync canary in either log, no crash. Both players were hit by the roll on their own screens. |
 
 Known limits:

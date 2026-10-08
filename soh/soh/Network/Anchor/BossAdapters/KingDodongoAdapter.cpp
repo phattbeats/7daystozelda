@@ -308,6 +308,14 @@ void RegisterKingDodongoAdapter() {
     EnemySync::RegisterAdapter(ACTOR_BOSS_DODONGO, adapter);
 }
 
+// z_boss_dodongo.c, Init and Destroy: drop every per-fight flag so an aborted
+// fight (room left, host change, disconnect) can't kill the next King Dodongo
+// the moment its intro ends, even if the new actor reuses the old address.
+extern "C" void Anchor_KingDodongoReset(Actor* actor) {
+    (void)actor;
+    sMirror = KingDodongoMirror();
+}
+
 // z_boss_dodongo.c, at the end of the intro: the partner won while our intro played.
 extern "C" s32 Anchor_KingDodongoDefeatPending(Actor* actor) {
     if (sMirror.pendingDefeat != actor) {
