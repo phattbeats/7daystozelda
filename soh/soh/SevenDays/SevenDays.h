@@ -314,6 +314,15 @@ void ApplyTeamStateJson(const nlohmann::json& j);
 
 // Placement mode (a ghost ahead of Link; C-left/C-right rotate, A place, B cancel).
 void BeginPlacement(uint8_t type);
+// #4071: kits bound to the D-pad. dir: 0 up, 1 down, 2 left, 3 right.
+constexpr int DPAD_KIT_DIRS = 4;
+int DpadKitType(int dir);                 // PlaceableType bound to the direction, -1 when none
+bool AnyDpadKit();
+void BindDpadKit(int dir, int type);      // type < 0 clears; a kit sits on one direction at a time
+int DpadKitDirOf(int type);               // -1 when the kit isn't bound
+const char* DpadKitName(int dir);         // "D-Pad Up"
+uint32_t DpadKitCount(int dir);           // kits in the pool for the bound type
+bool DpadKitHolds(int dir);               // Link's own D-pad item on this direction is overridden
 bool InPlacement();
 void RequestPackUp(uint16_t id);        // one piece back into a kit (a damaged one: part of its materials)
 void RequestRepair(uint16_t id);        // #3935: back to full HP for materials (half with the Megaton Hammer)

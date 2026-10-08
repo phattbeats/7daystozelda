@@ -397,6 +397,7 @@ struct PageRow {
     const char* icon = nullptr;
     bool rupee = false; // icon is the HUD rupee (IA8 16x16) instead of a 32x32 item icon
     bool enabled = false;
+    int bindType = -1; // #4071: a kit row: a C direction (or D-pad) press binds it to that D-pad direction
     std::function<void()> action;
 };
 
@@ -669,11 +670,15 @@ std::vector<PageRow> BuildRows(PlayState* play, int tab) {
         uint32_t count = it != pool.kits.end() ? it->second : 0;
         PageRow row;
         row.name = fmt::format("Place {}", info.name);
-        row.right = fmt::format("x{}", count);
+        static const char* const kDirTags[DPAD_KIT_DIRS] = { "Up", "Down", "Left", "Right" };
+        int bound = DpadKitDirOf(t);
+        row.right = bound >= 0 ? fmt::format("x{} [{}]", count, kDirTags[bound]) : fmt::format("x{}", count);
+        row.bindType = t;
         const Recipe* recipe = FindRecipe(info.kit);
         row.icon = recipe != nullptr ? RecipeIcon(*recipe) : nullptr;
         row.enabled = count > 0 && !InPlacement();
         row.hint = count == 0 ? "Build a kit on Craft" : (InPlacement() ? "Already placing" : "Place it");
+        row.hint += bound >= 0 ? ". C-dir: move or clear" : ". C-dir: bind to D-Pad";
         uint8_t type = (uint8_t)t;
         row.action = [type, play]() {
             Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
@@ -932,6 +937,19 @@ int TabIndex(const std::vector<int>& tabs) {
     return 0;
 }
 
+// -1, or the D-pad direction (0 up, 1 down, 2 left, 3 right) a bind press names.
+int BindPressed(Input* input, bool dpadMovesCursor) {
+    static const u16 kC[DPAD_KIT_DIRS] = { BTN_CUP, BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT };
+    static const u16 kD[DPAD_KIT_DIRS] = { BTN_DUP, BTN_DDOWN, BTN_DLEFT, BTN_DRIGHT };
+    for (int d = 0; d < DPAD_KIT_DIRS; d++) {
+        if (CHECK_BTN_ALL(input->press.button, kC[d]) ||
+            (!dpadMovesCursor && CHECK_BTN_ALL(input->press.button, kD[d]))) {
+            return d;
+        }
+    }
+    return -1;
+}
+
 void HandleInput(PlayState* play, const std::vector<int>& tabs, std::vector<PageRow>& rows) {
     PauseContext* pauseCtx = &play->pauseCtx;
     Input* input = &play->state.input[0];
@@ -990,6 +1008,18 @@ void HandleInput(PlayState* play, const std::vector<int>& tabs, std::vector<Page
             KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_LEFT);
         } else if (right) {
             KaleidoScope_MoveCursorToSpecialPos(play, PAUSE_CURSOR_PAGE_RIGHT);
+        } else if (rows[sPage.row].bindType >= 0 && BindPressed(input, dpad) >= 0) {
+            // #4071: C-Up/Down/Left/Right (or the D-pad itself, when it isn't moving the cursor)
+            // binds the kit to that D-pad direction; the same direction again clears it.
+            int dir = BindPressed(input, dpad);
+            int type = rows[sPage.row].bindType;
+            if (DpadKitType(dir) == type) {
+                BindDpadKit(dir, -1);
+                Sfx_PlaySfxCentered(NA_SE_SY_CANCEL);
+            } else {
+                BindDpadKit(dir, type);
+                Sfx_PlaySfxCentered(NA_SE_SY_DECIDE);
+            }
         } else if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
             PageRow& row = rows[sPage.row];
             if (row.enabled && row.action) {
@@ -1181,4 +1211,27 @@ extern "C" void SevenDaysKaleido_DrawPageLabel(PlayState* play, s16 top) {
     float w = SevenDays::TextWidth(label, 1.0f);
     SevenDays::DrawText(play, label, 1 - w / 2, top, 1.0f, { 255, 200, 0 }, 255);
     SevenDays::FlushText(play);
+}
+
+// #4071: the HUD D-pad asks for the bound kit's icon and count (z_parameter.c).
+extern "C" s32 SevenDaysDpad_Bound(s32 dir) {
+    return SevenDays::DpadKitType(dir) >= 0;
+}
+
+extern "C" s32 SevenDaysDpad_Any(void) {
+    return SevenDays::AnyDpadKit();
+}
+
+extern "C" s32 SevenDaysDpad_Count(s32 dir) {
+    return SevenDays::DpadKitType(dir) >= 0 ? (s32)std::min<uint32_t>(SevenDays::DpadKitCount(dir), 99) : -1;
+}
+
+extern "C" void* SevenDaysDpad_Icon(s32 dir) {
+    using namespace SevenDays;
+    int type = DpadKitType(dir);
+    if (type < 0) {
+        return nullptr;
+    }
+    const Recipe* recipe = FindRecipe(GetPlaceableInfo((uint8_t)type).kit);
+    return recipe != nullptr ? (void*)RecipeIcon(*recipe) : nullptr;
 }

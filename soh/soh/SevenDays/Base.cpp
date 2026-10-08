@@ -1447,9 +1447,108 @@ void BeginPlacement(uint8_t type) {
     // Face the same way as Link, snapped to 45 degrees.
     sPlace.rot = (int16_t)(((player->actor.shape.rot.y + 0x1000) / 0x2000) * 0x2000);
     Notification::Emit({ .prefix = fmt::format("Placing {}", info.name),
-                         .message = "C-Left/C-Right rotate, A place, B done",
+                         .message = DpadKitDirOf(type) >= 0 ? "C-Left/C-Right rotate, A place, B or D-Pad done"
+                                                       : "C-Left/C-Right rotate, A place, B done",
                          .remainingTime = 5.0f,
                          .mute = true });
+}
+
+// MARK: - D-pad kits (#4071)
+// A kit can be bound to a D-pad direction: press it in play and placement starts, with the
+// kit's icon and count on the HUD D-pad. The binding is personal (a cvar, not the shared
+// pool); the kits themselves stay in the pool. Pressing the bound direction while placing
+// that kit ends placement, and a different bound direction swaps to that kit.
+static const char* const kDpadCvars[DPAD_KIT_DIRS] = { CVAR_SEVEN_DAYS("DpadKit.Up"), CVAR_SEVEN_DAYS("DpadKit.Down"),
+                                                       CVAR_SEVEN_DAYS("DpadKit.Left"),
+                                                       CVAR_SEVEN_DAYS("DpadKit.Right") };
+static const u16 kDpadButtons[DPAD_KIT_DIRS] = { BTN_DUP, BTN_DDOWN, BTN_DLEFT, BTN_DRIGHT };
+static const char* const kDpadNames[DPAD_KIT_DIRS] = { "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right" };
+
+int DpadKitType(int dir) {
+    if (dir < 0 || dir >= DPAD_KIT_DIRS || !BaseEnabled()) {
+        return -1;
+    }
+    const char* kit = CVarGetString(kDpadCvars[dir], "");
+    return kit != nullptr && kit[0] != '\0' ? FindPlaceableTypeForKit(kit) : -1;
+}
+
+bool AnyDpadKit() {
+    for (int d = 0; d < DPAD_KIT_DIRS; d++) {
+        if (DpadKitType(d) >= 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Bind a kit to a direction (type < 0 clears it). A kit lives on one direction at a time.
+void BindDpadKit(int dir, int type) {
+    if (dir < 0 || dir >= DPAD_KIT_DIRS) {
+        return;
+    }
+    for (int d = 0; d < DPAD_KIT_DIRS; d++) {
+        if (d != dir && type >= 0 && DpadKitType(d) == type) {
+            CVarSetString(kDpadCvars[d], "");
+        }
+    }
+    CVarSetString(kDpadCvars[dir], type >= 0 && type < PLACEABLE_COUNT ? sPlaceables[type].kit : "");
+    CVarSave();
+}
+
+int DpadKitDirOf(int type) {
+    for (int d = 0; d < DPAD_KIT_DIRS; d++) {
+        if (DpadKitType(d) == type) {
+            return d;
+        }
+    }
+    return -1;
+}
+
+const char* DpadKitName(int dir) {
+    return dir >= 0 && dir < DPAD_KIT_DIRS ? kDpadNames[dir] : "";
+}
+
+uint32_t DpadKitCount(int dir) {
+    int type = DpadKitType(dir);
+    if (type < 0) {
+        return 0;
+    }
+    auto it = GetPool().kits.find(sPlaceables[type].kit);
+    return it != GetPool().kits.end() ? it->second : 0;
+}
+
+// What a D-pad press does once play is free (not paused, talking, in a cutscene...).
+static bool DpadKitsLive() {
+    if (gPlayState == nullptr || !AnyDpadKit()) {
+        return false;
+    }
+    PlayState* play = gPlayState;
+    Player* player = GET_PLAYER(play);
+    return player != nullptr && play->pauseCtx.state == 0 && play->msgCtx.msgMode == MSGMODE_NONE &&
+           play->gameOverCtx.state == GAMEOVER_INACTIVE && play->transitionTrigger == TRANS_TRIGGER_OFF &&
+           play->transitionMode == TRANS_MODE_OFF && !Play_InCsMode(play) &&
+           !(player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_CARRYING_ACTOR)) &&
+           !(player->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING);
+}
+
+// Link's own D-pad items must not fire on a bound direction (Player_GetItemOnButton asks).
+bool DpadKitHolds(int dir) {
+    return DpadKitType(dir) >= 0;
+}
+
+static void DpadKitsOnFrame() {
+    if (sPlace.active || !DpadKitsLive()) { // while placing, the ghost reads the D-pad (before Link)
+        return;
+    }
+    u16 pressed = gPlayState->state.input[0].press.button;
+    for (int d = 0; d < DPAD_KIT_DIRS; d++) {
+        int type = DpadKitType(d);
+        if (type < 0 || !(pressed & kDpadButtons[d])) {
+            continue;
+        }
+        BeginPlacement((uint8_t)type);
+        return;
+    }
 }
 
 void OnGhostDestroyed(Actor* ghost) {
@@ -1942,9 +2041,23 @@ void PlacementUpdate(Actor* ghost, PlayState* play) {
     if (!(input->cur.button & BTN_A)) {
         sPlace.armed = true;
     }
-    const u16 consumed = BTN_A | BTN_B | BTN_CLEFT | BTN_CRIGHT;
+    const u16 consumed = BTN_A | BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
     input->press.button &= ~consumed;
     input->cur.button &= ~consumed;
+
+    for (int d = 0; d < DPAD_KIT_DIRS; d++) {
+        int type = DpadKitType(d);
+        if (type < 0 || !(pressed & kDpadButtons[d])) {
+            continue;
+        }
+        if (type == sPlace.type) {
+            Sfx_PlaySfxCentered(NA_SE_SY_CANCEL);
+            EndPlacement();
+        } else {
+            BeginPlacement((uint8_t)type); // swaps the ghost to that kit
+        }
+        return;
+    }
 
     if (pressed & BTN_CLEFT) {
         sPlace.rot += 0x2000;
@@ -2136,6 +2249,7 @@ static void RuinChildBase() {
 
 void BaseOnFrame() {
     RuinChildBase();
+    DpadKitsOnFrame();
     if (sPlaceInFlight.reqId != 0 && Now() - sPlaceInFlight.sentAt > 5.0) {
         sPlaceInFlight = {};
         Toast("Base", "The host didn't answer", true);
@@ -2239,6 +2353,26 @@ const char* sevendays_test_place_ahead(int type) {
         j["reqId"] = sPlaceInFlight.reqId;
     }
     sPlace.active = false;
+    out = j.dump();
+    return out.c_str();
+}
+
+// #4071: bind a kit to a D-pad direction (kit "" clears; dir < 0 only reports). Returns the bindings,
+// whether placement is open and what it is placing.
+EMSCRIPTEN_KEEPALIVE
+const char* sevendays_test_dpad_kit(int dir, const char* kit) {
+    static std::string out;
+    if (dir >= 0 && dir < DPAD_KIT_DIRS) {
+        BindDpadKit(dir, kit != nullptr && kit[0] != '\0' ? FindPlaceableTypeForKit(kit) : -1);
+    }
+    nlohmann::json j;
+    for (int d = 0; d < DPAD_KIT_DIRS; d++) {
+        int t = DpadKitType(d);
+        j["binds"].push_back(t >= 0 ? sPlaceables[t].kit : "");
+        j["counts"].push_back(DpadKitCount(d));
+    }
+    j["placing"] = sPlace.active;
+    j["placeType"] = sPlace.active ? (int)sPlace.type : -1;
     out = j.dump();
     return out.c_str();
 }

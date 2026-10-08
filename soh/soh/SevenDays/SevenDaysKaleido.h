@@ -39,6 +39,12 @@ void SevenDaysKaleido_DrawPage(PlayState* play, s32 current); // after the frame
 void SevenDaysKaleido_DrawInfo(PlayState* play, s16 top);     // the bottom panel's line
 void SevenDaysKaleido_DrawPageLabel(PlayState* play, s16 top); // "To Workbench" on the L/R arrows
 
+// CraftingWindow.cpp: kits bound to the D-pad (#4071). dir 0 up, 1 down, 2 left, 3 right.
+s32 SevenDaysDpad_Bound(s32 dir);
+s32 SevenDaysDpad_Any(void);
+s32 SevenDaysDpad_Count(s32 dir); // kits in the pool (capped at 99), -1 when nothing is bound
+void* SevenDaysDpad_Icon(s32 dir); // 32x32 item icon texture, or NULL
+
 #ifdef __cplusplus
 }
 #endif

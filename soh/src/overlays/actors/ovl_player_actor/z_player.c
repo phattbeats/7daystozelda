@@ -32,6 +32,7 @@
 #include "soh/Enhancements/randomizer/randomizer_grotto.h"
 #include "soh/frame_interpolation.h"
 #include "soh/OTRGlobals.h"
+#include "soh/SevenDays/SevenDaysKaleido.h"
 #include "soh/ResourceManagerHelpers.h"
 
 #include <string.h>
@@ -2493,6 +2494,8 @@ s32 Player_GetItemOnButton(PlayState* play, s32 index) {
         return C_BTN_ITEM(1);
     } else if (index == 3) {
         return C_BTN_ITEM(2);
+    } else if (index >= 4 && SevenDaysDpad_Bound(index - 4)) {
+        return ITEM_NONE; // 7 Days to Zelda: a kit sits on this direction (placement reads the press)
     } else if (index == 4) {
         return DPAD_ITEM(0);
     } else if (index == 5) {
