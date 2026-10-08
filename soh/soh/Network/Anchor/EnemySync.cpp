@@ -387,14 +387,26 @@ static bool IsFloormas(Actor* actor) {
 // lead to a live tracked hand. Looked up in `tracked` before any deref: tracked
 // entries are erased on destroy, so a hit means the actor still exists.
 static void FloormasHands(Actor* actor, Actor* out[2]) {
+    out[0] = out[1] = nullptr;
     Actor* links[2] = { actor->parent, actor->child };
     for (int i = 0; i < 2; i++) {
-        out[i] = nullptr;
-        if (links[i] != nullptr && links[i] != actor && tracked.contains(links[i]) &&
-            links[i]->id == ACTOR_EN_FLOORMAS) {
-            out[i] = links[i];
+        if (links[i] == nullptr || links[i] == actor || !tracked.contains(links[i]) ||
+            links[i]->id != ACTOR_EN_FLOORMAS) {
+            return;
         }
     }
+    // Accept the pair only if it is exactly the ring Init built: two distinct
+    // hands that point back at this one and at each other. Anything else (a
+    // stale pointer, a reused address, a foreign Floormaster) is ambiguous and
+    // is rejected whole rather than guessed at, so a group kill can't spill
+    // into another ring.
+    Actor* p = links[0];
+    Actor* c = links[1];
+    if (p == c || p->child != actor || c->parent != actor || p->parent != c || c->child != p) {
+        return;
+    }
+    out[0] = p;
+    out[1] = c;
 }
 
 // Kills the whole ring in one frame, so none of its updates runs against a
