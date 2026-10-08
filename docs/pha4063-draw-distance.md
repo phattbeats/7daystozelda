@@ -59,3 +59,7 @@ Combined large-base + raid gate (default tier 2, `DisableDrawDistance` 1, 4 clie
 * Fog/daylight: at night the far plane is 8800, so tier 3's 7500 stays inside it; nothing drawn is wasted past it.
 
 Rig scripts: `tools/harness/pha4063/` (`dd2.py` approach sweep with screenshots and probe, `dd3.py` tier loop, `playd-gpu.py` with the host-resolver port map). Evidence: `docs/evidence/pha4063/`.
+
+## Deployed
+
+Live `soh-web:pha4063` (`soh.js?v=cc7604cf`, soh.wasm md5 071e2445), built FROM `soh-web:pha4062`, game files only. Rollback: tag `pre-pha4063` = pha4062, old container kept stopped as `soh-web-pre-pha4063` (`docker rm soh-web && docker rename soh-web-pre-pha4063 soh-web && docker start soh-web && docker network connect phattvip soh-web`). The bundle was built from pha4062's source plus this change (commit f686193 is the same change rebased onto main with PHA-4071's D-pad commit, which the bundle does not contain; PHA-4071's deploy will pick this up when it builds from main). Public site serves the new bundle (checked through zelda.phatt.vip: page 200, soh.js and soh.wasm md5 match).
