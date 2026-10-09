@@ -104,7 +104,7 @@ struct VolvagiaMirror {
     uint32_t fd2Frame = 0;
     int16_t last[VF_RAISE_COUNT] = {};
     float fdLastY = 0.0f;
-    bool pendingDefeat = false;
+    Actor* pendingDefeat = nullptr; // Fd that was defeated remotely during our own intro
 };
 static VolvagiaMirror sMirror;
 
@@ -329,7 +329,11 @@ static void VF_Fd2Deserialize(Actor* actor, const nlohmann::json& x) {
 // heart). Safe to call from either actor's edge: the second call is a no-op.
 static void VF_StartDefeat(BossFd* fd) {
     BossFd2* fd2 = VF_FindFd2(fd);
-    if (fd2 == nullptr || fd2->actionFunc == BossFd2_Death) {
+    if (fd2 == nullptr) {
+        SPDLOG_WARN("[VolvagiaSync] defeat: no Fd2 on this client, cannot start its death");
+        return;
+    }
+    if (fd2->actionFunc == BossFd2_Death) {
         return;
     }
     fd->actor.colChkInfo.health = 0;
@@ -352,7 +356,7 @@ static bool VF_OnPhaseChange(Actor* actor, uint8_t fromPhase, uint8_t toPhase) {
     }
     if (VF_LocalIntroRunning(fd)) {
         // Our own intro owns the camera: join the death when it ends.
-        sMirror.pendingDefeat = true;
+        sMirror.pendingDefeat = &fd->actor;
         ESYNC_LOG("[VolvagiaSync] defeat deferred until the local intro ends");
         return true;
     }
@@ -374,7 +378,7 @@ static void VF_OnRemoteDefeat(Actor* actor) {
         return; // the defeat is already running here
     }
     if (VF_LocalIntroRunning(fd)) {
-        sMirror.pendingDefeat = true;
+        sMirror.pendingDefeat = &fd->actor;
         ESYNC_LOG("[VolvagiaSync] remote defeat deferred until the local intro ends");
         return;
     }
@@ -403,17 +407,27 @@ void RegisterVolvagiaAdapter() {
     EnemySync::RegisterAdapter(ACTOR_BOSS_FD2, fd2);
 }
 
+// z_boss_fd.c, Init and Destroy: drop every per-fight flag so an aborted fight
+// (room left, host change, disconnect) can't kill the next Volvagia the moment
+// its intro ends, even if the new actor reuses the old address.
+extern "C" void Anchor_VolvagiaReset(Actor* fdActor) {
+    (void)fdActor;
+    sMirror = VolvagiaMirror();
+}
+
 // z_boss_fd.c, at the end of Fd's intro: the partner won while our intro played.
 extern "C" void Anchor_VolvagiaIntroOver(Actor* fdActor) {
-    if (!sMirror.pendingDefeat || gPlayState == NULL) {
+    if (sMirror.pendingDefeat != fdActor || gPlayState == NULL) {
         return;
     }
-    sMirror.pendingDefeat = false;
+    sMirror.pendingDefeat = nullptr;
     BossFd* fd = (BossFd*)fdActor;
     BossFd2* fd2 = VF_FindFd2(fd);
     fd->actor.colChkInfo.health = 0;
     if (fd2 != nullptr) {
         BossFd2_StartDeathHandoff(fd2, gPlayState);
+    } else {
+        SPDLOG_WARN("[VolvagiaSync] deferred defeat: no Fd2 on this client, health zeroed only");
     }
     ESYNC_LOG("[VolvagiaSync] local intro over: joining the deferred defeat at the hand-off");
 }
@@ -511,7 +525,7 @@ const char* anchor_test_vf(int cmd, int arg) {
     j["rockT"] = fd->work[BFD_ROCK_TIMER];
     j["fireT"] = fd->fireBreathTimer;
     j["handoff"] = fd->handoffSignal;
-    j["pending"] = sMirror.pendingDefeat;
+    j["pending"] = sMirror.pendingDefeat != nullptr;
     out = j.dump();
     return out.c_str();
 }

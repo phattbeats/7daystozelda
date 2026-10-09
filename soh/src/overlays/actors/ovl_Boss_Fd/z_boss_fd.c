@@ -78,6 +78,7 @@ static InitChainEntry sInitChain[] = {
 Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
 // #4050: soh/Network/Anchor/BossAdapters/VolvagiaAdapter.cpp
 void Anchor_VolvagiaIntroOver(Actor* fd);
+void Anchor_VolvagiaReset(Actor* fd);
 #endif
 
 // The player Volvagia goes after: the nearest living one in co-op, else Link.
@@ -208,6 +209,9 @@ void BossFd_Init(Actor* thisx, PlayState* play) {
     BossFd* this = (BossFd*)thisx;
     s16 i;
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    Anchor_VolvagiaReset(&this->actor);
+#endif
     Flags_SetSwitch(play, 0x14);
     Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BG_VB_SIMA, 680.0f, -100.0f, 0.0f, 0, 0, 0, 100);
     Actor_ProcessInitChain(&this->actor, sInitChain);
@@ -262,6 +266,9 @@ void BossFd_Destroy(Actor* thisx, PlayState* play) {
     s32 pad;
     BossFd* this = (BossFd*)thisx;
 
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    Anchor_VolvagiaReset(&this->actor);
+#endif
     SkelAnime_Free(&this->skelAnimeHead, play);
     SkelAnime_Free(&this->skelAnimeRightArm, play);
     SkelAnime_Free(&this->skelAnimeLeftArm, play);
