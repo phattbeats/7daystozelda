@@ -1,0 +1,10 @@
+PHA-4053 review-fix repro (2026-10-09), build soh.js?v=698a3f3a
+B armed with a deferred defeat during its own merge cutscene (anchor_test_tw cmd 12); A and B merged together
+  0.0 A {'stage': 0, 'act': 23, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': False} B {'stage': 1, 'act': 11, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': False}
+armed B
+ 16.9 A {'stage': 0, 'act': 23, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': False} B {'stage': 2, 'act': 21, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': False}
+ 17.0 A {'stage': 2, 'act': 21, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': False} B {'stage': 2, 'act': 21, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': True}
+ 26.3 A {'stage': 3, 'act': 18, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': False} B {'stage': 4, 'act': 22, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': False}
+ 26.3 A {'stage': 4, 'act': 22, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': False} B {'stage': 4, 'act': 22, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': False}
+ 91.0 A {'stage': 4, 'act': 22, 'hearts': 0, 'warps': 0, 'clear': 0, 'pend': False} B {'stage': 4, 'act': 22, 'hearts': 1, 'warps': 1, 'clear': 8, 'pend': False}
+final: A hearts/warps/clear/stage = 1 1 8 4, B = 1 1 8 4

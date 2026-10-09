@@ -69,13 +69,15 @@ enum TwEvent : uint8_t {
     EV_BLAST_ABSORB = 4,
 };
 
-static constexpr int TW_RING = 8;
+static constexpr int TW_RING = 16;
+static constexpr uint32_t TW_RING_LIFE = 60; // frames a pool event stays in the stream
 
 struct TwGroundEvent {
     uint32_t seq = 0;
     int type = 0;
     Vec3f pos = { 0, 0, 0 };
     int timer = 0;
+    uint32_t frame = 0;
 };
 
 struct TwState {
@@ -85,12 +87,19 @@ struct TwState {
     bool replayFresh = true;
     uint32_t replayFrame = 0;
     bool pendingDefeat = false;
+    Actor* pendingBoss = nullptr; // the Twinrova the pending defeat belongs to
     // Mirror side: the end of a charged release that left this machine's shield (frame, blast type).
     uint32_t releaseDoneFrame = 0;
     int releaseType = 0;
     uint32_t lastReflectSent = 0;
 };
 static TwState sTw;
+
+// A new fight (Twinrova's Init) or the end of one (her Destroy: scene change, leaving the room): nothing from
+// the last fight may carry over, least of all a pending defeat that would kill the next Twinrova at once.
+extern "C" void Anchor_TwReset() {
+    sTw = TwState();
+}
 
 static BossTw* TW_Boss(Actor* a) {
     return a != nullptr && a->id == ACTOR_BOSS_TW ? (BossTw*)a : nullptr;
@@ -169,9 +178,11 @@ static bool TW_ShouldMirror(Actor* actor, uint8_t streamedPhase) {
             BossTw_AnchorStartMerge(gPlayState);
             return false;
         }
-        if ((streamedPhase == TW_STAGE_DEFEATED || sTw.pendingDefeat) && !TW_LocalCutsceneStage(stage) &&
+        if ((streamedPhase == TW_STAGE_DEFEATED || (sTw.pendingDefeat && sTw.pendingBoss == actor)) &&
+            !TW_LocalCutsceneStage(stage) &&
             stage != TW_STAGE_DEFEATED) {
             sTw.pendingDefeat = false;
+            sTw.pendingBoss = nullptr;
             BossTw_AnchorStartDefeat((BossTw*)actor, gPlayState);
             ESYNC_LOG("[TwinrovaSync] deferred defeat started");
             return false;
@@ -204,6 +215,7 @@ static bool TW_OnPhaseChange(Actor* actor, uint8_t fromPhase, uint8_t toPhase) {
     }
     if (TW_LocalCutsceneStage(stage)) {
         sTw.pendingDefeat = true;
+        sTw.pendingBoss = actor;
         ESYNC_LOG("[TwinrovaSync] defeat deferred until the local cutscene ends");
         return false;
     }
@@ -222,6 +234,7 @@ static void TW_OnRemoteDefeat(Actor* actor) {
     }
     if (TW_LocalCutsceneStage(stage)) {
         sTw.pendingDefeat = true;
+        sTw.pendingBoss = actor;
         return;
     }
     BossTw_AnchorStartDefeat((BossTw*)actor, gPlayState);
@@ -235,6 +248,11 @@ static bool TW_HandlesDefeat(Actor* actor) {
 static void TW_OnLocalResume(Actor* actor) {
     BossTw* t = TW_Boss(actor);
     ESYNC_LOG("[TwinrovaSync] local AI resumes (params {})", (uint16_t)actor->params);
+    // this machine is the host now: continue the sequence the mirrors last saw, with an empty ring
+    sTw.nextSeq = std::max(sTw.nextSeq, sTw.replayed);
+    for (TwGroundEvent& e : sTw.ring) {
+        e = TwGroundEvent();
+    }
     if (t != nullptr && gPlayState != NULL) {
         t->anchorLocalReflect = 0;
         BossTw_AnchorResume(t, gPlayState);
@@ -245,8 +263,9 @@ static void TW_OnLocalResume(Actor* actor) {
 extern "C" void Anchor_TwStage(int stage) {
     if (sTw.pendingDefeat && (stage == TW_STAGE_WITCHES || stage == TW_STAGE_TWINROVA) && gPlayState != NULL) {
         BossTw* tw = BossTw_AnchorGlobal(2);
-        if (tw != nullptr) {
+        if (tw != nullptr && tw == (BossTw*)sTw.pendingBoss) {
             sTw.pendingDefeat = false;
+            sTw.pendingBoss = nullptr;
             BossTw_AnchorStartDefeat(tw, gPlayState);
             ESYNC_LOG("[TwinrovaSync] local cutscene over: joining the deferred defeat");
         }
@@ -265,6 +284,7 @@ extern "C" void Anchor_TwGroundBlastSpawned(int type, Vec3f* pos, int16_t timer)
     e.type = type;
     e.pos = *pos;
     e.timer = timer;
+    e.frame = gPlayState != NULL ? gPlayState->gameplayFrames : 0;
 }
 
 // The host took a pool back (a shield stopped the beam that made it): mirrors must not replay it.
@@ -278,9 +298,11 @@ extern "C" void Anchor_TwGroundBlastCancelled() {
 
 static void TW_PutRing(nlohmann::json& x) {
     nlohmann::json ev = nlohmann::json::array();
+    uint32_t now = gPlayState != NULL ? gPlayState->gameplayFrames : 0;
     for (int i = 0; i < TW_RING; i++) {
         const TwGroundEvent& e = sTw.ring[i];
-        if (e.seq != 0) {
+        // old events leave the stream, so a client that resyncs (host change, late join) never replays them
+        if (e.seq != 0 && now - e.frame <= TW_RING_LIFE) {
             ev.push_back({ e.seq, e.type, e.pos.x, e.pos.y, e.pos.z, e.timer });
         }
     }
@@ -649,7 +671,7 @@ extern "C" {
 // 4 teleport Link to (arg, 240, 0); 5 set this machine's shield charge to arg (fire if blast type 1, else ice);
 // 6 make Link adult with the Master Sword and Mirror Shield (applies on the next scene load); 7 force Twinrova to stun now (authority);
 // 9 start a beam on witch `arg` (0 Kotake, 1 Koume) now (authority); 11 start a blast of type `arg` (1 fire,
-// 0 ice) from Twinrova now (authority).
+// 0 ice) from Twinrova now (authority); 12 arm a deferred defeat on this client (as a remote kill during its own cutscene).
 // Pin witch `which` (0 Kotake, 1 Koume, 2 Twinrova) at a point (authority only).
 EMSCRIPTEN_KEEPALIVE
 void anchor_test_tw_pos(int which, double x, double y, double z) {
@@ -745,6 +767,11 @@ const char* anchor_test_tw(int cmd, int arg) {
         gSaveContext.inventory.equipment |= (1 << 1) | (1 << 6);
         gSaveContext.equips.equipment = (gSaveContext.equips.equipment & ~0x00FF) | 0x32;
         gSaveContext.equips.buttonItems[0] = ITEM_SWORD_MASTER;
+    }
+    if (cmd == 12 && parts[2] != nullptr) {
+        // arm a deferred defeat as OnPhaseChange would while this client is in its own cutscene
+        sTw.pendingDefeat = true;
+        sTw.pendingBoss = &parts[2]->actor;
     }
     if (cmd == 9 && arg >= 0 && arg < 3 && parts[arg] != nullptr && !EnemySync::IsSuppressed(&parts[arg]->actor)) {
         BossTw_AnchorForceAttack(parts[arg], gPlayState, 0);

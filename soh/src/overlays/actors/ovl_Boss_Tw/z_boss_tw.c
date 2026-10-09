@@ -193,6 +193,7 @@ extern PlayState* gPlayState;
 Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
 void Anchor_TwGroundBlastSpawned(s32 blastType, Vec3f* pos, s16 timer);
 void Anchor_TwStage(s32 stage);
+void Anchor_TwReset(void);
 void Anchor_TwGroundBlastCancelled(void);
 static s8 sTwStage = TW_STAGE_INTRO;
 BossTwEffect sTwEffects[150];
@@ -466,6 +467,7 @@ void BossTw_Init(Actor* thisx, PlayState* play2) {
         D_8094C858 = D_8094C854 = 0.0f;
         sFixedBlastType = Rand_ZeroFloat(1.99f);
         sTwStage = TW_STAGE_INTRO;
+        Anchor_TwReset();
         play->specialEffects = sTwEffects;
 
         for (i = 0; i < ARRAY_COUNT(sTwEffects); i++) {
@@ -574,6 +576,7 @@ void BossTw_Destroy(Actor* thisx, PlayState* play) {
 
     if (thisx->params == TW_TWINROVA) {
         sTwInitalized = false;
+        Anchor_TwReset();
     }
 }
 
@@ -1740,8 +1743,8 @@ void BossTw_TwinrovaMergeCS(BossTw* this, PlayState* play) {
                 this->work[TW_PLLR_IDX] = 0;
                 this->targetPos = sTwinrovaPillarPos[0];
                 sTwStage = TW_STAGE_TWINROVA;
-                Anchor_TwStage(sTwStage);
                 BossTw_TwinrovaSetupFly(this, play);
+                Anchor_TwStage(sTwStage); // after SetupFly: a deferred defeat must not be overwritten by Fly
             }
             break;
     }
@@ -5613,6 +5616,10 @@ u8 BossTw_AnchorActionCode(BossTw* this) {
 void BossTw_AnchorSetAction(BossTw* this, u8 code) {
     s32 i;
 
+    if (sTwStage == TW_STAGE_DEFEATED || this->actionFunc == BossTw_TwinrovaDeathCS) {
+        return; // a defeat is running here: the stream must not rewrite the action
+    }
+
     for (i = 0; i < (s32)ARRAY_COUNT(sAnchorActions); i++) {
         if (sAnchorActions[i].code == code) {
             this->actionFunc = sAnchorActions[i].fn;
@@ -5645,7 +5652,7 @@ void BossTw_AnchorStartMerge(PlayState* play) {
 // Mirroring ended without a defeat (stale stream, or this client became the host): put the actor into a
 // state its own AI can continue from.
 void BossTw_AnchorResume(BossTw* this, PlayState* play) {
-    if (this->actor.params >= TW_FIRE_BLAST) {
+    if (this->actor.params >= TW_FIRE_BLAST || sTwStage == TW_STAGE_DEFEATED) {
         return;
     }
     if (this->actor.params == TW_TWINROVA) {
