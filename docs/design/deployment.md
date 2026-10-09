@@ -4,7 +4,7 @@ Live at **https://zelda.phatt.vip** (Ship of Harkinian True Co-op, browser build
 
 ## Steps taken
 
-1. **Source.** `D:\Nextcloud\PHATT-TECH\Projects\7daystozelda\soh-coop-web.tar.gz`, which is `/mnt/user/nextcloud-data/phatt/files/PHATT-TECH/Projects/7daystozelda/` on the host. Extracted to `/mnt/disks/docker-drive-phatt/appdata/7daystozelda/soh-coop-web/`.
+1. **Source.** The `soh-coop-web` bundle, extracted into the deploy directory on the host.
 2. **Image.** `docker build -t soh-web:latest .` in that directory (node:22-alpine, has a healthcheck).
 3. **Containers.** The host has no `docker compose`, so these are the plain-docker equivalent of the bundled compose file:
    ```
@@ -15,9 +15,9 @@ Live at **https://zelda.phatt.vip** (Ship of Harkinian True Co-op, browser build
    docker network connect phattvip soh-web      # SWAG's network
    ```
    Both containers have log rotation set (10m x 3). Anchor is not exposed to the internet; port 43383 is not published.
-4. **SWAG proxy conf.** Copied `swag/zelda.subdomain.conf` to `appdata/swag/nginx/proxy-confs/`. It proxies `zelda.*` to `soh-web:8080` using lazy resolve.
-5. **SWAG docker config.** Added `zelda` to `SUBDOMAINS` in `/boot/config/plugins/dockerMan/templates-user/my-swag.xml` (backup: `my-swag.xml.pre-zelda-20261001`), then recreated SWAG with Unraid's `update_container swag`. SWAG issued a new Let's Encrypt cert through Cloudflare DNS validation. The cert covers `zelda.phatt.vip` and expires 2026-12-30. Note: the bundled README says a wildcard cert covers the subdomain. That is wrong; the cert lists each subdomain by name.
-6. **Cloudflare.** Created a proxied CNAME `zelda` → `phatt.vip` in zone phatt.vip (record id `93f2836f052400796d690da99002cd7a`), matching the existing records.
+4. **SWAG proxy conf.** Added the bundled `zelda.subdomain.conf` to the reverse proxy's proxy-confs directory. It proxies `zelda.*` to `soh-web:8080` using lazy resolve.
+5. **SWAG docker config.** Added `zelda` to the proxy container's `SUBDOMAINS` list (backed up the template first) and recreated the container. SWAG issued a new Let's Encrypt cert through Cloudflare DNS validation. The cert covers `zelda.phatt.vip` and expires 2026-12-30. Note: the bundled README says a wildcard cert covers the subdomain. That is wrong; the cert lists each subdomain by name.
+6. **Cloudflare.** Created a proxied CNAME `zelda` → `phatt.vip` in zone phatt.vip, matching the existing records.
 
 ## Verification
 - `https://zelda.phatt.vip/` returns 200 and `/healthz` returns 200. `soh-web` is healthy.
@@ -52,7 +52,7 @@ Requested: play the OoT title theme (youtube.com/watch?v=exQIatKQyQk) on the mai
 - Browsers block sound until the visitor interacts with the page, so the music starts on the **first tap, click or key press** on the lobby. The card says "tap anywhere to start" until then.
 - When the game starts (the lobby overlay hides), the music fades out over about 1 second and the player is removed, so it never plays over the game's own music. If YouTube fails to load, the card removes itself.
 - The overlay got 96px of bottom padding so the card doesn't cover the footer on phones.
-- Deploy: tagged the old image `soh-web:pre-pha3856-music` (rollback), built `soh-web:latest` FROM it with only `public/index.html` and `.gz` changed (build dir `appdata/7daystozelda/deploy-pha3856-music/`), then recreated `soh-web` with the step 3 run command, log options, and `docker network connect phattvip`.
+- Deploy: tagged the old image `soh-web:pre-pha3856-music` (rollback), built `soh-web:latest` FROM it with only `public/index.html` and `.gz` changed (build dir `the `deploy-pha3856-music` build directory`), then recreated `soh-web` with the step 3 run command, log options, and `docker network connect phattvip`.
 - Saved to Nextcloud `7daystozelda/homepage-art/`: `live-index-pha3856-music.html` (the full live page) and `lobby-music.snippet.html` (just the widget: it goes right before `<script async src="soh.js...`). **The older `homepage-art/index.html` does not have this change.** On the next bundle unpack, re-insert the snippet or the music disappears.
 - Verified in headless Chromium (desktop and phone sizes) with the page swapped in: the player loads at 15% and starts playing after a click; moving the slider to 40% saves and survives a reload; hiding the overlay removes the player; no page errors. After the deploy, curl confirmed the live page serves the widget and /healthz returns 200. I couldn't rerun the browser test against the live URL because browserless was over capacity.
 
@@ -61,7 +61,7 @@ Brandon asked for the MP3 instead of a YouTube player. This replaces the YouTube
 - `public/title-theme.mp3`: 90 s, about 128 kbps, 1.4 MB, downloaded from the same video with yt-dlp. The page plays it through the Web Audio API on a seamless loop. A gain node handles volume, because iPhones ignore volume on a normal audio player and server.js doesn't support byte ranges or know the mp3 type.
 - The card has a play/pause button, a volume slider (default **15%**, remembered per browser under `soh.menuMusicVolume`), and the track name. No video. Music starts on the first tap, click or key press, and fades out over 1 s when the game starts.
 - The page loads `title-theme.mp3?v=ab03a2ad`. Cloudflare caches .mp3 for 4 h, including a 404 I triggered during deploy, so the version tag is required. Change it if the file changes.
-- Deploy: rollback image `soh-web:pre-pha3856-mp3`; build dir `appdata/7daystozelda/deploy-pha3856-mp3/` (FROM rollback + COPY public/); container recreated with the step 3 command, log options, and the phattvip network.
+- Deploy: rollback image `soh-web:pre-pha3856-mp3`; build dir `the `deploy-pha3856-mp3` build directory` (FROM rollback + COPY public/); container recreated with the step 3 command, log options, and the phattvip network.
 - Nextcloud `homepage-art/` now holds `title-theme.mp3`, the updated `lobby-music.snippet.html`, and `live-index-pha3856-music.html` (the full live page). On a bundle unpack, copy the mp3 into public/ and insert the snippet before `<script async src="soh.js`.
 - Verified on the live site in headless Chromium: before a click the card says "tap anywhere to start"; a click starts audio at 15%; pause and resume work; a slider setting of 40 survives a reload; hiding the lobby closes the audio and removes the card; a phone-size tap also starts it; no page errors. /healthz 200, mp3 200, other sites unaffected.
 
@@ -79,6 +79,6 @@ Brandon OK'd printing the invite key in the 7DtZ devlog, which is for subscriber
 Brandon asked for a redeploy after #3935.
 - Built from `main` at `54b3271` (includes #3901 colors and #3939 lobby pickers). Only `soh.js` and `soh.wasm` changed, plus fresh `.gz` copies. `soh.data` is byte-identical to the live one, so `soh.data` and `soh.o2r` (with the title pack) stay as they were.
 - `public/index.html` is the live page with `soh.js?v=66c28587` (was `f23bbb19`), plus its `.gz`.
-- Deploy: tagged `soh-web:pha3939` as the rollback `soh-web:pre-pha3935`, then built `soh-web:pha3935` (also tagged `latest`) FROM the rollback with `COPY public/`. Build dir: `appdata/7daystozelda/deploy-pha3935/`. Recreated `soh-web` with the step 3 command, the log options, `-e ACCESS_KEY` copied from the old container, and `docker network connect phattvip`.
+- Deploy: tagged `soh-web:pha3939` as the rollback `soh-web:pre-pha3935`, then built `soh-web:pha3935` (also tagged `latest`) FROM the rollback with `COPY public/`. Build dir: `the `deploy-pha3935` build directory`. Recreated `soh-web` with the step 3 command, the log options, `-e ACCESS_KEY` copied from the old container, and `docker network connect phattvip`.
 - Verified on the live site: `/healthz` 200, bare `/` 403, keyed URL 200; Cloudflare serves the new `soh.js` (md5 matches) and `soh.wasm` 200; container healthy. In the game on zelda.phatt.vip (GPU Chrome, solo, an imported save): new piece types load from the save, Link walks through the player gate, a barricade upgrades to stone then iron, an iron wall is repaired and a new one crafted and placed, Navi's C-Up tip and evening warning show, and a raid night spawned 9 raiders all 335+ from a torch while the bomb traps went off 3 times.
 - Rollback: `docker rm -f soh-web` and rerun the step 3 command with `soh-web:pre-pha3935`.

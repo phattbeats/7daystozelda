@@ -1,4 +1,5 @@
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Network/Anchor/PacketValidation.h"
 #include "soh/Network/Anchor/BossEntry.h"
 #include "soh/Network/Anchor/CoopWarp.h"
 #include "soh/cvar_prefixes.h"
@@ -174,7 +175,11 @@ void Anchor::HandlePacket_BossEntry(nlohmann::json payload) {
     }
 
     s16 sceneNum = payload["sceneNum"].get<s16>();
-    s32 entranceIndex = payload["entranceIndex"].get<s32>();
+    s32 entranceIndex;
+    if (!AnchorValidate::Int(payload, "entranceIndex", 0, ENTR_MAX - 4, entranceIndex)) {
+        SPDLOG_WARN("[BossEntry] rx dropped out-of-range entranceIndex");
+        return;
+    }
 
     // Resolve the warp target from OUR OWN table keyed by scene, so a garbled/foreign
     // entrance index can never warp us somewhere wrong (both peers share this build's

@@ -602,7 +602,12 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
                 -Wno-int-conversion
             >
         )
+        # The web build has no C++ exception support by default, so a nlohmann throw from a malformed
+        # network packet aborts the tab. Only the Anchor packet-dispatch loop compiles with -fexceptions
+        # (it catches and drops the packet); throws from the handlers unwind to it as JS exceptions.
+        set_source_files_properties(soh/Network/Anchor/Anchor.cpp PROPERTIES COMPILE_OPTIONS -fexceptions)
         target_link_options(${PROJECT_NAME} PRIVATE
+            -sDISABLE_EXCEPTION_CATCHING=0
             -sUSE_SDL=2
             -sUSE_ZLIB=1
             -sUSE_OGG=1

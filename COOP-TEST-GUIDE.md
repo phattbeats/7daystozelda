@@ -5,7 +5,7 @@
 - **Enemies mirror**: one game (the "authority") runs enemy AI; the other shows the exact same enemies — same position, movement, animation. When a mob activates because one player got close, the other player sees the same thing.
 - **Hits work from both sides**: the mirrored player's hits are validated by the authority through the enemy's own damage code (vulnerability windows, i-frames all respected). Deaths and item drops still happen naturally on both screens.
 - **Dynamic spawns sync**: Stalchildren at night, Gohma larvae, Octorok rocks — spawn on both screens.
-- **Gohma is a co-op boss fight** (first boss slice; others follow the same adapter pattern later).
+- **Gohma is a co-op boss fight** (first boss slice; the other bosses now use the same adapter pattern).
 - **Controller isolation**: each instance is pinned to its own Xbox pad (test-a = first pad, test-b = second pad), and pads keep working when the window isn't focused. Keyboard always drives the focused window.
 
 ## How to launch
@@ -22,16 +22,17 @@
 4. **Gohma intro**: enter the boss room together. Each screen plays its own (short) intro; afterwards one Gohma, same spot, same movement on both screens.
 5. **Vulnerability windows**: A stuns Gohma (slingshot to the red eye), B sword-hits the stunned eye — damage counts once, eye/flash visuals match. B attacking the closed eye does nothing on either screen (the authority's Gohma rejects it).
 6. **Larvae wave**: Gohma climbs and lays eggs — eggs fall and hatch on both screens. B kills one: dies on both, no crash (this exercises the parent-pointer fix).
-7. **Defeat**: final blow from either player. Defeat cutscene plays on both screens; heart container appears for both (one grab shares it); blue warp appears (its exact spot may differ slightly between screens — known cosmetic); room stays cleared after re-entry.
+7. **Defeat**: final blow from either player. Defeat cutscene plays on both screens; heart container appears for both (one grab shares it); blue warp appears (the authority picks its spot, so it lands in the same place on both screens); room stays cleared after re-entry.
 8. **Input isolation**: both pads at once with only one window focused — each pad must only drive its own window.
 
-## Known limitations (accepted for this round)
+## Known limitations (updated for #4111)
 
-- Enemies aim at the authority player's Link (the other player can still hit and be hit). Nearest-player targeting is the first follow-up.
-- Enemy sound effects/particles that come from enemy AI play only on the authority's screen; hit sounds are local everywhere.
-- Floormasters intentionally don't mirror (their split/merge logic isn't mirror-safe) — they still share HP the M1 way.
-- Blue warp position after Gohma may differ between screens.
+The first-round limitations (authority-only aggro, authority-only enemy sounds, unmirrored Floormasters, Gohma's warp spot) are fixed: nearest-player targeting is in the M3 guide, enemy SFX and particles are mirrored, Floormasters have an adapter, and the authority picks the boss warp spot. What is still open:
+
+- **Bongo Bongo** has no adapter yet (#4052). Every other boss and miniboss is mirrored through `ActorSyncAdapter`; see `docs/design/coop-boss-checklist.md` for the per-boss status.
+- Authority loss, stale streams and host handoff have not been live-tested across the bosses.
 - If one game hard-crashes, the other's enemies freeze ~1.5 s, then resume under local AI.
+- Malformed or out-of-range network packets are dropped (and logged as `dropped ...`) instead of crashing the tab. If you see those lines in a normal two-player session, report them.
 
 ## If something looks wrong
 

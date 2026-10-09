@@ -1,4 +1,5 @@
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Network/Anchor/PacketValidation.h"
 #include <nlohmann/json.hpp>
 #include <libultraship/libultraship.h>
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -37,9 +38,14 @@ void Anchor::HandlePacket_UnsetFlag(nlohmann::json payload) {
         return;
     }
 
-    s16 sceneNum = payload["sceneNum"].get<s16>();
-    s16 flagType = payload["flagType"].get<s16>();
-    s16 flag = payload["flag"].get<s16>();
+    s16 sceneNum, flagType, flag;
+    if (!AnchorValidate::Int(payload, "sceneNum", 0, SCENE_ID_MAX, sceneNum) ||
+        !AnchorValidate::Int(payload, "flagType", 0, 0x7FFF, flagType) ||
+        !AnchorValidate::Int(payload, "flag", 0, 0x7FFF, flag) ||
+        !AnchorValidate::FlagTriple(sceneNum, flagType, flag, false)) {
+        SPDLOG_WARN("[UnsetFlag] dropped out-of-range packet");
+        return;
+    }
 
     if (sceneNum == SCENE_ID_MAX) {
         auto effect = new GameInteractionEffect::UnsetFlag();

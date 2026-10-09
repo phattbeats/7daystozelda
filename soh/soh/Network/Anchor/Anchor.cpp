@@ -62,7 +62,7 @@ void Anchor::SendJsonToRemote(nlohmann::json payload) {
 
 void Anchor::OnIncomingJson(nlohmann::json payload) {
     // If it doesn't contain a type, it's not a valid payload
-    if (!payload.contains("type")) {
+    if (!payload.is_object() || !payload.contains("type") || !payload["type"].is_string()) {
         return;
     }
 
@@ -75,7 +75,7 @@ void Anchor::OnIncomingJson(nlohmann::json payload) {
 
     // Ignore packets from mismatched clients, except for ALL_CLIENT_STATE or UPDATE_CLIENT_STATE
     if (packetType != ALL_CLIENT_STATE && packetType != UPDATE_CLIENT_STATE) {
-        if (payload.contains("clientId")) {
+        if (payload.contains("clientId") && payload["clientId"].is_number_unsigned()) {
             uint32_t clientId = payload["clientId"].get<uint32_t>();
             if (clients.contains(clientId) && clients[clientId].clientVersion != clientVersion) {
                 return;
@@ -85,7 +85,11 @@ void Anchor::OnIncomingJson(nlohmann::json payload) {
 
     // Handle PLAYER_UPDATE packets immediately, no need to queue
     if (packetType == PLAYER_UPDATE) {
-        HandlePacket_PlayerUpdate(payload);
+        try {
+            HandlePacket_PlayerUpdate(payload);
+        } catch (const std::exception& e) {
+            SPDLOG_WARN("[Anchor] dropped malformed PLAYER_UPDATE: {}", e.what());
+        }
         return;
     }
 
@@ -106,96 +110,103 @@ void Anchor::ProcessIncomingPacketQueue() {
         nlohmann::json payload = incomingPacketQueue.front();
         incomingPacketQueue.pop();
 
-        std::string packetType = payload["type"].get<std::string>();
+        // One malformed packet (missing field, wrong type, out-of-range value) must not take the tab down:
+        // nlohmann throws on bad access, so contain it here and drop only that packet.
+        try {
+            std::string packetType = payload["type"].get<std::string>();
 
-        isProcessingIncomingPacket = true;
+            isProcessingIncomingPacket = true;
 
-        // packetType here is a string so we can't use a switch statement
-        if (packetType == ALL_CLIENT_STATE)
-            HandlePacket_AllClientState(payload);
-        else if (packetType == BGM_POS)
-            HandlePacket_BgmPos(payload);
-        else if (packetType == BGM_POS_REQUEST)
-            HandlePacket_BgmPosRequest(payload);
-        else if (packetType == AMBIENT_STATE)
-            HandlePacket_AmbientState(payload);
-        else if (packetType == BGM_RESTART)
-            HandlePacket_BgmRestart(payload);
-        else if (packetType == BGM_STATE)
-            HandlePacket_BgmState(payload);
-        else if (packetType == BOSS_ENTRY)
-            HandlePacket_BossEntry(payload);
-        else if (packetType == CUTSCENE_SYNC)
-            HandlePacket_CutsceneSync(payload);
-        else if (packetType == DAMAGE_PLAYER)
-            HandlePacket_DamagePlayer(payload);
-        else if (packetType == DISABLE_ANCHOR)
-            HandlePacket_DisableAnchor(payload);
-        else if (packetType == ENEMY_DESPAWN)
-            HandlePacket_EnemyDespawn(payload);
-        else if (packetType == ENEMY_DIED)
-            HandlePacket_EnemyDied(payload);
-        else if (packetType == ENEMY_HIT)
-            HandlePacket_EnemyHit(payload);
-        else if (packetType == ENEMY_HIT_REQUEST)
-            HandlePacket_EnemyHitRequest(payload);
-        else if (packetType == ENEMY_PLAYER_EFFECT)
-            HandlePacket_EnemyPlayerEffect(payload);
-        else if (packetType == HORDE_EVENT)
-            HandlePacket_HordeEvent(payload);
-        else if (packetType == ENEMY_ROSTER)
-            HandlePacket_EnemyRoster(payload);
-        else if (packetType == ENEMY_SPAWN)
-            HandlePacket_EnemySpawn(payload);
-        else if (packetType == PROJECTILE_REFLECT)
-            HandlePacket_ProjectileReflect(payload);
-        else if (packetType == ENEMY_STATE)
-            HandlePacket_EnemyState(payload);
-        else if (packetType == ENTRANCE_DISCOVERED)
-            HandlePacket_EntranceDiscovered(payload);
-        else if (packetType == GAME_COMPLETE)
-            HandlePacket_GameComplete(payload);
-        else if (packetType == GIVE_ITEM)
-            HandlePacket_GiveItem(payload);
-        else if (packetType == PLAYER_LIFE_STATE)
-            HandlePacket_PlayerLifeState(payload);
-        else if (packetType == PLAYER_SFX)
-            HandlePacket_PlayerSfx(payload);
-        else if (packetType == PUSH_BLOCK)
-            HandlePacket_PushBlock(payload);
-        else if (packetType == PUSH_BLOCK_REQUEST)
-            HandlePacket_PushBlockRequest(payload);
-        else if (packetType == WORLD_OBJECT)
-            HandlePacket_WorldObject(payload);
-        else if (packetType == UPDATE_TEAM_STATE)
-            HandlePacket_UpdateTeamState(payload);
-        else if (packetType == REQUEST_TEAM_STATE)
-            HandlePacket_RequestTeamState(payload);
-        else if (packetType == REQUEST_TELEPORT)
-            HandlePacket_RequestTeleport(payload);
-        else if (packetType == RUPEE_CHANGE)
-            HandlePacket_RupeeChange(payload);
-        else if (packetType == SERVER_MESSAGE)
-            HandlePacket_ServerMessage(payload);
-        else if (packetType == SET_CHECK_STATUS)
-            HandlePacket_SetCheckStatus(payload);
-        else if (packetType == SET_FLAG)
-            HandlePacket_SetFlag(payload);
-        else if (packetType == TELEPORT_TO)
-            HandlePacket_TeleportTo(payload);
-        else if (packetType == UNSET_FLAG)
-            HandlePacket_UnsetFlag(payload);
-        else if (packetType == UPDATE_BEANS_COUNT)
-            HandlePacket_UpdateBeansCount(payload);
-        else if (packetType == UPDATE_CLIENT_STATE)
-            HandlePacket_UpdateClientState(payload);
-        else if (packetType == UPDATE_ROOM_STATE)
-            HandlePacket_UpdateRoomState(payload);
-        else if (packetType == UPDATE_DUNGEON_ITEMS)
-            HandlePacket_UpdateDungeonItems(payload);
-        else if (SevenDays::IsPacket(packetType))
-            SevenDays::HandlePacket(payload);
-
+            // packetType here is a string so we can't use a switch statement
+            if (packetType == ALL_CLIENT_STATE)
+                HandlePacket_AllClientState(payload);
+            else if (packetType == BGM_POS)
+                HandlePacket_BgmPos(payload);
+            else if (packetType == BGM_POS_REQUEST)
+                HandlePacket_BgmPosRequest(payload);
+            else if (packetType == AMBIENT_STATE)
+                HandlePacket_AmbientState(payload);
+            else if (packetType == BGM_RESTART)
+                HandlePacket_BgmRestart(payload);
+            else if (packetType == BGM_STATE)
+                HandlePacket_BgmState(payload);
+            else if (packetType == BOSS_ENTRY)
+                HandlePacket_BossEntry(payload);
+            else if (packetType == CUTSCENE_SYNC)
+                HandlePacket_CutsceneSync(payload);
+            else if (packetType == DAMAGE_PLAYER)
+                HandlePacket_DamagePlayer(payload);
+            else if (packetType == DISABLE_ANCHOR)
+                HandlePacket_DisableAnchor(payload);
+            else if (packetType == ENEMY_DESPAWN)
+                HandlePacket_EnemyDespawn(payload);
+            else if (packetType == ENEMY_DIED)
+                HandlePacket_EnemyDied(payload);
+            else if (packetType == ENEMY_HIT)
+                HandlePacket_EnemyHit(payload);
+            else if (packetType == ENEMY_HIT_REQUEST)
+                HandlePacket_EnemyHitRequest(payload);
+            else if (packetType == ENEMY_PLAYER_EFFECT)
+                HandlePacket_EnemyPlayerEffect(payload);
+            else if (packetType == HORDE_EVENT)
+                HandlePacket_HordeEvent(payload);
+            else if (packetType == ENEMY_ROSTER)
+                HandlePacket_EnemyRoster(payload);
+            else if (packetType == ENEMY_SPAWN)
+                HandlePacket_EnemySpawn(payload);
+            else if (packetType == PROJECTILE_REFLECT)
+                HandlePacket_ProjectileReflect(payload);
+            else if (packetType == ENEMY_STATE)
+                HandlePacket_EnemyState(payload);
+            else if (packetType == ENTRANCE_DISCOVERED)
+                HandlePacket_EntranceDiscovered(payload);
+            else if (packetType == GAME_COMPLETE)
+                HandlePacket_GameComplete(payload);
+            else if (packetType == GIVE_ITEM)
+                HandlePacket_GiveItem(payload);
+            else if (packetType == PLAYER_LIFE_STATE)
+                HandlePacket_PlayerLifeState(payload);
+            else if (packetType == PLAYER_SFX)
+                HandlePacket_PlayerSfx(payload);
+            else if (packetType == PUSH_BLOCK)
+                HandlePacket_PushBlock(payload);
+            else if (packetType == PUSH_BLOCK_REQUEST)
+                HandlePacket_PushBlockRequest(payload);
+            else if (packetType == WORLD_OBJECT)
+                HandlePacket_WorldObject(payload);
+            else if (packetType == UPDATE_TEAM_STATE)
+                HandlePacket_UpdateTeamState(payload);
+            else if (packetType == REQUEST_TEAM_STATE)
+                HandlePacket_RequestTeamState(payload);
+            else if (packetType == REQUEST_TELEPORT)
+                HandlePacket_RequestTeleport(payload);
+            else if (packetType == RUPEE_CHANGE)
+                HandlePacket_RupeeChange(payload);
+            else if (packetType == SERVER_MESSAGE)
+                HandlePacket_ServerMessage(payload);
+            else if (packetType == SET_CHECK_STATUS)
+                HandlePacket_SetCheckStatus(payload);
+            else if (packetType == SET_FLAG)
+                HandlePacket_SetFlag(payload);
+            else if (packetType == TELEPORT_TO)
+                HandlePacket_TeleportTo(payload);
+            else if (packetType == UNSET_FLAG)
+                HandlePacket_UnsetFlag(payload);
+            else if (packetType == UPDATE_BEANS_COUNT)
+                HandlePacket_UpdateBeansCount(payload);
+            else if (packetType == UPDATE_CLIENT_STATE)
+                HandlePacket_UpdateClientState(payload);
+            else if (packetType == UPDATE_ROOM_STATE)
+                HandlePacket_UpdateRoomState(payload);
+            else if (packetType == UPDATE_DUNGEON_ITEMS)
+                HandlePacket_UpdateDungeonItems(payload);
+            else if (SevenDays::IsPacket(packetType))
+                SevenDays::HandlePacket(payload);
+        } catch (const std::exception& e) {
+            SPDLOG_WARN("[Anchor] dropped malformed packet: {}", e.what());
+        } catch (...) {
+            SPDLOG_WARN("[Anchor] dropped malformed packet (unknown exception)");
+        }
         isProcessingIncomingPacket = false;
     }
 }
@@ -256,3 +267,21 @@ bool Anchor::IsSaveLoaded() {
 
     return true;
 }
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+// #4111 test hook: feeds one JSON packet through the same receive path a relay message takes, then drains the
+// queue. Returns "survived" if the dispatch loop contained whatever the packet threw.
+extern "C" {
+EMSCRIPTEN_KEEPALIVE
+const char* anchor_test_inject(const char* json) {
+    auto payload = nlohmann::json::parse(json, nullptr, false);
+    if (payload.is_discarded() || Anchor::Instance == nullptr) {
+        return "unparsable";
+    }
+    Anchor::Instance->OnIncomingJson(payload);
+    Anchor::Instance->ProcessIncomingPacketQueue();
+    return "survived";
+}
+}
+#endif

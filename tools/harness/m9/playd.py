@@ -1,9 +1,9 @@
 # eval daemon: POST python code to :PORT, runs with helpers; returns stdout
-import sys, io, json, time, traceback, http.server, socketserver, contextlib
+import os, sys, io, json, time, traceback, http.server, socketserver, contextlib
 from playwright.sync_api import sync_playwright
 PORT=int(sys.argv[1]); WS=sys.argv[2]; URL=sys.argv[3]
 pw=sync_playwright().start()
-EXE='/paperclip/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell'
+EXE=os.environ.get('CHROME_EXE') or os.path.expanduser('~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell')
 ctx=pw.chromium.launch_persistent_context(sys.argv[4],executable_path=EXE,args=['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist','--autoplay-policy=no-user-gesture-required','--enable-features=SharedArrayBuffer'],viewport={'width':960,'height':540}) if WS=='local' else pw.chromium.connect_over_cdp(WS).contexts[0]
 page=ctx.new_page(); page.set_viewport_size({'width':960,'height':540})
 page.on('console', lambda m: print('[con]',m.text[:200],file=sys.stderr) if 'SevenDays' in m.text or 'error' in m.type else None)

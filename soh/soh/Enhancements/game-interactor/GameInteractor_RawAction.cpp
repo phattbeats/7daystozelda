@@ -129,6 +129,10 @@ void GameInteractor::RawAction::KnockbackPlayer(float strength) {
 }
 
 void GameInteractor::RawAction::SetSceneFlag(int16_t sceneNum, int16_t flagType, int16_t flag) {
+    // sceneNum indexes gSaveContext.sceneFlags[124] and flag is a shift count: callers feed network values.
+    if (sceneNum < 0 || sceneNum >= 124 || flag < 0 || flag >= 0x40) {
+        return;
+    }
     switch (flagType) {
         case FlagType::FLAG_SCENE_SWITCH:
             if (sceneNum == gPlayState->sceneNum) {
@@ -170,6 +174,10 @@ void GameInteractor::RawAction::SetSceneFlag(int16_t sceneNum, int16_t flagType,
 };
 
 void GameInteractor::RawAction::UnsetSceneFlag(int16_t sceneNum, int16_t flagType, int16_t flag) {
+    // sceneNum indexes gSaveContext.sceneFlags[124] and flag is a shift count: callers feed network values.
+    if (sceneNum < 0 || sceneNum >= 124 || flag < 0 || flag >= 0x40) {
+        return;
+    }
     switch (flagType) {
         case FlagType::FLAG_SCENE_SWITCH:
             if (sceneNum == gPlayState->sceneNum) {

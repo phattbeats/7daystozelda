@@ -1,4 +1,5 @@
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Network/Anchor/PacketValidation.h"
 #include <nlohmann/json.hpp>
 #include <libultraship/libultraship.h>
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -32,7 +33,11 @@ void Anchor::HandlePacket_UpdateDungeonItems(nlohmann::json payload) {
         return;
     }
 
-    u16 mapIndex = payload["mapIndex"].get<u16>();
+    u16 mapIndex;
+    if (!AnchorValidate::Int(payload, "mapIndex", 0, 18, mapIndex)) { // dungeonKeys[19]
+        SPDLOG_WARN("[UpdateDungeonItems] dropped out-of-range mapIndex");
+        return;
+    }
     gSaveContext.inventory.dungeonItems[mapIndex] = payload["dungeonItems"].get<u8>();
     gSaveContext.inventory.dungeonKeys[mapIndex] = payload["dungeonKeys"].get<s8>();
 }

@@ -198,6 +198,9 @@ inline void from_json(const json& j, SaveContext& saveContext) {
     }
     std::vector<u32> sceneFlagsArray;
     j.at("sceneFlags").get_to(sceneFlagsArray);
+    if (sceneFlagsArray.size() < 124 * 4) {
+        throw std::out_of_range("sceneFlags array too short");
+    }
     for (int i = 0; i < 124; i++) {
         saveContext.sceneFlags[i].chest = sceneFlagsArray[i * 4];
         saveContext.sceneFlags[i].swch = sceneFlagsArray[i * 4 + 1];

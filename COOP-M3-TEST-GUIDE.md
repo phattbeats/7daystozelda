@@ -44,8 +44,8 @@ Horde night only runs in Hyrule Field and Lon Lon Ranch, and only on the instanc
 
 ## Known limitations (this round)
 
-- **Bosses** still attack only the host (all bosses drive cameras and player cutscenes off "the player"). King Dodongo specifically needs bomb sync before co-op works; see the project notes.
-- **Excluded from remote targeting** (they still chase only the host): Wallmaster, Like-Like, Gerudo fighters, Poes, Poe Sisters, Skull Kid, Floormaster, Skulltula, Shabom, Dead Hand + hands, Moblin. Either their attacks touch the host's save/camera/scene, or they release grabs in a way that doesn't reach the victim yet.
+- **Bosses** are not in the nearest-player swap. Each boss adapter decides whether its attacks can pick the other players; see `docs/design/coop-boss-checklist.md`.
+- **Excluded from remote targeting** (they still chase only the host): Wallmaster, Like-Like, Gerudo fighters, Poes, Poe Sisters, Skull Kid, Skulltula, Shabom, Dead Hand + hands, Moblin. Either their attacks touch the host's save/camera/scene, or they release grabs in a way that doesn't reach the victim yet. Floormasters have their own adapter and are no longer on this list.
 - ReDead lock-on is skipped for remote victims (it would have moved the host's camera).
 - Sounds replay at default pitch/volume; the few enemies that pitch-shift their sounds will sound slightly flat on mirrors.
 - A ReDead holding someone when it's removed at dawn leaves them in the grabbed pose until they mash out.

@@ -1,5 +1,5 @@
 // Relay tests through the SWAG-equivalent nginx (proxy timeouts cut to 10 s).
-const WebSocket = require("/root/web-bundle/node_modules/ws");
+const WebSocket = require(process.env.WS_MODULE || "ws");
 const VIA = "ws://127.0.0.1:18443/anchor", DIRECT = "ws://127.0.0.1:8080/anchor";
 const COOKIE = { headers: { Cookie: "soh_key=testkey" } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

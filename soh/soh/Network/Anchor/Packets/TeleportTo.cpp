@@ -1,4 +1,5 @@
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Network/Anchor/PacketValidation.h"
 #include <nlohmann/json.hpp>
 #include <libultraship/libultraship.h>
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -37,7 +38,11 @@ void Anchor::HandlePacket_TeleportTo(nlohmann::json payload) {
         return;
     }
 
-    s32 entranceIndex = payload["entranceIndex"].get<s32>();
+    s32 entranceIndex;
+    if (!AnchorValidate::Int(payload, "entranceIndex", 0, ENTR_MAX - 4, entranceIndex)) { // +sceneLayer is added later
+        SPDLOG_WARN("[TeleportTo] dropped out-of-range entranceIndex");
+        return;
+    }
     s8 roomIndex = payload["roomIndex"].get<s8>();
     PosRot posRot = payload["posRot"].get<PosRot>();
 

@@ -4,7 +4,7 @@ from playwright.sync_api import sync_playwright
 VW=int(os.environ.get('VW','960')); VH=int(os.environ.get('VH','540'))
 PORT=int(sys.argv[1]); WS=sys.argv[2]; URL=sys.argv[3]
 pw=sync_playwright().start()
-EXE='/paperclip/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell'
+EXE=os.environ.get('CHROME_EXE') or os.path.expanduser('~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell')
 ctx=pw.chromium.launch_persistent_context(sys.argv[4],executable_path=EXE,args=[a for a in [os.environ.get('JSF','')] if a]+['--host-resolver-rules=MAP 127.0.0.1:18471 127.0.0.1:18463','--enable-logging=stderr','--v=0','--use-gl=angle','--use-angle=gl-egl','--enable-gpu','--no-sandbox','--ignore-gpu-blocklist','--autoplay-policy=no-user-gesture-required','--enable-features=SharedArrayBuffer'],viewport={'width':VW,'height':VH}) if WS=='local' else pw.chromium.connect_over_cdp(WS).contexts[0]
 page=ctx.new_page(); page.set_viewport_size({'width':VW,'height':VH})
 if os.environ.get('TAP'): page.add_init_script(path='/tmp/z4062/t/tap.js')

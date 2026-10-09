@@ -2043,6 +2043,10 @@ void HandleRemoteSpawn(uint64_t key, int16_t actorId, uint16_t params, Vec3f pos
     if (gPlayState == NULL || keyToActor.contains(key) || recentlyDeadKeys.contains(key)) {
         return;
     }
+    if (actorId < 0 || actorId >= ACTOR_ID_MAX) { // network value reaches gActorOverlayTable[actorId]
+        SPDLOG_WARN("[EnemySync] SPAWN rx dropped (actorId {} out of range)", actorId);
+        return;
+    }
     if (gPlayState->roomCtx.curRoom.num != roomNum) {
         ESYNC_LOG("[EnemySync] SPAWN rx dropped (room {} not loaded) key={:#x}", roomNum, key);
         return;

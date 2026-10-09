@@ -1,4 +1,5 @@
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Network/Anchor/PacketValidation.h"
 #include "soh/Network/Anchor/CutsceneSync.h"
 #include "soh/Network/Anchor/CoopWarp.h"
 #include "soh/cvar_prefixes.h"
@@ -240,8 +241,13 @@ void Anchor::HandlePacket_CutsceneSync(nlohmann::json payload) {
 
     u8 kind = payload["kind"].get<u8>();
     s16 sceneNum = payload["sceneNum"].get<s16>();
-    s32 entranceIndex = payload["entranceIndex"].get<s32>();
+    s32 entranceIndex;
     s32 cutsceneIndex = payload["cutsceneIndex"].get<s32>();
+    if (sceneNum < 0 || sceneNum >= SCENE_ID_MAX ||
+        !AnchorValidate::Int(payload, "entranceIndex", 0, ENTR_MAX - 4, entranceIndex)) {
+        SPDLOG_WARN("[CutsceneSync] dropped out-of-range scene/entrance");
+        return;
+    }
     s16 csFlag = payload["csFlag"].get<s16>();
 
     // Guard 1: already in the target scene -> ignore. Covers simultaneous triggers:
