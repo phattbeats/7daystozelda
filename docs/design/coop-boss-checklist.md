@@ -194,6 +194,8 @@ Not exercised live: Iron Knuckle's raised shield blocking a mirror swing (the st
 
 ## Twinrova (#4053)
 
+Review fixes (2026-10-09, live as `soh-web:pha4053-fix`, `soh.js?v=698a3f3a`, rollback `pre-pha4053-fix` = pha4078): a defeat deferred during a client's own merge cutscene is now started after the cutscene's SetupFly (it used to be overwritten by Fly, so no death cutscene, heart or warp); the stream cannot rewrite the action while a defeat runs; the pending-defeat flag is reset in Twinrova's Init/Destroy and keyed to the actor; the pool ring is 16 deep, expires after 60 frames, and is emptied when a client becomes host. Verified live with `anchor_test_tw(12)` (arms the deferred defeat on one client): the death cutscene, heart, warp and clear flag came on both clients. Not exercised: the real timing race (the clients are about 0.1 s apart), a host change mid-cutscene.
+
 Live as `soh-web:pha4053` (`soh.js?v=ba384731`, FROM pha4055). Rollback tag `pre-pha4053` (= pha4055); the old container is kept stopped as `soh-web-pre-pha4053`.
 
 Boss_Tw: Kotake (params 0), Koume (1), Twinrova (2), the fire and ice blasts (0x64, 0x66), their pools (0x65, 0x67) and the death balls (0x68, 0x69). The room is room 3 of scene 0x17; its actors exist only on the adult layer.
