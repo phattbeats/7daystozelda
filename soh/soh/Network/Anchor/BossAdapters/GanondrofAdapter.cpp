@@ -233,7 +233,22 @@ static void GND_Serialize(Actor* actor, nlohmann::json& x) {
     }
 }
 
+// Only the spawns the authority's ring can hold are replayed; anything else off the wire is
+// dropped, never handed to the spawner.
+static bool GND_ReplayAllowed(const GndEvent& e) {
+    if (e.id == ACTOR_EN_FHG_FIRE) {
+        return e.params == FHGFIRE_LIGHTNING_STRIKE || e.params == FHGFIRE_SPEAR_LIGHT ||
+               e.params == FHGFIRE_WARP_EMERGE || e.params == FHGFIRE_WARP_RETREAT ||
+               e.params == FHGFIRE_LIGHTNING_BURST;
+    }
+    return e.id == ACTOR_BOSS_GANONDROF && e.params >= GND_FAKE_BOSS;
+}
+
 static void GND_SpawnReplay(BossGanondrof* b, EnfHG* horse, const GndEvent& e) {
+    if (!GND_ReplayAllowed(e)) {
+        SPDLOG_WARN("[GanondrofSync] dropped replay of actor {} params {}", e.id, e.params);
+        return;
+    }
     Actor* parent = nullptr;
     if (e.id == ACTOR_EN_FHG_FIRE && e.params == FHGFIRE_SPEAR_LIGHT) {
         parent = &b->actor;
@@ -438,8 +453,28 @@ static void GND_OnLocalResume(Actor* actor) {
     if (b == nullptr || b->deathState != NOT_DEAD) {
         return;
     }
-    b->flyMode = GND_FLY_PAINTING;
+    // Keep the streamed phase: still in the paintings, or already in the neutral fight.
+    // Paintings sees flyMode != PAINTING and makes the hop to Neutral itself.
+    if (b->flyMode != GND_FLY_PAINTING) {
+        b->flyMode = GND_FLY_NEUTRAL;
+    }
     BossGanondrof_SetupPaintings(b);
+}
+
+// Boss Init/Destroy: a fight that was aborted (room left, host change, disconnect) leaves
+// no pending defeat for the next boss.
+extern "C" void Anchor_GanondrofReset(void) {
+    sMirror.pendingDefeat = false;
+    sMirror.pendingBoss = nullptr;
+    sMirror.boss = nullptr;
+    sMirror.lastShock = 0;
+    sMirror.lastSeq = 0;
+    sMirror.nextSeq = 0;
+    sMirror.mirroring = false;
+    sMirror.replaying = false;
+    for (int i = 0; i < GND_RING; i++) {
+        sMirror.ring[i] = {};
+    }
 }
 
 void RegisterGanondrofAdapter() {

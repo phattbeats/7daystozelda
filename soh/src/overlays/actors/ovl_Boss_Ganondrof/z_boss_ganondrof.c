@@ -24,6 +24,7 @@ Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
 // #4049: soh/Network/Anchor/BossAdapters/GanondrofAdapter.cpp
 void Anchor_GanondrofIntroOver(Actor* boss);
 void Anchor_GanondrofSpawned(Actor* spawned);
+void Anchor_GanondrofReset(void);
 #endif
 
 // The player Phantom Ganon goes after: the nearest living one in co-op, else Link.
@@ -243,6 +244,9 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     if (this->actor.params < GND_FAKE_BOSS) {
         this->actor.params = GND_REAL_BOSS;
         this->actor.colChkInfo.health = 30;
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+        Anchor_GanondrofReset();
+#endif
         this->lightNode = LightContext_InsertLight(play, &play->lightCtx, &this->lightInfo);
         Lights_PointNoGlowSetInfo(&this->lightInfo, this->actor.world.pos.x, this->actor.world.pos.y,
                                   this->actor.world.pos.z, 255, 255, 255, 255);
@@ -304,6 +308,9 @@ void BossGanondrof_Destroy(Actor* thisx, PlayState* play) {
     Collider_DestroyCylinder(play, &this->colliderBody);
     Collider_DestroyCylinder(play, &this->colliderSpear);
     if (this->actor.params == GND_REAL_BOSS) {
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+        Anchor_GanondrofReset();
+#endif
         LightContext_RemoveLight(play, &play->lightCtx, this->lightNode);
     }
 
