@@ -172,6 +172,17 @@ static std::unordered_map<uint64_t, uint8_t> pendingRemoteKills;
 static std::unordered_set<uint64_t> deathLedger;
 static int16_t lastLedgerRoom = -1;
 
+// Ledger-eligible keys: static room keys, and the deterministic "local keyed"
+// ones (Barinade's Baris, the Octo, runtime Stalfos: DYNAMIC bit but no client id
+// or counter), which every client derives alike. Counter-based dynamic keys are
+// per-session and never match across a rejoin.
+static bool LedgerKey(uint64_t key) {
+    return !(key & DYNAMIC_KEY_BIT) || ((key & ~DYNAMIC_KEY_BIT) >> 40) == 0;
+}
+static bool LedgerKeyInRoom(uint64_t key, int16_t roomNum) {
+    return (key & DYNAMIC_KEY_BIT) || (int16_t)(uint8_t)((key >> 48) & 0xFF) == roomNum;
+}
+
 // Occurrence counters for (actorId, params) within the currently loaded room.
 // Occurrence order follows the room's setup list, which is identical on every
 // client, and resets on room change — so indices match no matter what order each
@@ -2139,7 +2150,7 @@ void HandleRemoteDespawn(uint64_t key) {
 nlohmann::json BuildDeathLedger(int16_t roomNum) {
     nlohmann::json keys = nlohmann::json::array();
     for (uint64_t key : deathLedger) {
-        if ((int16_t)(uint8_t)((key >> 48) & 0xFF) == roomNum) {
+        if (LedgerKeyInRoom(key, roomNum)) {
             keys.push_back(key);
         }
     }
@@ -2150,7 +2161,7 @@ void ApplyDeathLedger(int16_t roomNum, const nlohmann::json& keys) {
     try {
         for (const auto& k : keys) {
             uint64_t key = k.get<uint64_t>();
-            if ((key & DYNAMIC_KEY_BIT) || (int16_t)(uint8_t)((key >> 48) & 0xFF) != roomNum) {
+            if (!LedgerKey(key) || !LedgerKeyInRoom(key, roomNum)) {
                 continue;
             }
             deathLedger.insert(key);
@@ -2422,7 +2433,7 @@ static void OnEnemyActorKill(Actor* actor) {
     // Bosses decrement health as s8 (Gohma's final hit can leave it negative).
     bool healthExhausted = actor->colChkInfo.health == 0 ||
                            (GetAdapter(actor->id) != nullptr && (int8_t)actor->colChkInfo.health <= 0);
-    if (!state.projectile && !(state.key & DYNAMIC_KEY_BIT) &&
+    if (!state.projectile && LedgerKey(state.key) &&
         (state.quietDeath || state.deathCooldown > 0 || healthExhausted)) {
         deathLedger.insert(state.key);
     }
