@@ -120,6 +120,9 @@ void HandleRemoteSpawn(uint64_t key, int16_t actorId, uint16_t params, Vec3f pos
 void HandleRemoteDespawn(uint64_t key);
 nlohmann::json BuildRoster(int16_t roomNum);
 void ReconcileRoster(int16_t roomNum, const nlohmann::json& entries);
+// Keys that died in this scene visit, per room, and the authority-side apply (#4144).
+nlohmann::json BuildDeathLedger(int16_t roomNum);
+void ApplyDeathLedger(int16_t roomNum, const nlohmann::json& keys);
 
 // Records a remote kill (ENEMY_DIED/ENEMY_DESPAWN) whose enemy lives in a room we
 // haven't loaded yet, so we apply it on that room's next OnActorInit rather than

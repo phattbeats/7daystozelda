@@ -43,6 +43,28 @@ void Anchor::SendPacket_EnemyRosterRequest(int16_t roomNum) {
     ESYNC_LOG("[EnemySync] ROSTER req tx room={}", roomNum);
 }
 
+// Fresh authority -> every same-scene peer: what died in this room before I was here?
+void Anchor::SendPacket_DeathLedgerRequest(int16_t roomNum) {
+    if (!IsSaveLoaded() || !EnemySync::SyncEnabled() || gPlayState == NULL) {
+        return;
+    }
+    for (auto& [clientId, client] : clients) {
+        if (client.self || !client.online || !client.isSaveLoaded || client.sceneNum != gPlayState->sceneNum) {
+            continue;
+        }
+        nlohmann::json payload;
+        payload["type"] = ENEMY_ROSTER;
+        payload["quiet"] = true;
+        payload["request"] = true;
+        payload["ledger"] = true;
+        payload["sceneNum"] = gPlayState->sceneNum;
+        payload["roomNum"] = roomNum;
+        payload["targetClientId"] = clientId;
+        SendJsonToRemote(payload);
+        ESYNC_LOG("[EnemySync] LEDGER req tx room={} to={}", roomNum, clientId);
+    }
+}
+
 void Anchor::HandlePacket_EnemyRoster(nlohmann::json payload) {
     if (!IsSaveLoaded() || !EnemySync::SyncEnabled() || !EnemySync::MirroringEnabled() || gPlayState == NULL) {
         return;
@@ -52,7 +74,25 @@ void Anchor::HandlePacket_EnemyRoster(nlohmann::json payload) {
     }
     int16_t roomNum = payload["roomNum"].get<int16_t>();
 
+    bool ledger = payload.contains("ledger") && payload["ledger"].get<bool>();
     if (payload.contains("request") && payload["request"].get<bool>()) {
+        if (ledger) {
+            // Any peer with the room loaded answers; the asker is the fresh authority.
+            if (gPlayState->roomCtx.curRoom.num != roomNum) {
+                return;
+            }
+            nlohmann::json reply;
+            reply["type"] = ENEMY_ROSTER;
+            reply["quiet"] = true;
+            reply["ledger"] = true;
+            reply["sceneNum"] = gPlayState->sceneNum;
+            reply["roomNum"] = roomNum;
+            reply["entries"] = EnemySync::BuildDeathLedger(roomNum);
+            reply["targetClientId"] = payload["clientId"].get<uint32_t>();
+            SendJsonToRemote(reply);
+            ESYNC_LOG("[EnemySync] LEDGER reply tx room={} n={}", roomNum, reply["entries"].size());
+            return;
+        }
         // Only answer for a room we actually have loaded, as its authority.
         if (!EnemySync::IsLocalAuthority() || gPlayState->roomCtx.curRoom.num != roomNum) {
             return;
@@ -66,6 +106,13 @@ void Anchor::HandlePacket_EnemyRoster(nlohmann::json payload) {
         reply["targetClientId"] = payload["clientId"].get<uint32_t>();
         SendJsonToRemote(reply);
         ESYNC_LOG("[EnemySync] ROSTER reply tx room={} n={}", roomNum, reply["entries"].size());
+        return;
+    }
+
+    if (ledger) {
+        if (EnemySync::IsLocalAuthority()) {
+            EnemySync::ApplyDeathLedger(roomNum, payload["entries"]);
+        }
         return;
     }
 

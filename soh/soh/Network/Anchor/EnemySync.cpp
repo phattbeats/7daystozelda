@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include "soh/Network/Anchor/EnemySync.h"
 #include "soh/Network/Anchor/EnemyTargeting.h"
 #include "soh/Network/Anchor/EnemyFxSync.h"
@@ -164,6 +165,23 @@ static std::unordered_map<Actor*, uint16_t> preInitParams;
 // unloaded, applied when that room's copy inits (OnEnemyActorInit). Scene-scoped
 // (cleared in Reset), no TTL — an enemy stays dead for the whole scene visit.
 static std::unordered_map<uint64_t, uint8_t> pendingRemoteKills;
+// Static keys of every enemy that died in this scene visit (any cause: ours, a
+// remote death we replayed, a roster ghost-kill). A client that takes authority
+// with a fresh room (the original host rejoining) asks its peers for this so the
+// parts that died while it was away don't come back (#4144).
+static std::unordered_set<uint64_t> deathLedger;
+static int16_t lastLedgerRoom = -1;
+
+// Ledger-eligible keys: static room keys, and the deterministic "local keyed"
+// ones (Barinade's Baris, the Octo, runtime Stalfos: DYNAMIC bit but no client id
+// or counter), which every client derives alike. Counter-based dynamic keys are
+// per-session and never match across a rejoin.
+static bool LedgerKey(uint64_t key) {
+    return !(key & DYNAMIC_KEY_BIT) || ((key & ~DYNAMIC_KEY_BIT) >> 40) == 0;
+}
+static bool LedgerKeyInRoom(uint64_t key, int16_t roomNum) {
+    return (key & DYNAMIC_KEY_BIT) || (int16_t)(uint8_t)((key >> 48) & 0xFF) == roomNum;
+}
 
 // Occurrence counters for (actorId, params) within the currently loaded room.
 // Occurrence order follows the room's setup list, which is identical on every
@@ -507,6 +525,8 @@ static void Reset() {
     spawnCounts.clear();
     recentlyDeadKeys.clear();
     pendingRemoteKills.clear();
+    deathLedger.clear();
+    lastLedgerRoom = -1;
     pendingDynamicKeys.clear();
     sPerceptionTargets.clear();
     countersRoomNum = -1;
@@ -1763,6 +1783,16 @@ static void Tick() {
                   remoteStates.size());
     }
 
+    // Fresh authority (the original host rejoining, or a lower id walking in):
+    // peers know what died here before we were listening.
+    if (IsLocalAuthority() && peerInScene) {
+        int16_t ledgerRoom = gPlayState->roomCtx.curRoom.num;
+        if (ledgerRoom != lastLedgerRoom) {
+            lastLedgerRoom = ledgerRoom;
+            Anchor::Instance->SendPacket_DeathLedgerRequest(ledgerRoom);
+        }
+    }
+
     if (IsLocalAuthority() && peerInScene) {
         nlohmann::json enemies = nlohmann::json::array();
         for (auto& [actor, st] : tracked) {
@@ -2117,6 +2147,42 @@ void HandleRemoteDespawn(uint64_t key) {
     Actor_Kill(it->second);
 }
 
+nlohmann::json BuildDeathLedger(int16_t roomNum) {
+    nlohmann::json keys = nlohmann::json::array();
+    for (uint64_t key : deathLedger) {
+        if (LedgerKeyInRoom(key, roomNum)) {
+            keys.push_back(key);
+        }
+    }
+    return keys;
+}
+
+void ApplyDeathLedger(int16_t roomNum, const nlohmann::json& keys) {
+    try {
+        for (const auto& k : keys) {
+            uint64_t key = k.get<uint64_t>();
+            if (!LedgerKey(key) || !LedgerKeyInRoom(key, roomNum)) {
+                continue;
+            }
+            deathLedger.insert(key);
+            auto it = keyToActor.find(key);
+            if (it == keyToActor.end()) {
+                pendingRemoteKills[key] = 1; // not spawned yet (a boss's late parts): applied on its Init
+                continue;
+            }
+            auto st = tracked.find(it->second);
+            if (st == tracked.end() || st->second.projectile || st->second.dying || it->second->update == NULL) {
+                continue;
+            }
+            ESYNC_LOG("[EnemySync] LEDGER kill key={:#x} id={}", key, it->second->id);
+            st->second.deathCooldown = DEATH_COOLDOWN_FRAMES;
+            Actor_Kill(it->second);
+        }
+    } catch (const std::exception& ex) {
+        SPDLOG_WARN("[EnemySync] ApplyDeathLedger parse error: {}", ex.what());
+    }
+}
+
 void NoteUnresolvedRemoteKill(uint64_t key) {
     // Dynamic spawns don't exist until their ENEMY_SPAWN is processed, and they
     // don't re-materialize on room load — a death for an unmapped dynamic key is
@@ -2364,14 +2430,18 @@ static void OnEnemyActorKill(Actor* actor) {
     // HP to reconcile. (This early return supersedes the old "Octorok rock on
     // impact" despawn branch below, which pre-dated the projectile carve-out and
     // wrongly assumed the rock was a tracked, despawn-replicated dynamic spawn.)
+    // Bosses decrement health as s8 (Gohma's final hit can leave it negative).
+    bool healthExhausted = actor->colChkInfo.health == 0 ||
+                           (GetAdapter(actor->id) != nullptr && (int8_t)actor->colChkInfo.health <= 0);
+    if (!state.projectile && LedgerKey(state.key) &&
+        (state.quietDeath || state.deathCooldown > 0 || healthExhausted)) {
+        deathLedger.insert(state.key);
+    }
     if (state.projectile || state.quietDeath) {
         return;
     }
 
     // Only broadcast real deaths (health exhausted), not despawns/cleanup kills.
-    // Bosses decrement health as s8 (Gohma's final hit can leave it negative).
-    bool healthExhausted = actor->colChkInfo.health == 0 ||
-                           (GetAdapter(actor->id) != nullptr && (int8_t)actor->colChkInfo.health <= 0);
     if (state.deathCooldown == 0 && healthExhausted) {
         state.deathCooldown = DEATH_COOLDOWN_FRAMES;
         Anchor::Instance->SendPacket_EnemyDied(actor, state.key, /*permanent=*/true);
