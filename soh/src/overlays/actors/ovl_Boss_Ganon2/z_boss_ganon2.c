@@ -16,6 +16,8 @@
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
 // #4054: soh/Network/Anchor/EnemyTargeting.cpp
 Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
+void Anchor_Ganon2Reset(void);
+void Anchor_Ganon2Tick(Actor* boss);
 // #4054: soh/Network/Anchor/BossAdapters/Ganon2Adapter.cpp
 void Anchor_Ganon2IntroOver(Actor* boss);
 s32 Anchor_Ganon2SwordPickup(Actor* boss);
@@ -189,6 +191,7 @@ void BossGanon2_Init(Actor* thisx, PlayState* play) {
     this->actor.naviEnemyId = 0x3E;
     this->actor.gravity = 0.0f;
 
+    Anchor_Ganon2Reset();
     hasFoundMasterSword = 1;
     if (IS_RANDO && Randomizer_GetSettingValue(RSK_SHUFFLE_MASTER_SWORD) &&
         !CHECK_OWNED_EQUIP(EQUIP_TYPE_SWORD, EQUIP_INV_SWORD_MASTER)) {
@@ -202,6 +205,7 @@ void BossGanon2_Destroy(Actor* thisx, PlayState* play) {
     SkelAnime_Free(&this->skelAnime, play);
     Collider_DestroyJntSph(play, &this->unk_424);
     Collider_DestroyJntSph(play, &this->unk_444);
+    Anchor_Ganon2Reset();
 }
 
 void func_808FD4D4(BossGanon2* this, PlayState* play, s16 arg2, s16 arg3) {
@@ -219,6 +223,7 @@ void func_808FD4D4(BossGanon2* this, PlayState* play, s16 arg2, s16 arg3) {
 
 void func_808FD5C4(BossGanon2* this, PlayState* play) {
     this->actionFunc = func_808FD5F4;
+    this->coopStage = 0;
     this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     this->actor.world.pos.y = -3000.0f;
 }
@@ -935,6 +940,7 @@ void func_808FD5F4(BossGanon2* this, PlayState* play) {
                 this->csState = 0;
                 this->unk_337 = 1;
                 func_808FFDB0(this, play);
+                this->coopStage = 1;
                 this->unk_1A2[1] = 50;
                 this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
                 sBossGanon2Zelda->unk_3C8 = 7;
@@ -1326,6 +1332,7 @@ void func_80900818(BossGanon2* this, PlayState* play) {
     Animation_MorphToPlayOnce(&this->skelAnime, &gGanonDownedStartAnim, -5.0f);
     this->unk_194 = Animation_GetLastFrame(&gGanonDownedStartAnim);
     this->actionFunc = func_80900890;
+    this->coopStage = 4;
     this->unk_1AC = 0;
     this->csState = 0;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DEAD1);
@@ -1489,6 +1496,7 @@ void func_80901020(BossGanon2* this, PlayState* play) {
     Animation_MorphToPlayOnce(&this->skelAnime, &gGanonDownedStartAnim, -5.0f);
     this->unk_194 = Animation_GetLastFrame(&gGanonDownedStartAnim);
     this->actionFunc = func_8090120C;
+    this->coopStage = 2;
     this->unk_1AC = 0;
     this->csState = 0;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DEAD1);
@@ -2154,6 +2162,7 @@ void BossGanon2_Update(Actor* thisx, PlayState* play) {
     f32 phi_f2;
 
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    Anchor_Ganon2Tick(&this->actor);
     {
         // Co-op: his facing, his walk and his swings go after the nearest player.
         Actor* aim = Anchor_BossNearestTarget(play, &this->actor);
@@ -3212,13 +3221,13 @@ void BossGanon2_Reset(void) {
 u8 BossGanon2_CoopPhase(Actor* thisx) {
     BossGanon2* this = (BossGanon2*)thisx;
 
-    if (this->actionFunc == func_8090120C) {
+    if (this->coopStage == 2) {
         return 2;
     }
-    if (this->actionFunc == func_808FD5F4) {
+    if (this->coopStage == 0) {
         return 0;
     }
-    if (this->actionFunc == func_80900890) {
+    if (this->coopStage == 4) {
         if (this->csState <= 2) {
             return 3;
         }
@@ -3233,7 +3242,7 @@ u8 BossGanon2_CoopPhase(Actor* thisx) {
 s32 BossGanon2_CoopIsLying(Actor* thisx) {
     BossGanon2* this = (BossGanon2*)thisx;
 
-    return this->actionFunc == func_80900890 && this->csState == 3;
+    return this->coopStage == 4 && this->csState == 3;
 }
 
 u8 BossGanon2_CoopCsState(Actor* thisx) {
@@ -3249,9 +3258,10 @@ void BossGanon2_CoopStartDownedCs(Actor* thisx, PlayState* play) {
 void BossGanon2_CoopStartSwordCs(Actor* thisx, PlayState* play) {
     BossGanon2* this = (BossGanon2*)thisx;
 
-    if (this->actionFunc != func_80900890) {
+    if (this->coopStage != 4) {
         Animation_MorphToLoop(&this->skelAnime, &gGanonDownedLoopAnim, 0.0f);
         this->actionFunc = func_80900890;
+        this->coopStage = 4;
         this->unk_1AC = 1;
         this->unk_336 = 0;
     }
@@ -3262,7 +3272,7 @@ void BossGanon2_CoopStartSwordCs(Actor* thisx, PlayState* play) {
 void BossGanon2_CoopSwordTaken(Actor* thisx) {
     BossGanon2* this = (BossGanon2*)thisx;
 
-    if (this->actionFunc == func_80900890 && this->csState == 3) {
+    if (this->coopStage == 4 && this->csState == 3) {
         this->csState = 10;
     }
 }
@@ -3271,7 +3281,7 @@ void BossGanon2_CoopSwordTaken(Actor* thisx) {
 void BossGanon2_CoopStartDefeat(Actor* thisx, PlayState* play) {
     BossGanon2* this = (BossGanon2*)thisx;
 
-    if (this->actionFunc == func_8090120C) {
+    if (this->coopStage == 2) {
         return;
     }
     this->actor.colChkInfo.health = 0;
@@ -3283,7 +3293,7 @@ void BossGanon2_CoopResume(Actor* thisx, PlayState* play) {
     BossGanon2* this = (BossGanon2*)thisx;
 
     this->actor.world.rot = this->actor.shape.rot;
-    if (this->actionFunc != func_808FD5F4 && this->actionFunc != func_8090120C) {
+    if (this->coopStage != 0 && this->coopStage != 2) {
         func_808FFDB0(this, play);
     }
 }

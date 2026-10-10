@@ -21,6 +21,7 @@
 Actor* Anchor_BossNearestTarget(PlayState* play, Actor* from);
 // #4054: soh/Network/Anchor/BossAdapters/GanondorfAdapter.cpp
 void Anchor_GanondorfSpawned(Actor* spawned);
+void Anchor_GanondorfReset(void);
 void Anchor_GanondorfPlatformCheck(Vec3f* pos);
 void Anchor_GanondorfBallReachedDorf(Actor* dorf);
 void Anchor_GanondorfIntroOver(Actor* dorf);
@@ -365,6 +366,8 @@ void BossGanon_Init(Actor* thisx, PlayState* play2) {
     Player* player = GET_PLAYER(play);
 
     if (thisx->params < 0x64) {
+        this->coopStage = 0;
+        Anchor_GanondorfReset();
         Flags_SetSwitch(play, 0x14);
         play->specialEffects = sBossGanonEffectBuf;
 
@@ -510,6 +513,7 @@ void BossGanon_Destroy(Actor* thisx, PlayState* play) {
 
     if (this->actor.params < 0x64) {
         SkelAnime_Free(&this->skelAnime, play);
+        Anchor_GanondorfReset();
     }
 }
 
@@ -1190,6 +1194,7 @@ void BossGanon_IntroCutscene(BossGanon* this, PlayState* play) {
                 func_80064534(play, &play->csCtx);
                 Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
                 BossGanon_SetupWait(this, play);
+                this->coopStage = 1;
 #if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
                 Anchor_GanondorfIntroOver(&this->actor);
 #endif
@@ -1230,6 +1235,7 @@ void BossGanon_SetupDeathCutscene(BossGanon* this, PlayState* play) {
 
     if (Object_IsLoaded(&play->objectCtx, animBankIndex)) {
         this->actionFunc = BossGanon_DeathAndTowerCutscene;
+        this->coopStage = 2;
         this->csTimer = this->csState = 0;
         this->unk_198 = 1;
         this->animBankIndex = animBankIndex;
@@ -1250,6 +1256,7 @@ void BossGanon_SetupTowerCutscene(BossGanon* this, PlayState* play) {
         Animation_MorphToPlayOnce(&this->skelAnime, &gGanondorfDefeatedStartAnim, 0.0f);
         this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfDefeatedStartAnim);
         this->actionFunc = BossGanon_DeathAndTowerCutscene;
+        this->coopStage = 2;
         this->csTimer = 0;
         this->csState = 100;
         this->unk_198 = 1;
@@ -2790,7 +2797,7 @@ void BossGanon_Damaged(BossGanon* this, PlayState* play) {
 void BossGanon_StartDefeat(Actor* thisx, PlayState* play) {
     BossGanon* this = (BossGanon*)thisx;
 
-    if (this->actionFunc == BossGanon_DeathAndTowerCutscene) {
+    if (this->coopStage == 2) {
         return;
     }
     BossGanon_SetupDeathCutscene(this, play);
@@ -5197,13 +5204,7 @@ void BossGanon_Reset(void) {
 u8 BossGanon_CoopPhase(Actor* thisx) {
     BossGanon* this = (BossGanon*)thisx;
 
-    if (this->actionFunc == BossGanon_DeathAndTowerCutscene) {
-        return 2;
-    }
-    if (this->actionFunc == BossGanon_IntroCutscene || this->actionFunc == BossGanon_SetupIntroCutscene) {
-        return 0;
-    }
-    return 1;
+    return this->coopStage;
 }
 
 // An action code for the mirror: it decides the collider's type and whether he hurts on touch.

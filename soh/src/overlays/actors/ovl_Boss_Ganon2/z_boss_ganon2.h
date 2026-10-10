@@ -106,6 +106,7 @@ typedef struct BossGanon2 {
     /* 0x0444 */ ColliderJntSph unk_444;
     /* 0x0464 */ ColliderJntSphElement unk_464[16];
     /* 0x0864 */ ColliderJntSphElement unk_864[2];
-} BossGanon2; // size = 0x08E4
+    /* 0x08E4 */ u8 coopStage; // 7DtZ co-op: 0 intro, 1 fight, 4 downed, 2 finale (set where the stage changes)
+} BossGanon2; // size = 0x08E8
 
 #endif

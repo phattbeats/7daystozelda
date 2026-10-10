@@ -72,6 +72,7 @@ struct Ganon2Mirror {
     bool pendingDown = false; // a streamed cutscene edge that waits for our own cutscene to end
     bool pendingSword = false;
     bool pendingDefeat = false;
+    Actor* pendingBoss = nullptr; // the Ganon the pending cutscenes belong to
 };
 static Ganon2Mirror sMirror;
 
@@ -99,6 +100,20 @@ static const nlohmann::json* GN2_Arr(const nlohmann::json& x, const char* key, s
     return &*it;
 }
 
+// A new fight (Ganon's Init) or the end of one (his Destroy: scene change, leaving the room): nothing from
+// the last fight may carry over, least of all a pending defeat that would kill the next Ganon at once.
+extern "C" void Anchor_Ganon2Reset() {
+    sMirror = Ganon2Mirror();
+}
+
+static void GN2_Owe(Actor* actor, bool& flag) {
+    if (sMirror.pendingBoss != actor) {
+        sMirror.pendingDown = sMirror.pendingSword = sMirror.pendingDefeat = false;
+        sMirror.pendingBoss = actor;
+    }
+    flag = true;
+}
+
 static uint8_t GN2_GetPhase(Actor* actor) {
     return BossGanon2_CoopPhase(actor);
 }
@@ -107,6 +122,10 @@ static uint8_t GN2_GetPhase(Actor* actor) {
 // Returns true if our copy is now in a cutscene.
 static bool GN2_StartPending(Actor* actor) {
     if (gPlayState == NULL || BossGanon2_CoopPhase(actor) != GN2_PHASE_FIGHT) {
+        return false;
+    }
+    if (sMirror.pendingBoss != actor) {
+        sMirror.pendingDown = sMirror.pendingSword = sMirror.pendingDefeat = false;
         return false;
     }
     if (sMirror.pendingDefeat) {
@@ -229,7 +248,7 @@ static bool GN2_OnPhaseChange(Actor* actor, uint8_t fromPhase, uint8_t toPhase) 
     switch (toPhase) {
         case GN2_PHASE_DEFEATED:
             if (GN2_LocalCutsceneRunning(actor)) {
-                sMirror.pendingDefeat = true;
+                GN2_Owe(actor, sMirror.pendingDefeat);
                 ESYNC_LOG("[Ganon2Sync] defeat deferred until the local cutscene ends");
                 return false;
             }
@@ -238,14 +257,14 @@ static bool GN2_OnPhaseChange(Actor* actor, uint8_t fromPhase, uint8_t toPhase) 
             return true;
         case GN2_PHASE_DOWN_CS:
             if (GN2_LocalCutsceneRunning(actor)) {
-                sMirror.pendingDown = true;
+                GN2_Owe(actor, sMirror.pendingDown);
             } else {
                 BossGanon2_CoopStartDownedCs(actor, gPlayState);
             }
             return false;
         case GN2_PHASE_SWORD_CS:
             if (GN2_LocalCutsceneRunning(actor)) {
-                sMirror.pendingSword = true;
+                GN2_Owe(actor, sMirror.pendingSword);
             } else {
                 BossGanon2_CoopStartSwordCs(actor, gPlayState);
             }
@@ -260,7 +279,7 @@ static void GN2_OnRemoteDefeat(Actor* actor) {
         return;
     }
     if (GN2_LocalCutsceneRunning(actor)) {
-        sMirror.pendingDefeat = true;
+        GN2_Owe(actor, sMirror.pendingDefeat);
         ESYNC_LOG("[Ganon2Sync] remote defeat deferred until the local cutscene ends");
         return;
     }
@@ -270,11 +289,24 @@ static void GN2_OnRemoteDefeat(Actor* actor) {
 
 static void GN2_OnLocalResume(Actor* actor) {
     ESYNC_LOG("[Ganon2Sync] local AI resumes");
-    sMirror.pendingDown = sMirror.pendingSword = sMirror.pendingDefeat = false;
+    // A cutscene we still owe survives the resume (the stream went stale, or we became the host, while
+    // this client was in its own cutscene); Anchor_Ganon2Tick starts it when that cutscene ends.
     if (gPlayState == NULL || GN2_LocalCutsceneRunning(actor)) {
         return;
     }
+    if (sMirror.pendingBoss == actor && (sMirror.pendingDefeat || sMirror.pendingDown || sMirror.pendingSword)) {
+        GN2_StartPending(actor);
+        return;
+    }
     BossGanon2_CoopResume(actor, gPlayState);
+}
+
+// z_boss_ganon2.c, every Update of a Ganon that runs its own AI (the host, or a copy that resumed): starts
+// a cutscene this client owes once its own cutscene is over.
+extern "C" void Anchor_Ganon2Tick(Actor* boss) {
+    if (sMirror.pendingBoss == boss && (sMirror.pendingDefeat || sMirror.pendingDown || sMirror.pendingSword)) {
+        GN2_StartPending(boss);
+    }
 }
 
 static void GN2_OnRemoteEvent(Actor* actor, uint8_t event) {

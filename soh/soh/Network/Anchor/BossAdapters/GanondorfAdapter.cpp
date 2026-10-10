@@ -3,6 +3,10 @@
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/OTRGlobals.h"
 
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
 extern "C" {
 #include "functions.h"
 #include "macros.h"
@@ -93,8 +97,10 @@ enum GanondorfEvent : uint8_t {
 
 static constexpr uint16_t GDF_PARAM_LIGHT_BALL_MIN = 0x64;
 static constexpr uint16_t GDF_PARAM_EFFECT_MIN = 0xC8;
+static constexpr uint16_t GDF_PARAM_EFFECT_MAX = 0x1FF; // the highest effect params the actor spawns is 0x190
 static constexpr int16_t GDF_PLATFORM_KIND = -1;
-static constexpr int GDF_RING = 16;
+static constexpr int GDF_RING = 64;
+static constexpr uint32_t GDF_RING_LIFE = 60; // frames an event stays in the stream
 
 struct GdfEvent {
     uint32_t seq;
@@ -102,6 +108,7 @@ struct GdfEvent {
     uint16_t params;
     Vec3f pos;
     Vec3s rot;
+    uint32_t frame; // the authority's gameplay frame it was recorded on
 };
 
 struct GanondorfMirror {
@@ -150,6 +157,12 @@ static const nlohmann::json* GDF_Arr(const nlohmann::json& x, const char* key, s
         }
     }
     return &*it;
+}
+
+// A new fight (Ganondorf's Init) or the end of one (his Destroy: scene change, leaving the room): nothing
+// from the last fight may carry over, least of all a pending defeat that would kill the next Ganondorf at once.
+extern "C" void Anchor_GanondorfReset() {
+    sMirror = GanondorfMirror();
 }
 
 static uint8_t GDF_GetPhase(Actor* actor) {
@@ -221,9 +234,11 @@ static void GDF_Serialize(Actor* actor, nlohmann::json& x) {
     x["fl"] = (actor->flags & ACTOR_FLAG_ATTENTION_ENABLED) ? 1 : 0;
 
     nlohmann::json ev = nlohmann::json::array();
+    uint32_t now = gPlayState != NULL ? gPlayState->gameplayFrames : 0;
     for (int i = 0; i < GDF_RING; i++) {
         const GdfEvent& e = sMirror.ring[i];
-        if (e.seq != 0) {
+        // old events leave the stream, so a client that resyncs (host change, late join) never replays them
+        if (e.seq != 0 && now - e.frame <= GDF_RING_LIFE) {
             ev.push_back({ e.seq, e.kind, e.params, e.pos.x, e.pos.y, e.pos.z, e.rot.x, e.rot.y, e.rot.z });
         }
     }
@@ -368,23 +383,37 @@ static void GDF_Deserialize(Actor* actor, const nlohmann::json& x) {
             // Skip the backlog (and resync if the authority changed).
             sMirror.lastSeq = maxSeq;
         } else {
+            // Replay in the order the authority recorded them (the ring is in slot order, not seq order).
+            std::vector<GdfEvent> todo;
             for (const auto& e : *evIt) {
-                if (!e.is_array() || e.size() != 9 || e[0].get<uint32_t>() <= sMirror.lastSeq) {
+                if (!e.is_array() || e.size() != 9 || !e[0].is_number() || e[0].get<uint32_t>() <= sMirror.lastSeq) {
                     continue;
                 }
                 bool numbers = true;
                 for (const auto& v : e) {
-                    numbers = numbers && v.is_number();
+                    numbers = numbers && v.is_number() && std::isfinite(v.get<double>());
                 }
                 if (!numbers) {
                     continue;
                 }
                 GdfEvent ev;
                 ev.seq = e[0].get<uint32_t>();
-                ev.kind = e[1].get<int16_t>();
-                ev.params = e[2].get<uint16_t>();
+                // the kind is a network value that becomes a spawn id: only the effects the authority can make
+                int kind = (int)e[1].get<double>();
+                int params = (int)e[2].get<double>();
+                bool platform = kind == GDF_PLATFORM_KIND;
+                if (!platform && (kind != ACTOR_BOSS_GANON || params < GDF_PARAM_EFFECT_MIN || params > GDF_PARAM_EFFECT_MAX)) {
+                    continue;
+                }
+                ev.kind = (int16_t)kind;
+                ev.params = (uint16_t)params;
                 ev.pos = { e[3].get<float>(), e[4].get<float>(), e[5].get<float>() };
-                ev.rot = { e[6].get<int16_t>(), e[7].get<int16_t>(), e[8].get<int16_t>() };
+                ev.rot = { (int16_t)e[6].get<double>(), (int16_t)e[7].get<double>(), (int16_t)e[8].get<double>() };
+                ev.frame = 0;
+                todo.push_back(ev);
+            }
+            std::sort(todo.begin(), todo.end(), [](const GdfEvent& l, const GdfEvent& r) { return l.seq < r.seq; });
+            for (const GdfEvent& ev : todo) {
                 GDF_Replay(actor, ev);
             }
             sMirror.lastSeq = maxSeq;
@@ -449,6 +478,11 @@ static void GDF_OnRemoteDefeat(Actor* actor) {
 static void GDF_OnLocalResume(Actor* actor) {
     ESYNC_LOG("[GanondorfSync] local AI resumes");
     sMirror.mirroring = false;
+    // this machine is the host now: continue the sequence the mirrors last saw, with an empty ring
+    sMirror.nextSeq = std::max(sMirror.nextSeq, sMirror.lastSeq);
+    for (GdfEvent& e : sMirror.ring) {
+        e = GdfEvent();
+    }
     if (!GDF_IsDorf(actor) || gPlayState == NULL || BossGanon_CoopPhase(actor) != GDF_PHASE_FIGHT) {
         return;
     }
@@ -507,6 +541,7 @@ extern "C" void Anchor_GanondorfSpawned(Actor* spawned) {
     e.params = (uint16_t)spawned->params;
     e.pos = spawned->home.pos;
     e.rot = spawned->home.rot;
+    e.frame = gPlayState != NULL ? gPlayState->gameplayFrames : 0;
 }
 
 // z_boss_ganon.c, BossGanon_CheckFallingPlatforms: a platform fell on the authority.
@@ -520,6 +555,7 @@ extern "C" void Anchor_GanondorfPlatformCheck(Vec3f* pos) {
     e.params = 0;
     e.pos = *pos;
     e.rot = { 0, 0, 0 };
+    e.frame = gPlayState != NULL ? gPlayState->gameplayFrames : 0;
 }
 
 // z_boss_ganon.c, the big-magic ball: a reflected ball reached Ganondorf. Only the

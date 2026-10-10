@@ -161,6 +161,7 @@ typedef struct BossGanon {
     /* 0x0718 */ s16 organAlpha;
     /* 0x071A */ u8 useOpenHand;
     /* 0x071B */ u8 windowShatterState;
-} BossGanon; // size = 0x71C
+    /* 0x071C */ u8 coopStage; // 7DtZ co-op: 0 intro, 1 fight, 2 death cutscene (set where the stage changes)
+} BossGanon; // size = 0x720
 
 #endif
