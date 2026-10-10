@@ -230,28 +230,41 @@
     #tb-a { right: 20px; bottom: 100px; width: 64px; height: 64px; background: rgba(255,255,255,0.12); font-size: 22px; }
     #tb-b { right: 90px; bottom: 50px; width: 56px; height: 56px; background: rgba(255,255,255,0.1); font-size: 18px; }
     #tb-z { right: 160px; bottom: 100px; width: 50px; height: 50px; background: rgba(255,255,255,0.08); font-size: 16px; }
-    #tb-start { top: 10px; left: 50%; transform: translateX(-50%); width: 60px; height: 34px;
-      border-radius: 17px; background: rgba(255,255,255,0.08); font-size: 11px; }
-    #tb-r { right: 20px; top: 10px; width: 50px; height: 34px;
-      border-radius: 17px; background: rgba(255,255,255,0.08); font-size: 14px; }
-    #tb-l { left: 10px; top: 10px; width: 50px; height: 34px;
-      border-radius: 17px; background: rgba(255,255,255,0.08); font-size: 14px; }
+    #tb-start { top: 10px; left: 50%; transform: translateX(-50%); width: 72px; height: 44px;
+      border-radius: 22px; background: rgba(255,255,255,0.08); font-size: 12px; }
+    #tb-r { right: 20px; top: 10px; width: 56px; height: 44px;
+      border-radius: 22px; background: rgba(255,255,255,0.08); font-size: 14px; }
+    #tb-l { left: 10px; top: 10px; width: 56px; height: 44px;
+      border-radius: 22px; background: rgba(255,255,255,0.08); font-size: 14px; }
     .touch-cbtn {
       position: absolute; pointer-events: auto; touch-action: none;
-      width: 36px; height: 36px; border-radius: 50%;
+      width: 44px; height: 44px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      font-family: monospace; font-size: 12px; font-weight: bold;
+      font-family: monospace; font-size: 14px; font-weight: bold;
       color: rgba(255,200,50,0.7); background: rgba(255,200,50,0.08);
       border: 2px solid rgba(255,200,50,0.15);
     }
     .touch-cbtn:active, .touch-cbtn.pressed { background: rgba(255,200,50,0.3) !important; }
-    #tb-cu { right: 110px; bottom: 210px; }
-    #tb-cd { right: 110px; bottom: 140px; }
-    #tb-cl { right: 145px; bottom: 175px; }
-    #tb-cr { right: 75px; bottom: 175px; }
-    #tb-esc { top: 10px; right: 80px; width: 34px; height: 34px;
-      border-radius: 8px; background: rgba(255,255,255,0.08); font-size: 10px;
-      letter-spacing: -0.5px; }
+    #tb-cu { right: 110px; bottom: 222px; }
+    #tb-cd { right: 110px; bottom: 132px; }
+    #tb-cl { right: 155px; bottom: 177px; }
+    #tb-cr { right: 65px; bottom: 177px; }
+    #tb-esc { top: 10px; right: 84px; width: 48px; height: 44px;
+      border-radius: 10px; background: rgba(255,255,255,0.08); font-size: 11px; }
+    /* Menu mode: a discrete D-pad replaces the analog stick so pause/inventory/workbench
+       menus step one entry per tap; A reads OK and B reads BACK. */
+    #tb-menu { top: 10px; left: 76px; width: 64px; height: 44px; border-radius: 22px;
+      background: rgba(255,255,255,0.08); font-size: 12px; }
+    #tb-menu.on { background: rgba(255,200,50,0.35); color: #fff; }
+    #menu-pad { display: none; position: absolute; left: 10px; bottom: 10px; width: 160px; height: 160px; pointer-events: none; }
+    body.menumode #menu-pad { display: block; }
+    body.menumode #touch-stick-zone { display: none; }
+    body.menumode #tb-b { font-size: 13px; }
+    .touch-dir { position: absolute; width: 52px; height: 52px; border-radius: 12px; pointer-events: auto; touch-action: none;
+      display: flex; align-items: center; justify-content: center; font-size: 20px; color: rgba(255,255,255,0.8);
+      background: rgba(255,255,255,0.14); border: 2px solid rgba(255,255,255,0.3); }
+    .touch-dir.pressed { background: rgba(255,255,255,0.35); }
+    #td-u { left: 54px; top: 0; } #td-l { left: 0; top: 54px; } #td-r { left: 108px; top: 54px; } #td-d { left: 54px; top: 108px; }
   </style>
 </head>
 <body>
@@ -386,6 +399,13 @@
     <div class="touch-btn" id="tb-r">R</div>
     <div class="touch-btn" id="tb-l">L</div>
     <div class="touch-btn" id="tb-esc">ESC</div>
+    <div class="touch-btn" id="tb-menu">MENU</div>
+    <div id="menu-pad">
+      <div class="touch-dir" id="td-u">&#9650;</div>
+      <div class="touch-dir" id="td-l">&#9664;</div>
+      <div class="touch-dir" id="td-r">&#9654;</div>
+      <div class="touch-dir" id="td-d">&#9660;</div>
+    </div>
     <div class="touch-cbtn" id="tb-cu">&#9650;</div>
     <div class="touch-cbtn" id="tb-cd">&#9660;</div>
     <div class="touch-cbtn" id="tb-cl">&#9664;</div>
@@ -1163,6 +1183,10 @@
       _stickY: 0,       // -128..127
       _buttons: {},      // id -> true/false
       _stickTouchId: null,
+      _menuMode: false,
+      _menuX: 0,
+      _menuY: 0,
+      _dirTimers: {},
       _stickCenterX: 0,
       _stickCenterY: 0,
       _knob: null,
@@ -1177,7 +1201,13 @@
         this._active = true;
         this._setupButtons();
         this._setupStick();
+        this._setupMenuPad();
         var self = this;
+        // Never leave a button, stick or D-pad direction held when the page loses focus.
+        ['blur', 'pagehide', 'orientationchange', 'resize'].forEach(function(evt) {
+          window.addEventListener(evt, function() { self.releaseAll(); });
+        });
+        document.addEventListener('visibilitychange', function() { if (document.hidden) self.releaseAll(); });
         // A Bluetooth controller on a phone/tablet: get the touch pad out of the way.
         window.addEventListener('gamepadconnected', function() { self.setShown(false); });
         window.addEventListener('gamepaddisconnected', function() {
@@ -1190,17 +1220,82 @@
       setShown: function(on) {
         this._active = on;
         document.getElementById('touch-gamepad').classList.toggle('visible', on);
-        if (!on) {
-          this._buttons = {};
-          this._stickX = 0; this._stickY = 0; this._stickTouchId = null;
-          if (this._knob) this._knob.style.transform = 'translate(0px, 0px)';
+        if (!on) this.releaseAll();
+      },
+
+      releaseAll: function() {
+        this._buttons = {};
+        this._stickX = 0; this._stickY = 0; this._stickTouchId = null;
+        this._menuX = 0; this._menuY = 0;
+        for (var k in this._dirTimers) this._clearDir(k);
+        if (this._knob) this._knob.style.transform = 'translate(0px, 0px)';
+        var held = document.querySelectorAll('#touch-gamepad .pressed');
+        for (var i = 0; i < held.length; i++) held[i].classList.remove('pressed');
+      },
+
+      setMenuMode: function(on) {
+        this._menuMode = !!on;
+        this.releaseAll();
+        document.body.classList.toggle('menumode', this._menuMode);
+        document.getElementById('tb-menu').classList.toggle('on', this._menuMode);
+        document.getElementById('tb-a').textContent = this._menuMode ? 'OK' : 'A';
+        document.getElementById('tb-b').textContent = this._menuMode ? 'BACK' : 'B';
+        try { localStorage.setItem('sevendays.touchMenu', this._menuMode ? '1' : '0'); } catch (e) {}
+      },
+
+      _clearDir: function(id) {
+        var t = this._dirTimers[id];
+        if (t) { clearTimeout(t.start); clearInterval(t.rep); clearTimeout(t.off); }
+        delete this._dirTimers[id];
+        this._menuX = 0; this._menuY = 0;
+        var el = document.getElementById(id);
+        if (el) el.classList.remove('pressed');
+      },
+
+      // One tap = one short stick pulse (about two 20 Hz game frames), so the menu cursor
+      // moves a single entry; holding a direction repeats after a delay.
+      _setupMenuPad: function() {
+        var self = this;
+        var DIRS = { 'td-u': [0, 100], 'td-d': [0, -100], 'td-l': [-100, 0], 'td-r': [100, 0] };
+        function pulse(id) {
+          self._menuX = DIRS[id][0]; self._menuY = DIRS[id][1];
+          var t = self._dirTimers[id];
+          if (t) t.off = setTimeout(function() { self._menuX = 0; self._menuY = 0; }, 90);
         }
+        Object.keys(DIRS).forEach(function(id) {
+          var el = document.getElementById(id);
+          el.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            resumeAudio();
+            if (self._dirTimers[id]) return;
+            self._clearDir(id);
+            el.classList.add('pressed');
+            self._dirTimers[id] = {};
+            pulse(id);
+            self._dirTimers[id].start = setTimeout(function() {
+              if (!self._dirTimers[id]) return;
+              self._dirTimers[id].rep = setInterval(function() { pulse(id); }, 220);
+            }, 420);
+          }, { passive: false });
+          var end = function(e) { if (e.cancelable) e.preventDefault(); self._clearDir(id); };
+          el.addEventListener('touchend', end, { passive: false });
+          el.addEventListener('touchcancel', end);
+        });
+        var m = document.getElementById('tb-menu');
+        m.addEventListener('touchstart', function(e) {
+          e.preventDefault();
+          m.classList.add('pressed');
+          self.setMenuMode(!self._menuMode);
+        }, { passive: false });
+        m.addEventListener('touchend', function(e) { e.preventDefault(); m.classList.remove('pressed'); }, { passive: false });
+        m.addEventListener('touchcancel', function() { m.classList.remove('pressed'); });
+        try { if (localStorage.getItem('sevendays.touchMenu') === '1') this.setMenuMode(true); } catch (e) {}
       },
 
       // Public API for WASM integration
       isActive: function() { return this._active; },
-      getStickX: function() { return this._stickX; },
-      getStickY: function() { return this._stickY; },
+      getStickX: function() { return this._menuX || this._stickX; },
+      getStickY: function() { return this._menuY || this._stickY; },
       isButtonPressed: function(id) { return !!this._buttons[id]; },
 
       _setupButtons: function() {
