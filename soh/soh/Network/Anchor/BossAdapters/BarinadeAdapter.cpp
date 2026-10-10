@@ -77,6 +77,10 @@ static constexpr int16_t VA_PARAM_STUMP_1 = 16;
 static constexpr int16_t VA_PARAM_DOOR = 19;
 static constexpr int ABSENT_BARI_GRACE = 25;
 
+// The host won while our own intro cutscene was still playing (set by the phase
+// edge or a remote defeat, consumed once the local intro hands over).
+static bool sPendingDefeat = false;
+
 static BossVa* FindPart(int16_t params) {
     if (gPlayState == NULL) {
         return nullptr;
@@ -276,7 +280,11 @@ static bool Va_OnPhaseChange(Actor* actor, uint8_t fromPhase, uint8_t toPhase) {
     BossVaSyncState s;
     BossVa_SyncGet(&s);
     if (s.csState < BOSSVA_SYNC_BATTLE) {
-        return false; // still in our own intro: nothing to hand over yet
+        // Still in our own intro: starting the death now would cut into it.
+        // Join the defeat when the intro hands over (polled in ShouldMirror).
+        sPendingDefeat = true;
+        ESYNC_LOG("[BarinadeSync] defeat deferred until the local intro ends");
+        return false;
     }
     if (actor->params == VA_PARAM_BODY) {
         BossVa_SyncStartDeath((BossVa*)actor, gPlayState);
@@ -291,8 +299,22 @@ static void Va_OnRemoteDefeat(Actor* actor) {
     if (s.csState >= BOSSVA_SYNC_DEATH_START) {
         return; // already dying locally
     }
+    if (s.csState < BOSSVA_SYNC_BATTLE) {
+        sPendingDefeat = true;
+        ESYNC_LOG("[BarinadeSync] remote defeat deferred until the local intro ends");
+        return;
+    }
     BossVa_SyncStartDeath((BossVa*)actor, gPlayState);
     ESYNC_LOG("[BarinadeSync] remote defeat (missed phase edge, SetupBodyDeath called locally)");
+}
+
+// The stream went stale or we became the authority mid-fight: the shared
+// statics already hold the last streamed state, so the AI continues from it.
+static void Va_OnLocalResume(Actor* actor) {
+    ESYNC_LOG("[BarinadeSync] local AI resumes (params {})", actor->params);
+    if (actor->params == VA_PARAM_BODY && !EnemySync::IsDying(actor)) {
+        sPendingDefeat = false;
+    }
 }
 
 static bool Va_HandlesDefeat(Actor* actor) {
@@ -305,6 +327,17 @@ static bool Va_ShouldMirror(Actor* actor, uint8_t streamedPhase) {
     }
     BossVaSyncState s;
     BossVa_SyncGet(&s);
+    if (sPendingDefeat && actor->params == VA_PARAM_BODY) {
+        if (s.csState >= BOSSVA_SYNC_DEATH_START) {
+            sPendingDefeat = false;
+        } else if (s.csState >= BOSSVA_SYNC_BATTLE) {
+            // Local intro is over: join the defeat the partner already won.
+            sPendingDefeat = false;
+            BossVa_SyncStartDeath((BossVa*)actor, gPlayState);
+            ESYNC_LOG("[BarinadeSync] local intro over: joining the deferred defeat");
+            return false;
+        }
+    }
     return streamedPhase == VA_PHASE_FIGHT && s.csState >= BOSSVA_SYNC_BATTLE && s.csState < BOSSVA_SYNC_DEATH_START;
 }
 
@@ -331,6 +364,7 @@ void RegisterBarinadeAdapter() {
     adapter.OnPhaseChange = Va_OnPhaseChange;
     adapter.ShouldMirror = Va_ShouldMirror;
     adapter.OnRemoteDefeat = Va_OnRemoteDefeat;
+    adapter.OnLocalResume = Va_OnLocalResume;
     adapter.HandlesDefeat = Va_HandlesDefeat;
     adapter.RemoteHitAttacker = Va_RemoteHitAttacker;
     EnemySync::RegisterAdapter(ACTOR_BOSS_VA, adapter);
