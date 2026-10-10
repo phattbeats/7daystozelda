@@ -1213,6 +1213,89 @@ extern "C" void SevenDaysKaleido_DrawPageLabel(PlayState* play, s16 top) {
     SevenDays::FlushText(play);
 }
 
+// #4125: a phone tap on the Workbench page, in page space (the units of the tab and row boxes).
+// 0 nothing there, 1 the cursor moved (or a tab was tapped), 2 the row was already under the
+// cursor: the caller presses A.
+extern "C" s32 SevenDaysKaleido_TouchHit(PlayState* play, f32 px, f32 py) {
+    using namespace SevenDays;
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s16 dy = pauseCtx->offsetY;
+    std::vector<int> tabs = AvailableTabs();
+    if (tabs.empty()) {
+        return 0;
+    }
+    for (size_t i = 0; i < tabs.size(); i++) {
+        float w = TextWidth(TabName(tabs[i]), 0.85f);
+        float left = TabCenter(i, tabs.size()) - w / 2 - 6;
+        float right = left + w + 12;
+        float top = 60 + dy;
+        if (px >= left && px <= right && py <= top && py >= top - 20) {
+            bool same = sPage.tab == tabs[i] && sPage.row < 0 && pauseCtx->cursorSpecialPos == 0;
+            pauseCtx->cursorSpecialPos = 0;
+            if (!same) {
+                sPage.tab = tabs[i];
+                sPage.row = -1;
+                sPage.top = 0;
+                sPage.confirmPackAll = false;
+                Sfx_PlaySfxCentered(NA_SE_SY_CURSOR);
+            }
+            return 1;
+        }
+    }
+    std::vector<PageRow> rows = BuildRows(play, sPage.tab);
+    for (int i = sPage.top; i < (int)rows.size() && i < sPage.top + kVisibleRows; i++) {
+        s16 top = kRowTop - (i - sPage.top) * kRowHeight + dy;
+        float boxTop = top + 1;
+        if (px >= -110 && px <= 114 && py <= boxTop && py >= boxTop - 20) {
+            if (sPage.row == i && pauseCtx->cursorSpecialPos == 0) {
+                return 2;
+            }
+            pauseCtx->cursorSpecialPos = 0;
+            sPage.row = i;
+            sPage.confirmPackAll = false;
+            Sfx_PlaySfxCentered(NA_SE_SY_CURSOR);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// The tap targets in page space: the tabs first, then the visible rows. 0 past the last one.
+extern "C" s32 SevenDaysKaleido_TouchRect(PlayState* play, s32 index, f32* x0, f32* y0, f32* x1, f32* y1) {
+    using namespace SevenDays;
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s16 dy = pauseCtx->offsetY;
+    std::vector<int> tabs = AvailableTabs();
+    if (index < 0 || tabs.empty()) {
+        return 0;
+    }
+    if (index < (int)tabs.size()) {
+        float w = TextWidth(TabName(tabs[index]), 0.85f);
+        *x0 = TabCenter(index, tabs.size()) - w / 2 - 6;
+        *x1 = *x0 + w + 12;
+        *y1 = 60 + dy;
+        *y0 = *y1 - 20;
+        return 1;
+    }
+    std::vector<PageRow> rows = BuildRows(play, sPage.tab);
+    int row = sPage.top + (index - (int)tabs.size());
+    if (row >= (int)rows.size() || row >= sPage.top + kVisibleRows) {
+        return 0;
+    }
+    s16 top = kRowTop - (row - sPage.top) * kRowHeight + dy;
+    *x0 = -110;
+    *x1 = 114;
+    *y1 = top + 1;
+    *y0 = *y1 - 20;
+    return 1;
+}
+
+// The row under the cursor (-1 on the tab strip), for the test probe.
+extern "C" s32 SevenDaysKaleido_TouchCursor(void) {
+    using namespace SevenDays;
+    return sPage.row;
+}
+
 // #4071: the HUD D-pad asks for the bound kit's icon and count (z_parameter.c).
 extern "C" s32 SevenDaysDpad_Bound(s32 dir) {
     return SevenDays::DpadKitType(dir) >= 0;

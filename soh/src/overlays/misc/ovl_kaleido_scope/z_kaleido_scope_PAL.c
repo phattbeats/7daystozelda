@@ -1355,6 +1355,379 @@ void KaleidoScope_HandlePageToggles(PauseContext* pauseCtx, Input* input) {
     }
 }
 
+// #region 7 Days to Zelda: touch on the pause pages (#4125)
+// A phone tap lands on the page itself. The page's face matrix (KaleidoScope_SetFaceMatrix without
+// its display list) and the pause camera (pauseCtx->eye looking at the origin, pauseCtx->view.fovy)
+// carry a point on the page to the screen and a touch back onto the page. Everything is written into
+// the game's own cursor state, so the stick, the D-pad, the keyboard and a controller keep working
+// and the page code keeps owning selection, names and sounds.
+
+typedef struct {
+    Vec3f eye;
+    Vec3f fwd;
+    Vec3f right;
+    Vec3f up;
+    Vec3f origin; // page-space (0,0,0) in the world
+    Vec3f ex;     // page-space +x, in the world
+    Vec3f ey;     // page-space +y, in the world
+    f32 tanHalf;  // tan(fovy / 2)
+    f32 aspect;   // the canvas, width / height
+} KaleidoTouchView;
+
+static f32 KaleidoTouch_Dot(const Vec3f* a, const Vec3f* b) {
+    return a->x * b->x + a->y * b->y + a->z * b->z;
+}
+
+static void KaleidoTouch_Cross(const Vec3f* a, const Vec3f* b, Vec3f* out) {
+    out->x = a->y * b->z - a->z * b->y;
+    out->y = a->z * b->x - a->x * b->z;
+    out->z = a->x * b->y - a->y * b->x;
+}
+
+static s32 KaleidoTouch_Normalize(Vec3f* v) {
+    f32 len = sqrtf(KaleidoTouch_Dot(v, v));
+    if (len < 0.0001f) {
+        return 0;
+    }
+    v->x /= len;
+    v->y /= len;
+    v->z /= len;
+    return 1;
+}
+
+// Page space -> world, through the same matrix the page is drawn with (at rest the fold angles are 0).
+static void KaleidoTouch_FacePoint(PauseContext* pauseCtx, u8 face, f32 x, f32 y, Vec3f* out) {
+    Vec3f src = { x, y, 0.0f };
+
+    Matrix_Push();
+    switch (face) {
+        case 0:
+            Matrix_Translate(0.0f, (f32)WREG(2) / 100.0f, -(f32)WREG(3) / 100.0f, MTXMODE_NEW);
+            Matrix_Scale(0.78f, 0.78f, 0.78f, MTXMODE_APPLY);
+            Matrix_RotateX(-pauseCtx->unk_1F4 / 100.0f, MTXMODE_APPLY);
+            break;
+        case 1:
+            Matrix_Translate((f32)WREG(3) / 100.0f, (f32)WREG(2) / 100.0f, 0.0f, MTXMODE_NEW);
+            Matrix_Scale(0.78f, 0.78f, 0.78f, MTXMODE_APPLY);
+            Matrix_RotateZ(-pauseCtx->unk_1FC / 100.0f, MTXMODE_APPLY);
+            Matrix_RotateY(-1.57f, MTXMODE_APPLY);
+            break;
+        case 2:
+            Matrix_Translate(0.0f, (f32)WREG(2) / 100.0f, (f32)WREG(3) / 100.0f, MTXMODE_NEW);
+            Matrix_Scale(0.78f, 0.78f, 0.78f, MTXMODE_APPLY);
+            Matrix_RotateX(pauseCtx->unk_200 / 100.0f, MTXMODE_APPLY);
+            Matrix_RotateY(3.14f, MTXMODE_APPLY);
+            break;
+        default:
+            Matrix_Translate(-(f32)WREG(3) / 100.0f, (f32)WREG(2) / 100.0f, 0.0f, MTXMODE_NEW);
+            Matrix_Scale(0.78f, 0.78f, 0.78f, MTXMODE_APPLY);
+            Matrix_RotateZ(pauseCtx->unk_1F8 / 100.0f, MTXMODE_APPLY);
+            Matrix_RotateY(1.57f, MTXMODE_APPLY);
+            break;
+    }
+    Matrix_MultVec3f(&src, out);
+    Matrix_Pop();
+}
+
+static s32 KaleidoTouch_View(PlayState* play, f32 aspect, KaleidoTouchView* v) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    u8 face = KaleidoFace_Of(pauseCtx->pageIndex);
+    Vec3f worldUp = { 0.0f, 1.0f, 0.0f };
+    Vec3f px;
+    Vec3f py;
+    f32 fovy = (pauseCtx->view.fovy > 1.0f) ? pauseCtx->view.fovy : 60.0f;
+
+    v->eye = pauseCtx->eye;
+    v->fwd.x = -v->eye.x;
+    v->fwd.y = -v->eye.y;
+    v->fwd.z = -v->eye.z;
+    if (!KaleidoTouch_Normalize(&v->fwd)) {
+        return 0;
+    }
+    KaleidoTouch_Cross(&v->fwd, &worldUp, &v->right);
+    if (!KaleidoTouch_Normalize(&v->right)) {
+        return 0;
+    }
+    KaleidoTouch_Cross(&v->right, &v->fwd, &v->up);
+    v->tanHalf = tanf(fovy * 0.5f * (M_PI / 180.0f));
+    v->aspect = (aspect > 0.1f) ? aspect : (4.0f / 3.0f);
+
+    KaleidoTouch_FacePoint(pauseCtx, face, 0.0f, 0.0f, &v->origin);
+    KaleidoTouch_FacePoint(pauseCtx, face, 1.0f, 0.0f, &px);
+    KaleidoTouch_FacePoint(pauseCtx, face, 0.0f, 1.0f, &py);
+    v->ex.x = px.x - v->origin.x;
+    v->ex.y = px.y - v->origin.y;
+    v->ex.z = px.z - v->origin.z;
+    v->ey.x = py.x - v->origin.x;
+    v->ey.y = py.y - v->origin.y;
+    v->ey.z = py.z - v->origin.z;
+    return 1;
+}
+
+// Normalized canvas coordinates (0..1, y down) -> page space. 0 when the ray misses the page plane.
+static s32 KaleidoTouch_ToPage(const KaleidoTouchView* v, f32 nx, f32 ny, f32* px, f32* py) {
+    f32 sx = (nx * 2.0f - 1.0f) * v->tanHalf * v->aspect;
+    f32 sy = (1.0f - ny * 2.0f) * v->tanHalf;
+    Vec3f dir;
+    Vec3f normal;
+    Vec3f toOrigin;
+    Vec3f hit;
+    f32 denom;
+    f32 t;
+
+    dir.x = v->fwd.x + v->right.x * sx + v->up.x * sy;
+    dir.y = v->fwd.y + v->right.y * sx + v->up.y * sy;
+    dir.z = v->fwd.z + v->right.z * sx + v->up.z * sy;
+    KaleidoTouch_Cross(&v->ex, &v->ey, &normal);
+    denom = KaleidoTouch_Dot(&dir, &normal);
+    if (fabsf(denom) < 0.000001f) {
+        return 0;
+    }
+    toOrigin.x = v->origin.x - v->eye.x;
+    toOrigin.y = v->origin.y - v->eye.y;
+    toOrigin.z = v->origin.z - v->eye.z;
+    t = KaleidoTouch_Dot(&toOrigin, &normal) / denom;
+    if (t <= 0.0f) {
+        return 0;
+    }
+    hit.x = v->eye.x + dir.x * t - v->origin.x;
+    hit.y = v->eye.y + dir.y * t - v->origin.y;
+    hit.z = v->eye.z + dir.z * t - v->origin.z;
+    *px = KaleidoTouch_Dot(&hit, &v->ex) / KaleidoTouch_Dot(&v->ex, &v->ex);
+    *py = KaleidoTouch_Dot(&hit, &v->ey) / KaleidoTouch_Dot(&v->ey, &v->ey);
+    return 1;
+}
+
+// Page space -> normalized canvas coordinates. 0 when the point is behind the camera.
+static s32 KaleidoTouch_ToScreen(const KaleidoTouchView* v, f32 px, f32 py, f32* nx, f32* ny) {
+    Vec3f p;
+    f32 depth;
+
+    p.x = v->origin.x + v->ex.x * px + v->ey.x * py - v->eye.x;
+    p.y = v->origin.y + v->ex.y * px + v->ey.y * py - v->eye.y;
+    p.z = v->origin.z + v->ex.z * px + v->ey.z * py - v->eye.z;
+    depth = KaleidoTouch_Dot(&p, &v->fwd);
+    if (depth <= 0.001f) {
+        return 0;
+    }
+    *nx = ((KaleidoTouch_Dot(&p, &v->right) / depth) / (v->tanHalf * v->aspect) + 1.0f) * 0.5f;
+    *ny = (1.0f - (KaleidoTouch_Dot(&p, &v->up) / depth) / v->tanHalf) * 0.5f;
+    return 1;
+}
+
+// The box of slot i on a page, in page space. 0 past the page's last slot.
+static s32 KaleidoTouch_Slot(PlayState* play, u16 page, s32 i, f32* x0, f32* y0, f32* x1, f32* y1) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Vtx* v = NULL;
+    s32 count = 0;
+    s32 k;
+
+    switch (page) {
+        case PAUSE_ITEM:
+            v = pauseCtx->itemVtx;
+            count = 24;
+            break;
+        case PAUSE_EQUIP:
+            v = pauseCtx->equipVtx;
+            count = 16;
+            break;
+        case PAUSE_QUEST:
+            v = pauseCtx->questVtx;
+            count = 24;
+            break;
+        case PAUSE_SEVENDAYS:
+            return SevenDaysKaleido_TouchRect(play, i, x0, y0, x1, y1);
+        default:
+            return 0;
+    }
+    if (v == NULL || i < 0 || i >= count) {
+        return 0;
+    }
+    v += i * 4;
+    *x0 = *x1 = v[0].v.ob[0];
+    *y0 = *y1 = v[0].v.ob[1];
+    for (k = 1; k < 4; k++) {
+        if (v[k].v.ob[0] < *x0) {
+            *x0 = v[k].v.ob[0];
+        }
+        if (v[k].v.ob[0] > *x1) {
+            *x1 = v[k].v.ob[0];
+        }
+        if (v[k].v.ob[1] < *y0) {
+            *y0 = v[k].v.ob[1];
+        }
+        if (v[k].v.ob[1] > *y1) {
+            *y1 = v[k].v.ob[1];
+        }
+    }
+    return (*x1 > *x0) && (*y1 > *y0);
+}
+
+// Whether the game's own cursor would ever rest on slot i (empty item slots and unowned gear are skipped).
+static s32 KaleidoTouch_SlotValid(PlayState* play, u16 page, s32 i) {
+    switch (page) {
+        case PAUSE_ITEM:
+            return (gSaveContext.inventory.items[i] != ITEM_NONE) ||
+                   (CVarGetInteger(CVAR_ENHANCEMENT("PauseAnyCursor"), 0) == PAUSE_ANY_CURSOR_ALWAYS_ON) ||
+                   (CVarGetInteger(CVAR_ENHANCEMENT("PauseAnyCursor"), 0) == PAUSE_ANY_CURSOR_RANDO_ONLY && IS_RANDO);
+        case PAUSE_EQUIP:
+            if ((i % 4) == 0) {
+                return CUR_UPG_VALUE(i / 4) != 0;
+            }
+            return (gBitFlags[i - 1] & gSaveContext.inventory.equipment) != 0;
+        default:
+            return 1;
+    }
+}
+
+// The quest page's name-panel item for a point (z_kaleido_collect.c's mapping).
+static u16 KaleidoTouch_QuestItem(s32 point) {
+    if (point == 0x18) {
+        return ((gSaveContext.inventory.questItems & 0xF0000000) != 0) ? 0x72 : PAUSE_ITEM_NONE;
+    }
+    if (!CHECK_QUEST_ITEM(point)) {
+        return PAUSE_ITEM_NONE;
+    }
+    if (point < 6) {
+        return point + 0x66;
+    }
+    if (point < 0x12) {
+        return point + 0x54;
+    }
+    return point + 0x5A;
+}
+
+s32 KaleidoScope_TouchOpen(void) {
+    PauseContext* pauseCtx;
+
+    if (gPlayState == NULL) {
+        return 0;
+    }
+    pauseCtx = &gPlayState->pauseCtx;
+    return (pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) && (pauseCtx->debugState == 0);
+}
+
+u32 KaleidoScope_TouchFrame(void) {
+    return (gPlayState != NULL) ? gPlayState->state.frames : 0;
+}
+
+// A tap at normalized canvas coordinates. -1 no menu, 0 nothing there, 1 the cursor moved,
+// 2 it was already on that slot (nothing more to do), 3 it was already there and A applies.
+s32 KaleidoScope_TouchTap(f32 nx, f32 ny, f32 aspect) {
+    PlayState* play = gPlayState;
+    PauseContext* pauseCtx;
+    KaleidoTouchView view;
+    f32 px;
+    f32 py;
+    f32 x0;
+    f32 y0;
+    f32 x1;
+    f32 y1;
+    u16 page;
+    s32 i;
+
+    if (!KaleidoScope_TouchOpen()) {
+        return -1;
+    }
+    pauseCtx = &play->pauseCtx;
+    if (!KaleidoTouch_View(play, aspect, &view) || !KaleidoTouch_ToPage(&view, nx, ny, &px, &py)) {
+        return 0;
+    }
+    page = pauseCtx->pageIndex;
+    if (page == PAUSE_SEVENDAYS) {
+        s32 r = SevenDaysKaleido_TouchHit(play, px, py);
+        return (r == 2) ? 3 : r;
+    }
+    if (page >= 4) {
+        return 0; // the map page keeps the pad
+    }
+    for (i = 0; KaleidoTouch_Slot(play, page, i, &x0, &y0, &x1, &y1); i++) {
+        if (px < x0 || px > x1 || py < y0 || py > y1) {
+            continue;
+        }
+        if (!KaleidoTouch_SlotValid(play, page, i)) {
+            return 0;
+        }
+        if ((pauseCtx->cursorSpecialPos == 0) && (pauseCtx->cursorPoint[page] == i)) {
+            return (page == PAUSE_ITEM) ? 2 : 3; // items go on a C button, not A
+        }
+        pauseCtx->cursorSpecialPos = 0;
+        pauseCtx->cursorPoint[page] = i;
+        if (page == PAUSE_ITEM) {
+            pauseCtx->cursorX[page] = i % 6;
+            pauseCtx->cursorY[page] = i / 6;
+            // The item page forces a move right while its stored item is "none" (the cursor had sat on a
+            // page arrow); give it the tapped item so the cursor stays where the finger landed.
+            pauseCtx->cursorSlot[page] = i;
+            pauseCtx->cursorItem[page] = gSaveContext.inventory.items[i];
+        } else if (page == PAUSE_EQUIP) {
+            pauseCtx->cursorX[page] = i % 4;
+            pauseCtx->cursorY[page] = i / 4;
+        } else if (page == PAUSE_QUEST) {
+            // With the stick at rest the quest page draws cursorSlot and names cursorItem; set both.
+            pauseCtx->cursorSlot[page] = i;
+            pauseCtx->cursorItem[page] = KaleidoTouch_QuestItem(i);
+        }
+        pauseCtx->nameDisplayTimer = 0;
+        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return 1;
+    }
+    return 0;
+}
+
+// A horizontal swipe: dir 1 (finger moved left) turns to the page on the right, like R; -1 like Z.
+void KaleidoScope_TouchSwipe(s32 dir) {
+    if (!KaleidoScope_TouchOpen()) {
+        return;
+    }
+    KaleidoScope_SwitchPage(&gPlayState->pauseCtx, (dir > 0) ? 2 : 0);
+}
+
+// Test probe: the menu state and every slot's box in normalized canvas coordinates.
+const char* KaleidoScope_TouchProbe(f32 aspect) {
+    static char buf[8192];
+    PlayState* play = gPlayState;
+    PauseContext* pauseCtx;
+    KaleidoTouchView view;
+    s32 n = 0;
+    s32 i;
+    s32 open = KaleidoScope_TouchOpen();
+    s32 point = -1;
+    u16 page = 0;
+
+    if (play == NULL) {
+        snprintf(buf, sizeof(buf), "{\"open\":0,\"play\":0}");
+        return buf;
+    }
+    pauseCtx = &play->pauseCtx;
+    page = pauseCtx->pageIndex;
+    if (page == PAUSE_SEVENDAYS) {
+        point = SevenDaysKaleido_TouchCursor();
+    } else if (page < 4) {
+        point = pauseCtx->cursorPoint[page];
+    }
+    n += snprintf(buf + n, sizeof(buf) - n,
+                  "{\"open\":%d,\"state\":%d,\"anim\":%d,\"page\":%d,\"face\":%d,\"special\":%d,\"point\":%d,"
+                  "\"eye\":[%.2f,%.2f,%.2f],\"fovy\":%.1f,\"slots\":[",
+                  open, pauseCtx->state, pauseCtx->unk_1E4, page, KaleidoFace_Of(page), pauseCtx->cursorSpecialPos,
+                  point, pauseCtx->eye.x, pauseCtx->eye.y, pauseCtx->eye.z, pauseCtx->view.fovy);
+    if (open && KaleidoTouch_View(play, aspect, &view)) {
+        f32 x0, y0, x1, y1;
+        for (i = 0; KaleidoTouch_Slot(play, page, i, &x0, &y0, &x1, &y1) && n < (s32)sizeof(buf) - 96; i++) {
+            f32 ax, ay, bx, by;
+            if (!KaleidoTouch_ToScreen(&view, x0, y1, &ax, &ay) || !KaleidoTouch_ToScreen(&view, x1, y0, &bx, &by)) {
+                continue;
+            }
+            n += snprintf(buf + n, sizeof(buf) - n, "%s[%d,%d,%.4f,%.4f,%.4f,%.4f]", i ? "," : "", i,
+                          (page == PAUSE_SEVENDAYS) ? 1 : KaleidoTouch_SlotValid(play, page, i), ax, ay, bx, by);
+        }
+    }
+    n += snprintf(buf + n, sizeof(buf) - n, "]}");
+    return buf;
+}
+// #endregion
+
 void KaleidoScope_DrawCursor(PlayState* play, u16 pageIndex) {
     PauseContext* pauseCtx = &play->pauseCtx;
     u16 temp;

@@ -45,4 +45,43 @@ vol.addEventListener("input",function(){pct.textContent=vol.value+"%";localStora
 btn.addEventListener("click",function(e){e.stopPropagation();if(src){wantPlay=!1;pause()}else{wantPlay=!0;ensureCtx();ctx.resume();start()}});
 var EV=["pointerdown","pointerup","touchend","click","keydown"];function unlock(e){if(done||e.target===btn&&e.type!=="click")return;ensureCtx();var p=ctx.resume();function ok(){if(ctx.state==="running"){EV.forEach(function(n){document.removeEventListener(n,unlock,!0)});e.target!==btn&&start()}}p&&p.then?p.then(ok):ok()}
 EV.forEach(function(n){document.addEventListener(n,unlock,!0)});
-if(ov)new MutationObserver(function(){(ov.classList.contains("hidden")||ov.style.display==="none")&&stop()}).observe(ov,{attributes:!0,attributeFilter:["class","style"]})}()</script><script async src="soh.js?v=bb504303"></script></body></html>
+if(ov)new MutationObserver(function(){(ov.classList.contains("hidden")||ov.style.display==="none")&&stop()}).observe(ov,{attributes:!0,attributeFilter:["class","style"]})}()</script><script>
+// #4125: touch on the pause menu. While the pause menu is open, a tap on the canvas moves the
+// game's cursor to the slot under the finger, a second tap on that slot presses A, and a sideways
+// swipe turns the page. Outside the menu nothing here runs, and the on-screen pad is untouched.
+!function(){
+  var canvas=document.getElementById("canvas"),pad=document.getElementById("touch-gamepad");
+  if(!canvas)return;
+  var st=null,lastSelect=0;
+  function fn(n){return typeof Module!=="undefined"&&typeof Module[n]==="function"?Module[n]:null}
+  function menuOpen(){var f=fn("_sevendays_touch_menu_open");try{return !!f&&f()===1}catch(e){return false}}
+  function norm(t){var r=canvas.getBoundingClientRect();return[(t.clientX-r.left)/r.width,(t.clientY-r.top)/r.height,r.width/Math.max(1,r.height)]}
+  function find(e){if(!st)return null;for(var i=0;i<e.changedTouches.length;i++)if(e.changedTouches[i].identifier===st.id)return e.changedTouches[i];return null}
+  document.addEventListener("touchstart",function(e){
+    if(e.target!==canvas||(pad&&pad.contains(e.target)))return;
+    if(!menuOpen()){st=null;return}
+    var t=e.changedTouches[0];
+    st={id:t.identifier,x:t.clientX,y:t.clientY,t:Date.now(),moved:false,swiped:false};
+    e.preventDefault();e.stopImmediatePropagation();
+  },{capture:true,passive:false});
+  document.addEventListener("touchmove",function(e){
+    var t=find(e);if(!t)return;
+    var dx=t.clientX-st.x,dy=t.clientY-st.y;
+    if(Math.abs(dx)>12||Math.abs(dy)>12)st.moved=true;
+    if(!st.swiped&&Math.abs(dx)>60&&Math.abs(dx)>2*Math.abs(dy)){
+      st.swiped=true;var f=fn("_sevendays_touch_menu_swipe");try{f&&f(dx<0?1:-1)}catch(x){}
+    }
+    e.preventDefault();e.stopImmediatePropagation();
+  },{capture:true,passive:false});
+  document.addEventListener("touchend",function(e){
+    var t=find(e);if(!t)return;
+    if(!st.moved&&!st.swiped&&Date.now()-st.t<600&&menuOpen()){
+      var n=norm(t),f=fn("_sevendays_touch_menu_tap"),now=Date.now();
+      if(f&&(now-lastSelect>350)){try{var r=f(n[0],n[1],n[2]);if(r===3)lastSelect=now}catch(x){}}
+    }
+    st=null;e.preventDefault();e.stopImmediatePropagation();
+  },{capture:true,passive:false});
+  document.addEventListener("touchcancel",function(e){if(find(e))st=null},{capture:true});
+  window.TouchMenu={open:menuOpen,tap:function(nx,ny){var f=fn("_sevendays_touch_menu_tap");var r=canvas.getBoundingClientRect();return f?f(nx,ny,r.width/Math.max(1,r.height)):-1},swipe:function(d){var f=fn("_sevendays_touch_menu_swipe");f&&f(d)}};
+}();
+</script><script async src="soh.js?v=bb504303"></script></body></html>
