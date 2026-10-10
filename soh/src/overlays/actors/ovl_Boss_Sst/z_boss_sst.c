@@ -62,6 +62,10 @@ void BossSst_DrawHead(Actor* thisx, PlayState* play);
 void BossSst_UpdateEffect(Actor* thisx, PlayState* play);
 void BossSst_DrawEffect(Actor* thisx, PlayState* play);
 void BossSst_Reset(void);
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+void Anchor_SstStartDefeat(PlayState* play);
+s32 Anchor_SstStage(BossSst* part);
+#endif
 
 void BossSst_HeadSfx(BossSst* this, u16 sfxId);
 
@@ -241,6 +245,21 @@ static u32 sUnkValues[] = { 0, 0, 0, 0, 0, 0 };
 static Color_RGBA8 sBodyColor = { 255, 255, 255, 255 };
 static Color_RGBA8 sStaticColor = { 0, 0, 0, 255 };
 static s32 sHandState[] = { HAND_WAIT, HAND_WAIT };
+
+// PHA-4052 co-op sync state (soh/Network/Anchor/BossAdapters/BongoBongoAdapter.cpp)
+static s32 sIntroDone = false;
+static u8 sDrumHits = 0;
+static s32 sDefeatStarted = false;
+static s32 sDefeatPending = false;
+#define SST_DRUM_HIT()                                    \
+    do {                                                  \
+        sFloor->dyna.actor.params = BONGOFLOOR_HIT;       \
+        sDrumHits++;                                      \
+    } while (0)
+
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+s32 Anchor_BossAimTargets(PlayState* play, Actor** out, s32 max);
+#endif
 
 const ActorInit Boss_Sst_InitVars = {
     ACTOR_BOSS_SST,
@@ -442,6 +461,12 @@ void BossSst_HeadIntro(BossSst* this, PlayState* play) {
         sHands[LEFT]->colliderJntSph.base.ocFlags1 |= OC1_ON;
         sHands[RIGHT]->colliderJntSph.base.ocFlags1 |= OC1_ON;
         this->timer = 112;
+        sIntroDone = true;
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+        if (sDefeatPending) {
+            Anchor_SstStartDefeat(play);
+        }
+#endif
     } else if (this->timer >= 546) {
         if (player->actor.world.pos.y > 100.0f) {
             player->actor.world.pos.x = sRoomCenter.x;
@@ -455,7 +480,7 @@ void BossSst_HeadIntro(BossSst* this, PlayState* play) {
         Math_Vec3f_Copy(&sCameraAt, &player->actor.world.pos);
         if (player->actor.bgCheckFlags & 2) {
             if (!this->ready) {
-                sFloor->dyna.actor.params = BONGOFLOOR_HIT;
+                SST_DRUM_HIT();
                 this->ready = true;
                 func_800AA000(this->actor.xyzDistToPlayerSq, 0xFF, 0x14, 0x96);
                 Audio_PlayActorSound2(&sFloor->dyna.actor, NA_SE_EN_SHADEST_TAIKO_HIGH);
@@ -658,6 +683,30 @@ void BossSst_HeadSetupNeutral(BossSst* this) {
     this->actionFunc = BossSst_HeadNeutral;
 }
 
+// Nearest living player to the head (co-op), else the local Link. Only attack
+// aim and gates use this; the Link that is grabbed or knocked back stays local.
+static Player* BossSst_AimPlayer(BossSst* this, PlayState* play) {
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    Actor* targets[4];
+    s32 count = Anchor_BossAimTargets(play, targets, ARRAY_COUNT(targets));
+    s32 i;
+    f32 best = 1.0e30f;
+    Player* nearest = GET_PLAYER(play);
+
+    for (i = 0; i < count; i++) {
+        f32 dist = Actor_WorldDistXZToActor(&sHead->actor, targets[i]);
+
+        if (dist < best) {
+            best = dist;
+            nearest = (Player*)targets[i];
+        }
+    }
+    return nearest;
+#else
+    return GET_PLAYER(play);
+#endif
+}
+
 void BossSst_HeadNeutral(BossSst* this, PlayState* play) {
     SkelAnime_Update(&this->skelAnime);
     if (!this->ready && ((HAND_STATE(sHands[LEFT]) == HAND_BEAT) || (HAND_STATE(sHands[LEFT]) == HAND_WAIT)) &&
@@ -672,8 +721,10 @@ void BossSst_HeadNeutral(BossSst* this, PlayState* play) {
     }
 
     if (this->timer == 0) {
-        if ((GET_PLAYER(play)->actor.world.pos.y > -50.0f) &&
-            !(GET_PLAYER(play)->stateFlags1 &
+        Player* aim = BossSst_AimPlayer(this, play);
+
+        if ((aim->actor.world.pos.y > -50.0f) &&
+            !(aim->stateFlags1 &
               (PLAYER_STATE1_DEAD | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE))) {
             sHands[Rand_ZeroOne() <= 0.5f]->ready = true;
             BossSst_HeadSetupWait(this);
@@ -682,7 +733,7 @@ void BossSst_HeadNeutral(BossSst* this, PlayState* play) {
         }
     } else {
         Math_ApproachS(&this->actor.shape.rot.y,
-                       Actor_WorldYawTowardPoint(&GET_PLAYER(play)->actor, &sRoomCenter) + 0x8000, 4, 0x400);
+                       Actor_WorldYawTowardPoint(&BossSst_AimPlayer(this, play)->actor, &sRoomCenter) + 0x8000, 4, 0x400);
         if ((this->timer == 28) || (this->timer == 84)) {
             BossSst_HeadSfx(this, NA_SE_EN_SHADEST_PRAY);
         }
@@ -1301,7 +1352,7 @@ void BossSst_HandDownbeat(BossSst* this, PlayState* play) {
         }
 
         if (this->timer == 0) {
-            sFloor->dyna.actor.params = BONGOFLOOR_HIT;
+            SST_DRUM_HIT();
             if (sHead->actionFunc == BossSst_HeadWait) {
                 if (this->ready) {
                     BossSst_HandSelectAttack(this);
@@ -1318,7 +1369,7 @@ void BossSst_HandDownbeat(BossSst* this, PlayState* play) {
 }
 
 void BossSst_HandSetupDownbeatEnd(BossSst* this) {
-    sFloor->dyna.actor.params = BONGOFLOOR_HIT;
+    SST_DRUM_HIT();
     Animation_PlayOnce(&this->skelAnime, sHandFlatPoses[this->actor.params]);
     this->actionFunc = BossSst_HandDownbeatEnd;
 }
@@ -1473,7 +1524,7 @@ void BossSst_HandReadySlam(BossSst* this, PlayState* play) {
             BossSst_HandSetupSlam(this);
         }
     } else {
-        Player* player = GET_PLAYER(play);
+        Player* player = BossSst_AimPlayer(this, play);
 
         if (Math_StepToF(&this->actor.world.pos.y, ROOM_CENTER_Y + 300.0f, 30.0f) &&
             (this->actor.xzDistToPlayer < 140.0f)) {
@@ -3292,6 +3343,10 @@ void BossSst_Reset(void) {
 
     sCutsceneCamera = 0;
     sBodyStatic = false;
+    sIntroDone = false;
+    sDrumHits = 0;
+    sDefeatStarted = false;
+    sDefeatPending = false;
     // Reset death colors
     sBodyColor.a = 255;
     sBodyColor.r = 255;
@@ -3301,4 +3356,261 @@ void BossSst_Reset(void) {
     sStaticColor.r = 0;
     sStaticColor.g = 0;
     sStaticColor.b = 0;
+}
+
+// ---------------------------------------------------------------------------
+// PHA-4052 co-op sync hooks, called from
+// soh/Network/Anchor/BossAdapters/BongoBongoAdapter.cpp. Statics stay private.
+// ---------------------------------------------------------------------------
+
+BossSst* Anchor_SstPart(s32 part) {
+    if (part < 0) {
+        return sHead;
+    }
+    return part < 2 ? sHands[part] : NULL;
+}
+
+static const struct { BossSstActionFunc f; const char* n; } sAnchorFuncNames[] = {
+    { BossSst_HandBreakIce, "HandBreakIce" },
+    { BossSst_HandClap, "HandClap" },
+    { BossSst_HandCrush, "HandCrush" },
+    { BossSst_HandDamage, "HandDamage" },
+    { BossSst_HandDarken, "HandDarken" },
+    { BossSst_HandDownbeat, "HandDownbeat" },
+    { BossSst_HandDownbeatEnd, "HandDownbeatEnd" },
+    { BossSst_HandEndClap, "HandEndClap" },
+    { BossSst_HandEndCrush, "HandEndCrush" },
+    { BossSst_HandEndSlam, "HandEndSlam" },
+    { BossSst_HandFall, "HandFall" },
+    { BossSst_HandFinish, "HandFinish" },
+    { BossSst_HandFrozen, "HandFrozen" },
+    { BossSst_HandGrab, "HandGrab" },
+    { BossSst_HandGrabPlayer, "HandGrabPlayer" },
+    { BossSst_HandMelt, "HandMelt" },
+    { BossSst_HandOffbeat, "HandOffbeat" },
+    { BossSst_HandOffbeatEnd, "HandOffbeatEnd" },
+    { BossSst_HandPunch, "HandPunch" },
+    { BossSst_HandReadyBreakIce, "HandReadyBreakIce" },
+    { BossSst_HandReadyCharge, "HandReadyCharge" },
+    { BossSst_HandReadyClap, "HandReadyClap" },
+    { BossSst_HandReadyGrab, "HandReadyGrab" },
+    { BossSst_HandReadyPunch, "HandReadyPunch" },
+    { BossSst_HandReadyShake, "HandReadyShake" },
+    { BossSst_HandReadySlam, "HandReadySlam" },
+    { BossSst_HandReadySweep, "HandReadySweep" },
+    { BossSst_HandRecover, "HandRecover" },
+    { BossSst_HandReel, "HandReel" },
+    { BossSst_HandRetreat, "HandRetreat" },
+    { BossSst_HandShake, "HandShake" },
+    { BossSst_HandSlam, "HandSlam" },
+    { BossSst_HandStunned, "HandStunned" },
+    { BossSst_HandSweep, "HandSweep" },
+    { BossSst_HandSwing, "HandSwing" },
+    { BossSst_HandThrash, "HandThrash" },
+    { BossSst_HandWait, "HandWait" },
+    { BossSst_HeadCharge, "HeadCharge" },
+    { BossSst_HeadDamage, "HeadDamage" },
+    { BossSst_HeadDamagedHand, "HeadDamagedHand" },
+    { BossSst_HeadDarken, "HeadDarken" },
+    { BossSst_HeadDeath, "HeadDeath" },
+    { BossSst_HeadEndCharge, "HeadEndCharge" },
+    { BossSst_HeadFall, "HeadFall" },
+    { BossSst_HeadFinish, "HeadFinish" },
+    { BossSst_HeadFrozenHand, "HeadFrozenHand" },
+    { BossSst_HeadIntro, "HeadIntro" },
+    { BossSst_HeadLurk, "HeadLurk" },
+    { BossSst_HeadMelt, "HeadMelt" },
+    { BossSst_HeadNeutral, "HeadNeutral" },
+    { BossSst_HeadReadyCharge, "HeadReadyCharge" },
+    { BossSst_HeadRecover, "HeadRecover" },
+    { BossSst_HeadStunned, "HeadStunned" },
+    { BossSst_HeadThrash, "HeadThrash" },
+    { BossSst_HeadUnfreezeHand, "HeadUnfreezeHand" },
+    { BossSst_HeadVulnerable, "HeadVulnerable" },
+    { BossSst_HeadWait, "HeadWait" },
+};
+
+const char* Anchor_SstFuncName(BossSst* part) {
+    size_t i;
+    for (i = 0; i < sizeof(sAnchorFuncNames) / sizeof(sAnchorFuncNames[0]); i++) {
+        if (sAnchorFuncNames[i].f == part->actionFunc) {
+            return sAnchorFuncNames[i].n;
+        }
+    }
+    return "?";
+}
+
+s32 Anchor_SstStage(BossSst* part) {
+    BossSstActionFunc f = part->actionFunc;
+    if (f == BossSst_HeadDeath) return 1;
+    if (f == BossSst_HeadThrash) return 2;
+    if (f == BossSst_HeadDarken) return 3;
+    if (f == BossSst_HeadFall) return 4;
+    if (f == BossSst_HeadMelt) return 5;
+    if (f == BossSst_HeadFinish) return 6;
+    if (f == BossSst_HandDamage) return 11;
+    if (f == BossSst_HandThrash) return 12;
+    if (f == BossSst_HandMelt) return 13;
+    if (f == BossSst_HandFinish) return 14;
+    return 0;
+}
+
+s32 Anchor_SstTimer(BossSst* part) {
+    return part->timer;
+}
+
+s32 Anchor_SstIntroDone(void) {
+    return sIntroDone;
+}
+
+s32 Anchor_SstHandState(BossSst* hand) {
+    return HAND_STATE(hand);
+}
+
+void Anchor_SstSetHandState(BossSst* hand, s32 state) {
+    HAND_STATE(hand) = state;
+}
+
+// Sub-action inside the grab family, which HAND_STATE doesn't tell apart: 1 reaching/clapping, 2 crushing, 3 swinging.
+s32 Anchor_SstGrabAction(BossSst* hand) {
+    if (hand->actionFunc == BossSst_HandCrush) {
+        return 2;
+    }
+    if (hand->actionFunc == BossSst_HandSwing) {
+        return 3;
+    }
+    if (hand->actionFunc == BossSst_HandGrab || hand->actionFunc == BossSst_HandClap) {
+        return 1;
+    }
+    return 0;
+}
+
+u8 Anchor_SstDrumHits(void) {
+    return sDrumHits;
+}
+
+void Anchor_SstDrumTo(u8 hits) {
+    if (hits != sDrumHits && sFloor != NULL) {
+        sFloor->dyna.actor.params = BONGOFLOOR_HIT;
+    }
+    sDrumHits = hits;
+}
+
+s32 Anchor_SstDefeatStarted(void) {
+    return sDefeatStarted;
+}
+
+void Anchor_SstDeferDefeat(void) {
+    sDefeatPending = true;
+}
+
+// The lethal blow, as BossSst_HeadCollisionCheck lands it. Idempotent.
+void Anchor_SstStartDefeat(PlayState* play) {
+    if (sDefeatStarted || sHead == NULL || sHands[LEFT] == NULL || sHands[RIGHT] == NULL) {
+        return;
+    }
+    sDefeatStarted = true;
+    sDefeatPending = false;
+    if (Anchor_SstStage(sHead) >= 1 && Anchor_SstStage(sHead) <= 6) {
+        return;
+    }
+    sHead->actor.colChkInfo.health = 0;
+    Enemy_StartFinishingBlow(play, &sHead->actor);
+    BossSst_HeadSetupDeath(sHead, play);
+    GameInteractor_ExecuteOnBossDefeat(&sHead->actor);
+    BossSst_HandSetupDamage(sHands[LEFT]);
+    BossSst_HandSetupDamage(sHands[RIGHT]);
+}
+
+// Mirroring ended without a defeat: put the local AI back in a state that can continue.
+void Anchor_SstResume(BossSst* part, PlayState* play) {
+    if (sHead == NULL || sHands[LEFT] == NULL || sHands[RIGHT] == NULL || sDefeatStarted || !sIntroDone) {
+        return;
+    }
+    if (part == sHead) {
+        BossSst_HeadSetupNeutral(sHead);
+        Actor_WorldToActorCoords(&sHead->actor, &sHandOffsets[RIGHT], &sHands[RIGHT]->actor.world.pos);
+        Actor_WorldToActorCoords(&sHead->actor, &sHandOffsets[LEFT], &sHands[LEFT]->actor.world.pos);
+        sHandYawOffsets[LEFT] = sHands[LEFT]->actor.shape.rot.y - sHead->actor.shape.rot.y;
+        sHandYawOffsets[RIGHT] = sHands[RIGHT]->actor.shape.rot.y - sHead->actor.shape.rot.y;
+    } else {
+        BossSst_HandReleasePlayer(part, play, true);
+        BossSst_HandSetupRetreat(part);
+    }
+}
+
+// Mirror frame, after the streamed fields are applied. Does what Update would
+// have done to this client's own world: lens flag, hand trails, and the hit on
+// the local Link the host's attack would have landed.
+void Anchor_SstMirrorTick(BossSst* this, PlayState* play, s32 grabAction) {
+    Player* player = GET_PLAYER(play);
+
+    if (this->actor.params == BONGO_HEAD) {
+        if (this->vVanish) {
+            if (!play->actorCtx.lensActive || (this->actor.colorFilterTimer != 0)) {
+                this->actor.flags &= ~ACTOR_FLAG_REACT_TO_LENS;
+            } else {
+                this->actor.flags |= ACTOR_FLAG_REACT_TO_LENS;
+            }
+        }
+        if (this->colliderJntSph.base.atFlags & AT_HIT) {
+            this->colliderJntSph.base.atFlags &= ~(AT_ON | AT_HIT);
+            func_8002F71C(play, &this->actor, 10.0f, this->actor.shape.rot.y, 5.0f);
+            Player_PlaySfx(&player->actor, NA_SE_PL_BODY_HIT);
+        }
+        return;
+    }
+
+    {
+        s32 state = HAND_STATE(this);
+        BossSstHandTrail* trail;
+
+        if ((state != HAND_DEATH) && (state != HAND_WAIT) && (state != HAND_BEAT) && (state != HAND_FROZEN)) {
+            this->trailCount = CLAMP_MAX(this->trailCount + 1, 7);
+        } else {
+            this->trailCount = CLAMP_MIN(this->trailCount - 1, 0);
+        }
+        trail = &this->handTrails[this->trailIndex];
+        Math_Vec3f_Copy(&trail->world.pos, &this->actor.world.pos);
+        trail->world.rot = this->actor.shape.rot;
+        trail->zPosMod = this->handZPosMod;
+        trail->yRotMod = this->handYRotMod;
+        this->trailIndex = (this->trailIndex + 1) % 7;
+
+        if (this->colliderJntSph.base.atFlags & AT_HIT) {
+            this->colliderJntSph.base.atFlags &= ~(AT_ON | AT_HIT);
+            if (state == HAND_SLAM) {
+                player->actor.world.pos.x = (Math_SinS(this->actor.yawTowardsPlayer) * 100.0f) + this->actor.world.pos.x;
+                player->actor.world.pos.z = (Math_CosS(this->actor.yawTowardsPlayer) * 100.0f) + this->actor.world.pos.z;
+                func_8002F71C(play, &this->actor, 5.0f, this->actor.yawTowardsPlayer, 0.0f);
+            } else if (state == HAND_SWEEP) {
+                func_8002F71C(play, &this->actor, 5.0f, this->actor.shape.rot.y - (this->vParity * 0x3800), 0.0f);
+                Player_PlaySfx(&player->actor, NA_SE_PL_BODY_HIT);
+            } else if (state == HAND_PUNCH) {
+                Player_PlaySfx(&player->actor, NA_SE_PL_BODY_HIT);
+                func_8002F71C(play, &this->actor, 10.0f, this->actor.shape.rot.y, 5.0f);
+            } else if (state == HAND_GRAB || state == HAND_CLAP) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_SHADEST_CATCH);
+                BossSst_HandGrabPlayer(this, play);
+            }
+        }
+
+        if (player->actor.parent == &this->actor) {
+            s32 action = grabAction;
+            if (!(player->stateFlags2 & PLAYER_STATE2_GRABBED_BY_ENEMY)) {
+                BossSst_HandReleasePlayer(this, play, true);
+            } else if (action == 0 || (state != HAND_GRAB && state != HAND_CLAP)) {
+                BossSst_HandReleasePlayer(this, play, action != 3);
+            } else {
+                player->av2.actionVar2 = 0;
+                Math_Vec3f_Copy(&player->actor.world.pos, &this->actor.world.pos);
+                if (action == 1) {
+                    player->actor.shape.rot.y = this->actor.shape.rot.y;
+                } else if (action == 3) {
+                    player->actor.shape.rot.x = this->actor.shape.rot.x;
+                    player->actor.shape.rot.z = (this->vParity * -0x4000) + this->actor.shape.rot.z;
+                }
+            }
+        }
+    }
 }

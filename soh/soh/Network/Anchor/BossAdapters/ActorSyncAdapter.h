@@ -72,6 +72,16 @@ struct ActorSyncAdapter {
     bool (*OnLocalHit)(Actor* actor) = nullptr;
     // Authority: OnRemoteEvent with the sender's payload and client id (EnemySync::SendAdapterEvent's `data`).
     void (*OnRemoteEventData)(Actor* actor, uint8_t event, const nlohmann::json& data, uint32_t fromClient) = nullptr;
+    // Authority: pick which collider a forwarded remote hit lands on, for
+    // bosses whose damage is read from a specific collider rather than the
+    // last one that called CollisionCheck_SetAC. May also prime
+    // colChkInfo.damageEffect from dmgFlags. Return nullptr to drop the hit.
+    Collider* (*SelectHitCollider)(Actor* actor, uint32_t dmgFlags) = nullptr;
+    // The boss's parts are spawned by its own Init, deterministically on every
+    // client, but after room setup (deferred object load). Keep their room
+    // occurrence keys instead of minting dynamic keys and SPAWN packets, which
+    // would double-spawn the parts on the other client.
+    bool staticKey = false;
     // Authority: a replayed hit the boss's own update did not consume is dropped, not forced
     // onto its health. For bosses that only take damage in some states (Ganondorf is hurt
     // only while stunned, Ganon only from behind or when stunned), where a hit that lands in

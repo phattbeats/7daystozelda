@@ -5,6 +5,7 @@ void RegisterGohmaAdapter();
 void RegisterEnGomaAdapter();
 void RegisterEnDekubabaAdapter();
 void RegisterKingDodongoAdapter();
+void RegisterBongoBongoAdapter();
 void RegisterEnFloormasAdapter();
 void RegisterBarinadeAdapter();
 void RegisterVolvagiaAdapter();
@@ -44,6 +45,7 @@ void RegisterBuiltInAdapters() {
     RegisterEnGomaAdapter();
     RegisterEnDekubabaAdapter();
     RegisterKingDodongoAdapter();
+    RegisterBongoBongoAdapter();
     RegisterEnFloormasAdapter();
     RegisterBarinadeAdapter();
     RegisterVolvagiaAdapter();
