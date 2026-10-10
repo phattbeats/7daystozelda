@@ -128,6 +128,8 @@ Known limits:
 | Hookshot | A hookshot hit on the core while it is in ATTACK cuts tent1 and stuns it, via the normal forwarded hit. | B's hookshot-flag hit: core ATTACK -> tent CUT (100) -> core STUNNED (5) on both. Caveat: the real hookshot's pull of the core is cosmetic on a mirror, because the stream overwrites the core position. |
 | Live test | | No desync canary and no crash in either log after the fixes. |
 
+Review fixes (PHA-4043 findings, 2026-10-10): `ci`/`mi`/`sp` from the network are range-checked (an out-of-range packet leaves the tentacle's cut index untouched and the page alive); a grab the victim's machine cannot take sends the tentacle back to ready instead of shaking an empty hold; only the held player's escape event is accepted; the pending-defeat flag and victim table reset in core Init/Destroy. Live: two-client intro -> fight -> grab -> defeat, one heart container, one blue warp and the clear flag on each client, no canaries (`docs/evidence/pha4051-fix/`).
+
 Open: defeat while a victim is held, and the bandwidth of the `jt` arrays, were not measured.
 
 ## Phantom Ganon (#4049)

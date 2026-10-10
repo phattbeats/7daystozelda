@@ -1,0 +1,6 @@
+"[SOH] [08:18:35.757] [MorphaAdapter.cpp:304] [info] [MorphaSync] core phase 0->1", source: http://127.0.0.1:18451/index.html?r=1791634409 (33)
+"[SOH] [08:18:35.759] [MorphaAdapter.cpp:304] [info] [MorphaSync] tentacle phase 0->1", source: http://127.0.0.1:18451/index.html?r=1791634409 (33)
+"[SOH] [08:19:32.356] [MorphaAdapter.cpp:175] [info] [MorphaSync] our Link is held by a tentacle", source: http://127.0.0.1:18451/index.html?r=1791634409 (33)
+"[SOH] [08:19:41.355] [MorphaAdapter.cpp:159] [info] [MorphaSync] released our Link (act 101, mashed free false)", source: http://127.0.0.1:18451/index.html?r=1791634409 (33)
+"[SOH] [08:22:45.167] [MorphaAdapter.cpp:344] [info] [MorphaSync] remote defeat (missed phase edge, BossMo_StartDeath called locally)", source: http://127.0.0.1:18451/index.html?r=1791634409 (33)
+"[SOH] [08:22:45.214] [MorphaAdapter.cpp:304] [info] [MorphaSync] tentacle phase 1->2", source: http://127.0.0.1:18451/index.html?r=1791634409 (33)

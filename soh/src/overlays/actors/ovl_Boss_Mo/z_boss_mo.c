@@ -20,6 +20,7 @@
 s32 Anchor_BossAimTargets(PlayState* play, Actor** out, s32 max);
 u32 Anchor_PuppetClientId(Actor* actor);
 s32 Anchor_MorphaDefeatPending(Actor* actor);
+void Anchor_MorphaReset(void);
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -297,6 +298,7 @@ void BossMo_Init(Actor* thisx, PlayState* play2) {
     Actor_ProcessInitChain(&this->actor, sInitChain);
     ActorShape_Init(&this->actor.shape, 0.0f, NULL, 0.0f);
     if (this->actor.params != BOSSMO_TENTACLE) {
+        Anchor_MorphaReset();
         Flags_SetSwitch(play, 0x14);
         sMorphaCore = this;
         MO_WATER_LEVEL(play) = this->waterLevel = MO_WATER_LEVEL(play);
@@ -372,6 +374,7 @@ void BossMo_Destroy(Actor* thisx, PlayState* play) {
     if (this->actor.params >= BOSSMO_TENTACLE) {
         Collider_DestroyJntSph(play, &this->tentCollider);
     } else {
+        Anchor_MorphaReset();
         Collider_DestroyCylinder(play, &this->coreCollider);
     }
 }

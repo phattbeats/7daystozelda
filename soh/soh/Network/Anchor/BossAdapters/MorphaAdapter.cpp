@@ -224,8 +224,9 @@ static void MO_DeserializeTent(BossMo* mo, const nlohmann::json& x) {
     double d;
     if (MO_Num(x, "wm", d)) mo->waterLevelMod = d / 100.0;
     if (MO_Num(x, "wa", d)) mo->waterTexAlpha = (float)d;
-    if (MO_Num(x, "ci", d)) mo->cutIndex = (s16)d;
-    if (MO_Num(x, "mi", d)) mo->meltIndex = (s16)d;
+    // Indices from the network are used to index the 41-joint and 21-spot tables: reject anything out of range.
+    if (MO_Num(x, "ci", d) && d >= 0 && d <= 41) mo->cutIndex = (s16)d;
+    if (MO_Num(x, "mi", d) && d >= 0 && d <= 41) mo->meltIndex = (s16)d;
     if (MO_Num(x, "cs", d)) mo->cutScale = d / 1000.0;
     if (MO_Num(x, "nb", d)) mo->noBubbles = (s16)d;
     if (MO_Num(x, "lt", d)) mo->linkToLeft = (s16)d;
@@ -233,7 +234,7 @@ static void MO_DeserializeTent(BossMo* mo, const nlohmann::json& x) {
     if (MO_Num(x, "rs", d)) mo->tentRippleSize = d / 1000.0;
     if (MO_Num(x, "tp", d)) mo->tentPulse = d / 1000.0;
     if (MO_Num(x, "bb", d)) mo->baseBubblesTimer = (s16)d;
-    if (MO_Num(x, "sp", d)) mo->tentSpawnPos = (u8)d;
+    if (MO_Num(x, "sp", d) && d >= 0 && d <= 20) mo->tentSpawnPos = (u8)d;
     auto jtIt = x.find("jt");
     if (jtIt != x.end() && jtIt->is_array() && jtIt->size() == 41 * 4) {
         const auto& jt = *jtIt;
@@ -367,17 +368,34 @@ static void MO_OnLocalResume(Actor* actor) {
     ESYNC_LOG("[MorphaSync] local AI resumes ({})", MO_IsTent(actor) ? "tentacle" : "core");
 }
 
-static void MO_OnRemoteEvent(Actor* actor, uint8_t event) {
+static void MO_OnRemoteEventData(Actor* actor, uint8_t event, const nlohmann::json& data, uint32_t fromClient) {
     BossMo* tent = (BossMo*)actor;
     if (event != MO_EVENT_ESCAPE || !MO_IsTent(actor)) {
         return;
     }
-    // The held player's machine counted 40 mashes (or could not take the grab): let go at the next swing.
-    if (tent->anchorVictim != 0 && tent->work[MO_TENT_ACTION_STATE] == MO_TENT_SHAKE) {
+    // Only the player the tentacle holds can release it.
+    if (tent->anchorVictim == 0 || fromClient != tent->anchorVictim) {
+        ESYNC_LOG("[MorphaSync] escape from {} ignored (victim {})", fromClient, tent->anchorVictim);
+        return;
+    }
+    int16_t act = tent->work[MO_TENT_ACTION_STATE];
+    if (act == MO_TENT_SHAKE) {
+        // The held player's machine counted 40 mashes: let go at the next swing.
         tent->mashCounter = 40;
         ESYNC_LOG("[MorphaSync] victim escaped the tentacle");
-    } else if (tent->anchorVictim != 0 && tent->work[MO_TENT_ACTION_STATE] == MO_TENT_GRAB) {
-        tent->timers[0] = 0;
+    } else if (act == MO_TENT_CURL || act == MO_TENT_GRAB) {
+        // The victim's machine could not take the grab (mashing is only possible while shaking): go back to ready
+        // the way a failed local grab does, instead of shaking an empty tentacle for the full timeout.
+        tent->work[MO_TENT_ACTION_STATE] = MO_TENT_READY;
+        tent->anchorVictim = 0;
+        tent->tentMaxAngle = .001f;
+        tent->tentSpeed = 0;
+        tent->fwork[MO_TENT_SWING_SIZE_Z] = 0;
+        tent->fwork[MO_TENT_SWING_SIZE_X] = 0;
+        tent->fwork[MO_TENT_SWING_RATE_Z] = 0;
+        tent->fwork[MO_TENT_SWING_RATE_X] = 0;
+        tent->timers[0] = 30;
+        ESYNC_LOG("[MorphaSync] victim could not take the grab: tentacle back to ready");
     }
 }
 
@@ -390,8 +408,16 @@ void RegisterMorphaAdapter() {
     adapter.ShouldMirror = MO_ShouldMirror;
     adapter.OnRemoteDefeat = MO_OnRemoteDefeat;
     adapter.OnLocalResume = MO_OnLocalResume;
-    adapter.OnRemoteEvent = MO_OnRemoteEvent;
+    adapter.OnRemoteEventData = MO_OnRemoteEventData;
     EnemySync::RegisterAdapter(ACTOR_BOSS_MO, adapter);
+}
+
+// z_boss_mo.c, core Init and Destroy: no pending defeat survives into the next fight.
+extern "C" void Anchor_MorphaReset(void) {
+    sPendingDefeat = nullptr;
+    for (auto& v : sVictims) {
+        v = MorphaVictim();
+    }
 }
 
 // z_boss_mo.c, at the end of the intro: the partner won while our intro played.
