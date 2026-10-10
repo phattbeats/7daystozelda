@@ -61,7 +61,68 @@ EM_JS(int, web_touch_buttons, (), {
 
 #include <libultraship/libultra/controller.h>
 
+// ---- Touch on the pause menu (#4125) ----
+// The page hit-testing lives with the pause menu (KaleidoScope_Touch* in z_kaleido_scope_PAL.c).
+// A tap that lands on the slot the cursor already sits on presses A for two game frames: the
+// pad manager polls once per game frame, and a press is "down now, up last frame".
+
+extern "C" int KaleidoScope_TouchOpen(void);
+extern "C" int KaleidoScope_TouchTap(float nx, float ny, float aspect);
+extern "C" void KaleidoScope_TouchSwipe(int dir);
+extern "C" unsigned int KaleidoScope_TouchFrame(void);
+extern "C" const char* KaleidoScope_TouchProbe(float aspect);
+
+static uint16_t sTouchInjectMask = 0;
+static unsigned int sTouchInjectFrame = 0;
+
+static void WebTouch_Press(uint16_t mask) {
+    sTouchInjectMask = mask;
+    sTouchInjectFrame = KaleidoScope_TouchFrame();
+}
+
+static void WebTouch_MergeInjected(OSContPad* pad) {
+    if (sTouchInjectMask == 0) {
+        return;
+    }
+    if (KaleidoScope_TouchFrame() - sTouchInjectFrame <= 1) {
+        pad->button |= sTouchInjectMask;
+    } else {
+        sTouchInjectMask = 0;
+    }
+}
+
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE int sevendays_touch_menu_open(void) {
+    return KaleidoScope_TouchOpen();
+}
+
+// Normalized canvas coordinates and the canvas aspect. See KaleidoScope_TouchTap for the codes.
+EMSCRIPTEN_KEEPALIVE int sevendays_touch_menu_tap(float nx, float ny, float aspect) {
+    int r = KaleidoScope_TouchTap(nx, ny, aspect);
+    if (r == 3) {
+        WebTouch_Press(0x8000); // A
+    }
+    return r;
+}
+
+EMSCRIPTEN_KEEPALIVE void sevendays_touch_menu_swipe(int dir) {
+    KaleidoScope_TouchSwipe(dir);
+}
+
+EMSCRIPTEN_KEEPALIVE const char* sevendays_touch_menu_probe(float aspect) {
+    return KaleidoScope_TouchProbe(aspect);
+}
+
+// Test hook: a one-press of any button mask through the same path a tap-select uses.
+EMSCRIPTEN_KEEPALIVE void sevendays_touch_menu_press(int mask) {
+    WebTouch_Press((uint16_t)mask);
+}
+
+} // extern "C"
+
 extern "C" void WebTouchGamepad_MergeInput(OSContPad* pad) {
+    WebTouch_MergeInjected(pad);
     if (!web_touch_active()) return;
 
     // Merge buttons (OR with existing)

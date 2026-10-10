@@ -39,6 +39,19 @@ void SevenDaysKaleido_DrawPage(PlayState* play, s32 current); // after the frame
 void SevenDaysKaleido_DrawInfo(PlayState* play, s16 top);     // the bottom panel's line
 void SevenDaysKaleido_DrawPageLabel(PlayState* play, s16 top); // "To Workbench" on the L/R arrows
 
+// z_kaleido_scope_PAL.c: touch on the pause pages (#4125). Coordinates are normalized canvas
+// positions (0..1, y down) plus the canvas aspect; see KaleidoScope_TouchTap for the result codes.
+s32 KaleidoScope_TouchOpen(void);
+s32 KaleidoScope_TouchTap(f32 nx, f32 ny, f32 aspect);
+void KaleidoScope_TouchSwipe(s32 dir);
+u32 KaleidoScope_TouchFrame(void);
+const char* KaleidoScope_TouchProbe(f32 aspect);
+
+// CraftingWindow.cpp: the Workbench page's tap targets, in page space (#4125).
+s32 SevenDaysKaleido_TouchHit(PlayState* play, f32 px, f32 py);
+s32 SevenDaysKaleido_TouchRect(PlayState* play, s32 index, f32* x0, f32* y0, f32* x1, f32* y1);
+s32 SevenDaysKaleido_TouchCursor(void);
+
 // CraftingWindow.cpp: kits bound to the D-pad (#4071). dir 0 up, 1 down, 2 left, 3 right.
 s32 SevenDaysDpad_Bound(s32 dir);
 s32 SevenDaysDpad_Any(void);
