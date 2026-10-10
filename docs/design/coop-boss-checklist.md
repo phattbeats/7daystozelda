@@ -53,7 +53,7 @@ in a two-client live test, with screenshots and logs. The rig is in
 | Phantom Ganon | #4049 | **Done**, see below |
 | Volvagia | #4050 | **Done**, see below |
 | Morpha | #4051 | **Done**, see below |
-| Bongo Bongo | #4052 | Not started |
+| Bongo Bongo | #4052 | **Done**, see below |
 | Twinrova | #4053 | **Done**, see below |
 | Ganondorf and Ganon | #4054 | **Done**, see below |
 | Minibosses (Dark Link, Iron Knuckle, Dead Hand, Big Octo, Flare Dancer, Stalfos, Lizalfos) | #4055 | See the miniboss section below |
@@ -242,3 +242,23 @@ Trap found on the way: the room places Ganondorf with params 0xFFFF, which the g
 | Ganondorf resume | `OnLocalResume` drops the event ring and continues the sequence from the last one the mirrors saw, then `BossGanon_SetupWait`. A defeat owed to a client still in its intro survives the resume and starts at intro end. Ring: 64 slots, 60-frame life, replayed in seq order; replayed kinds and params are range-checked (a network value never becomes a raw spawn id). `pendingDefeat` is reset in Init/Destroy (`Anchor_GanondorfReset`) and keyed to the actor. | Built; host change mid-fight not driven live. |
 | Ganon resume | `OnLocalResume` keeps a cutscene the client still owes (defeat, downed, sword) when it resumes during its own cutscene; `Anchor_Ganon2Tick` (top of `BossGanon2_Update`) starts it when that cutscene ends. Pending state is keyed to the Ganon and reset in Init/Destroy (`Anchor_Ganon2Reset`). | Built; stale stream or host change in a cutscene not driven live. |
 | Live test | | Both fights run intro -> fight -> defeat on two clients with no crash and no desync; both players landed damage and took hits. Open: the real Master Sword pickup, the platform fall replay and the big-magic volley were not driven. |
+
+## Bongo Bongo (#4052)
+
+One actor id, three instances: the head and the two hands, told apart by params. One adapter (`BongoBongoAdapter.cpp`) handles all of them. The head's object loads late, so the hands spawn after room setup; `ActorSyncAdapter::staticKey` keeps their room-occurrence keys instead of minting dynamic keys and SPAWN packets (which would double-spawn them on the other client).
+
+| Row | How | Live test (2026-10-10, two local clients, A authority, B mirror) |
+|---|---|---|
+| Phases | PREFIGHT / FIGHT / DEFEATED from actor fields (`BG_GetPhase`). Each client runs its own intro; `ShouldMirror` waits for the local intro and the streamed FIGHT. | Both ran the intro (`introDone` 1 on both), phase 0 -> 1 on both. |
+| Extras | `BG_SerializeExtras` / `BG_SerializeEffects` stream the update-computed draw fields and effect arrays that pos/rot/jointTable miss. | Same drum counter and pose on both clients. |
+| Damage | Remote hits are replayed on the authority through `SelectHitCollider`, which picks the head or hand collider the boss reads damage from. | Hits from A and B took hp 36 -> 0 on both clients in step. |
+| Defeat | `OnPhaseChange` FIGHT -> DEFEATED starts the boss's own death locally and returns true; `OnRemoteDefeat` covers a missed edge. | Both clients ran the full death chain (HeadDeath, Thrash, Darken, Melt, Finish) and each got one heart container, one blue warp and the clear flag (`hearts` 1, `warps` 1, `clear` 2). |
+| Children | The hands are tracked statics (`staticKey`); no `IsTrackingExcluded` entries. | No duplicate parts, one heart container and one warp per client. |
+| Resume | `OnLocalResume` calls `Anchor_SstResume`. | Not exercised. |
+| Aggro | Not changed in this pass; the boss keeps the host's targeting. | Not tested. |
+| Live test | | Intro -> fight -> defeat on two clients: no crash and no desync in either log. Evidence: `docs/evidence/pha4052/`. Rig: `tools/harness/pha4052/`. |
+
+Known limits:
+- Aggro at the nearest player was not done for this boss; attacks aim at the authority's Link.
+- Warping out of a boss that is mid-death and straight back in starts the new boss as DEFEATED from the stale stream; leave through the blue warp, or restart both clients.
+- A boss room cleared by an earlier run spawns no boss.
