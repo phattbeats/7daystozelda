@@ -338,13 +338,39 @@ static CollisionChunk sChunks[CHUNK_MAX];
 static bool sCollisionDirty = false;
 
 // Fill a chunk's header with the boxes of its pieces, relative to its actor.
-static void FillChunk(CollisionChunk& ch, const std::vector<Actor*>& pieces) {
+static int sCollisionDropped = 0; // pieces left without collision because the lists were full (#4062 review)
+
+// Polys/verts the scene's own dynamic collision (movers, doors, platforms) holds in the shared lists.
+// The base's chunks are not counted: they are what the budget is for.
+static void SceneDynaUse(PlayState* play, int& polys, int& verts) {
+    polys = verts = 0;
+    DynaCollisionContext& dyna = play->colCtx.dyna;
+    for (int i = 0; i < BG_ACTOR_MAX; i++) {
+        if (!(dyna.bgActorFlags[i] & 1) || dyna.bgActors[i].actor == nullptr || dyna.bgActors[i].colHeader == nullptr ||
+            dyna.bgActors[i].actor->id == sCollisionId) {
+            continue;
+        }
+        polys += dyna.bgActors[i].colHeader->numPolygons;
+        verts += dyna.bgActors[i].colHeader->numVertices;
+    }
+}
+
+// Fill a chunk's header with the boxes of its pieces, relative to its actor. polyRoom/vtxRoom are what
+// is left in the dynamic lists: a piece that does not fit gets no collision (it still draws) instead
+// of overrunning DynaPoly's lists, so a base that arrived from a peer cannot break this client.
+static void FillChunk(CollisionChunk& ch, const std::vector<Actor*>& pieces, int& polyRoom, int& vtxRoom) {
     ch.verts.clear();
     ch.polys.clear();
     Vec3f origin = ch.actor->world.pos;
     s16 minX = 0x7FFF, minY = 0x7FFF, minZ = 0x7FFF, maxX = -0x7FFF, maxY = -0x7FFF, maxZ = -0x7FFF;
     for (Actor* a : pieces) {
         const ShapeCollision& box = sShapes[((PlaceableActor*)a)->type];
+        if ((int)box.polys.size() > polyRoom || (int)box.verts.size() > vtxRoom || ch.verts.size() + box.verts.size() > 0xFFFF) {
+            sCollisionDropped++;
+            continue;
+        }
+        polyRoom -= (int)box.polys.size();
+        vtxRoom -= (int)box.verts.size();
         // The same transform DynaPoly_ExpandSRT applied to a piece's own header.
         MtxF mtx;
         SkinMatrix_SetTranslateRotateYXZScale(&mtx, 1.0f, 1.0f, 1.0f, 0, a->shape.rot.y, 0, a->world.pos.x - origin.x,
@@ -367,6 +393,9 @@ static void FillChunk(CollisionChunk& ch, const std::vector<Actor*>& pieces) {
             q.vIC = p.vIC + base;
             ch.polys.push_back(q);
         }
+    }
+    if (ch.polys.empty()) {
+        minX = minY = minZ = maxX = maxY = maxZ = 0;
     }
     CollisionHeader& hdr = ch.header;
     hdr = sHeaderTemplate;
@@ -433,6 +462,13 @@ static void RebuildBaseCollision(PlayState* play) {
         }
         byChunk[slot].push_back(a);
     }
+    // Room in the lists the scene allocated: nodes run about 5 per 4 polys (kCollisionNodesPerPolyQ in Base.cpp).
+    int ownPolys, ownVerts;
+    SceneDynaUse(play, ownPolys, ownVerts);
+    DynaCollisionContext& dynaCtx = play->colCtx.dyna;
+    int polyRoom = std::max(0, std::min(dynaCtx.polyListMax, dynaCtx.polyNodesMax * 4 / 5) - ownPolys);
+    int vtxRoom = std::max(0, dynaCtx.vtxListMax - ownVerts);
+    int dropBefore = sCollisionDropped;
     int polys = 0, chunks = 0;
     for (int i = 0; i < CHUNK_MAX; i++) {
         CollisionChunk& ch = sChunks[i];
@@ -455,7 +491,7 @@ static void RebuildBaseCollision(PlayState* play) {
             }
             ch.actor->room = -1;
         }
-        FillChunk(ch, byChunk[i]);
+        FillChunk(ch, byChunk[i], polyRoom, vtxRoom);
         if (ch.bgId >= BG_ACTOR_MAX) {
             ch.bgId = DynaPoly_SetBgActor(play, &play->colCtx.dyna, ch.actor, &ch.header);
         } else {
@@ -467,6 +503,10 @@ static void RebuildBaseCollision(PlayState* play) {
     }
     ESYNC_LOG("[SevenDays] base collision: {} polys in {} chunks (dyna max {})", polys, chunks,
                 play->colCtx.dyna.polyListMax);
+    if (sCollisionDropped != dropBefore) {
+        ESYNC_LOG("[SevenDays] base collision: {} pieces left without collision, the dynamic lists are full",
+                  sCollisionDropped - dropBefore);
+    }
 }
 
 static void Collision_Init(Actor* thisx, PlayState* play) {
@@ -510,6 +550,17 @@ SevenDays::CollisionCost SevenDays::PieceCollisionCost(uint8_t type) {
         return { 0, 0 }; // a gate swings open for players: it is not in the chunks (gatePassable)
     }
     return { (int)sShapes[type].polys.size(), (int)sShapes[type].verts.size() };
+}
+
+void SevenDays::SceneDynaInUse(int& polys, int& verts) {
+    polys = verts = 0;
+    if (gPlayState != nullptr) {
+        SceneDynaUse(gPlayState, polys, verts);
+    }
+}
+
+int SevenDays::CollisionDropped() {
+    return sCollisionDropped;
 }
 
 void SevenDays::CollisionInUse(int& polys, int& verts, int& chunks) {

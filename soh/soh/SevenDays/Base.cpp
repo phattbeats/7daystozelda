@@ -338,6 +338,13 @@ static bool CollisionFits(int era, int16_t scene, uint8_t type) {
             verts += c.verts;
         }
     }
+    // The scene's own movers (doors, platforms) share the lists: count them in this scene.
+    int ownPolys = 0, ownVerts = 0;
+    if (gPlayState != nullptr && gPlayState->sceneNum == scene) {
+        SceneDynaInUse(ownPolys, ownVerts);
+    }
+    polys += ownPolys;
+    verts += ownVerts;
     int cap = DYNA_BUDGET / 100 * kCollisionBudgetPercent;
     return polys <= cap && verts <= cap && polys * kCollisionNodesPerPolyQ / 4 <= cap;
 }
@@ -2484,6 +2491,7 @@ const char* sevendays_test_base() {
         int cPolys = 0, cVerts = 0, cChunks = 0;
         CollisionInUse(cPolys, cVerts, cChunks);
         j["refusals"] = sRefusals;
+        j["collisionDropped"] = CollisionDropped();
         j["dyna"] = { { "slots", slots },
                       { "polys", cPolys },
                       { "verts", cVerts },

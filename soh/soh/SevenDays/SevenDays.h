@@ -398,6 +398,8 @@ struct CollisionCost {
 };
 CollisionCost PieceCollisionCost(uint8_t type);
 void CollisionInUse(int& polys, int& verts, int& chunks); // the headers as built in this scene
+void SceneDynaInUse(int& polys, int& verts);              // the scene's own movers, which share the lists
+int CollisionDropped();                                   // pieces built without collision: the lists were full
 const char* OutdoorSceneName(int16_t scene);
 int CurrentEraNow();
 std::vector<std::pair<uint16_t, Actor*>> SpawnedPlaceables(); // id -> actor in this scene

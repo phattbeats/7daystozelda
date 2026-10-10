@@ -142,3 +142,17 @@ connected Links in one room, A is the owner and raid director.
 | Stock-build save (94 pieces, written by main 42e8dc0) loaded on the fix build | 94 pieces, 94 actors, same collision lists |
 | Vanilla pass (7 Days off) on the same four-client room | 59-60 fps on every client, 0 overflow, 0 skips, peak POLY_OPA 16 KB |
 | Memory | wasm heap 368.8 MB on stock and fix builds; JS heap 87-133 MB; play arena 2.0-2.2 MB free with the larger collision lists |
+
+## Review follow-up (PHA-4043 review, 2026-10-10)
+
+- **Scene movers now count.** `CollisionFits` adds the scene's own dynamic collision (`SceneDynaInUse`: every live
+  bg actor except the base's chunks) to the base's polys and verts before comparing with the 90% budget, so the
+  base cap no longer assumes the lists are empty.
+- **A base that arrives from a peer is bounded where collision is built.** `RebuildBaseCollision` takes the room
+  left in the scene's real lists (`min(polyListMax, polyNodesMax*4/5)` and `vtxListMax`, less the scene's movers)
+  and `FillChunk` gives no collision to a piece that does not fit (it still draws). The count is
+  `collisionDropped` in `sevendays_test_base` and an `ESYNC_LOG` line. Adoption itself is not rejected: refusing a
+  peer's base would desync the room.
+- **Status:** compiles into the web build (ninja, 21 steps). Not yet run: the #4062 rig was lost with /tmp.
+  To check: place pieces until a Kakariko/field scene with movers is near budget on the owner, join a second client
+  with a smaller `gSevenDays.BaseCap`, and watch `collisionDropped` and that nothing crashes.
