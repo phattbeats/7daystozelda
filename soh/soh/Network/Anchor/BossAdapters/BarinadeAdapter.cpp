@@ -317,6 +317,22 @@ static void Va_OnLocalResume(Actor* actor) {
     }
 }
 
+// z_boss_va.c, body Init (introOver 0) and the end of the local intro (1). The
+// host's stream stops once its boss dies, so ShouldMirror is not called again
+// to notice that our intro ended: the intro tells us itself.
+extern "C" void Anchor_BarinadeIntro(Actor* body, int introOver) {
+    if (!introOver) {
+        sPendingDefeat = false;
+        return;
+    }
+    if (!sPendingDefeat || gPlayState == NULL) {
+        return;
+    }
+    sPendingDefeat = false;
+    BossVa_SyncStartDeath((BossVa*)body, gPlayState);
+    ESYNC_LOG("[BarinadeSync] local intro over: joining the deferred defeat (intro hook)");
+}
+
 static bool Va_HandlesDefeat(Actor* actor) {
     return actor->params == VA_PARAM_BODY;
 }

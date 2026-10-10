@@ -30,6 +30,9 @@
 #define vaCamRotMod headRot.x
 #define vaBodySpinRate headRot.y
 
+// #4048: soh/Network/Anchor/BossAdapters/BarinadeAdapter.cpp (introOver 0 = a new body, 1 = the local intro handed over)
+void Anchor_BarinadeIntro(Actor* body, int introOver);
+
 #define PHASE_2 3
 #define PHASE_3 9
 #define PHASE_4 15
@@ -635,6 +638,9 @@ void BossVa_Init(Actor* thisx, PlayState* play2) {
 
     switch (this->actor.params) {
         case BOSSVA_BODY:
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+            Anchor_BarinadeIntro(&this->actor, 0);
+#endif
             Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BOSS_VA, 0.0f, 80.0f, 400.0f, 0, 0, 0,
                                BOSSVA_DOOR);
             if (Flags_GetClear(play, play->roomCtx.curRoom.num)) {
@@ -1040,6 +1046,9 @@ void BossVa_BodyIntro(BossVa* this, PlayState* play) {
                 Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
                 sCsState++;
                 Flags_SetEventChkInf(EVENTCHKINF_BEGAN_BARINA_BATTLE);
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+                Anchor_BarinadeIntro(&this->actor, 1);
+#endif
                 player->actor.shape.rot.y = player->actor.world.rot.y = this->actor.yawTowardsPlayer + 0x8000;
             }
             break;
