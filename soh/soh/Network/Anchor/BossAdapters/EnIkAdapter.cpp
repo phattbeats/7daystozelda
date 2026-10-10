@@ -31,7 +31,8 @@ extern PlayState* gPlayState;
  * starts the defeat cutscene itself from the streamed health.
  *
  * Aggro: the knuckles take the generic nearest-player targeting on the host (the
- * Nabooru fight stays on the host's Link: her intro and defeat read GET_PLAYER).
+ * Nabooru fight stays wholly on the host's Link: her intro and defeat read GET_PLAYER,
+ * so she opts out of the perception override as well as the Link swap).
  */
 
 enum IkPhase : uint8_t {
@@ -43,6 +44,12 @@ enum IkPhase : uint8_t {
 static int Ik_Num(const nlohmann::json& x, const char* k, int dflt) {
     auto it = x.find(k);
     return (it != x.end() && it->is_number()) ? it->get<int>() : dflt;
+}
+
+// Nabooru's intro and defeat read GET_PLAYER, so her aim has to stay on the same Link they use: with the
+// generic perception override she chased the nearest player while the rest of her AI read the host's.
+static bool EnIk_KeepLocalPerception(Actor* actor) {
+    return actor->params == 0;
 }
 
 static uint8_t EnIk_GetPhase(Actor* actor) {
@@ -93,8 +100,11 @@ void RegisterEnIkAdapter() {
     adapter.DeserializeExtras = EnIk_DeserializeExtras;
     adapter.GetPhase = EnIk_GetPhase;
     adapter.ShouldMirror = EnIk_ShouldMirror;
+    adapter.KeepLocalPerception = EnIk_KeepLocalPerception;
     adapter.OnPhaseChange = EnIk_OnPhaseChange;
     adapter.DeriveDamageEffect = true;
     adapter.QuietRemoteDefeat = true;
+    // A hit the body did not consume was blocked (shield, armour, grab pose); it must not become damage.
+    adapter.DropUnconsumedHits = true;
     EnemySync::RegisterAdapter(ACTOR_EN_IK, adapter);
 }

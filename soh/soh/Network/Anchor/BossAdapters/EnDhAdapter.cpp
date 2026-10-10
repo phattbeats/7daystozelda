@@ -210,6 +210,8 @@ void RegisterEnDhAdapter() {
     dh.RemoteHitAttacker = EnDh_RemoteHitAttacker;
     dh.DeriveDamageEffect = true;
     dh.QuietRemoteDefeat = true;
+    // A hit the body did not consume was blocked (shield, armour, grab pose); it must not become damage.
+    dh.DropUnconsumedHits = true;
     EnemySync::RegisterAdapter(ACTOR_EN_DH, dh);
 
     ActorSyncAdapter dha;

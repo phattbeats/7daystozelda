@@ -1,6 +1,7 @@
 #include "soh/Network/Anchor/BossAdapters/ActorSyncAdapter.h"
 #include "soh/Network/Anchor/EnemySync.h"
 #include <unordered_map>
+#include <unordered_set>
 // Pull the C++ side of global.h in under proper linkage before the extern "C"
 // overlay header includes it (BossRush.cpp pattern).
 #include "soh/OTRGlobals.h"
@@ -53,6 +54,23 @@ static float Tst_Flt(const nlohmann::json& x, const char* k, float dflt) {
 
 // Where the host's shield cylinder is (it is set from the shield limb each draw).
 static std::unordered_map<Actor*, Vec3s> sShieldPos;
+
+// Drops the entries of Stalfos that are gone (killed, or left behind with their scene).
+static void EnTest_PruneShieldPos() {
+    std::unordered_set<Actor*> live;
+    if (gPlayState != NULL) {
+        for (int cat : { ACTORCAT_ENEMY, ACTORCAT_PROP }) {
+            for (Actor* a = gPlayState->actorCtx.actorLists[cat].head; a != NULL; a = a->next) {
+                if (a->id == ACTOR_EN_TEST) {
+                    live.insert(a);
+                }
+            }
+        }
+    }
+    for (auto it = sShieldPos.begin(); it != sShieldPos.end();) {
+        it = live.contains(it->first) ? std::next(it) : sShieldPos.erase(it);
+    }
+}
 
 static uint8_t EnTest_GetPhase(Actor* actor) {
     return actor->colChkInfo.health == 0 ? 1 : 0;
@@ -125,6 +143,9 @@ static void EnTest_DeserializeExtras(Actor* actor, const nlohmann::json& x) {
         auto shp = x.find("shp");
         if (shp != x.end() && shp->is_array() && shp->size() == 3 && (*shp)[0].is_number() && (*shp)[1].is_number() &&
             (*shp)[2].is_number()) {
+            if (sShieldPos.size() >= 16) {
+                EnTest_PruneShieldPos();
+            }
             sShieldPos[actor] = { (s16)(*shp)[0].get<int>(), (s16)(*shp)[1].get<int>(), (s16)(*shp)[2].get<int>() };
         }
 
@@ -166,5 +187,7 @@ void RegisterEnTestAdapter() {
     adapter.PositionCollider = EnTest_PositionCollider;
     adapter.DeriveDamageEffect = true;
     adapter.QuietRemoteDefeat = true;
+    // A hit the body did not consume was blocked (shield, armour, grab pose); it must not become damage.
+    adapter.DropUnconsumedHits = true;
     EnemySync::RegisterAdapter(ACTOR_EN_TEST, adapter);
 }

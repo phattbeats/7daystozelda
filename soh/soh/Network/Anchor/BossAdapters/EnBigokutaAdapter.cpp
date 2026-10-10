@@ -137,5 +137,7 @@ void RegisterEnBigokutaAdapter() {
     adapter.PositionCollider = EnBigokuta_PositionCollider;
     adapter.DeriveDamageEffect = true;
     adapter.QuietRemoteDefeat = true;
+    // A hit the body did not consume was blocked (shield, armour, grab pose); it must not become damage.
+    adapter.DropUnconsumedHits = true;
     EnemySync::RegisterAdapter(ACTOR_EN_BIGOKUTA, adapter);
 }
