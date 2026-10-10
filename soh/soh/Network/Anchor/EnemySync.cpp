@@ -860,6 +860,16 @@ void ApplyRemoteHit(Actor* actor, uint8_t damage, uint32_t dmgFlags, Vec3s hitPo
         }
     }
 
+    if (hitAdapter != nullptr && hitAdapter->SelectHitCollider != nullptr) {
+        Collider* picked = hitAdapter->SelectHitCollider(actor, dmgFlags);
+        if (picked == nullptr) {
+            actor->colChkInfo.damage = 0;
+            ESYNC_LOG("[EnemySync] HIT dropped by adapter id={}", actor->id);
+            return;
+        }
+        state.acCollider = picked;
+    }
+
     if (state.acCollider != nullptr) {
         Collider* col = state.acCollider;
         col->acFlags |= AC_HIT;
@@ -2013,6 +2023,10 @@ static void OnEnemyActorSpawn(Actor* actor) {
         return;
     }
     if (gPlayState->numSetupActors != 0) {
+        return;
+    }
+    const ActorSyncAdapter* spawnAdapter = GetAdapter(actor->id);
+    if (spawnAdapter != nullptr && spawnAdapter->staticKey) {
         return;
     }
 
