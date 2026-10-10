@@ -241,6 +241,7 @@ class Anchor : public Network {
     void SendPacket_EnemyPlayerEffect(uint32_t targetClientId, u8 kind, s32 amount, s16 rot, f32 speed, f32 yVel,
                                       u8 kbType);
     void SendPacket_EnemyRosterRequest(int16_t roomNum);
+    void SendPacket_DeathLedgerRequest(int16_t roomNum);
     void SendPacket_EnemySpawn(uint64_t enemyKey, int16_t actorId, uint16_t params, Vec3f pos, Vec3s rot,
                                int16_t roomNum, uint64_t parentKey);
     void SendPacket_EnemyState(nlohmann::json& enemies);
