@@ -504,9 +504,26 @@ server.keepAliveTimeout = 65 * 1000; // longer than typical proxy idle pools
 // ---- /anchor WebSocket <-> Anchor TCP bridge ----
 const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PACKET, perMessageDeflate: false });
 
+// ---- /chat: text chat + voice signalling (#4175) ----
+// Browser players only (native clients are not bridged). Text goes through here;
+// voice is peer-to-peer WebRTC and this socket only carries the offer/answer/ICE
+// packets between two players in the same room. No audio touches the server.
+const chatWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024, perMessageDeflate: false });
+const chatRooms = new Map(); // roomId -> { peers: Map(id -> peer), history: [] }
+const CHAT_MAX_PEERS = 12;
+const CHAT_HISTORY = 40;
+const CHAT_MAX_TEXT = 240;
+let nextChatId = 1;
+
+const cleanText = (v, max) => String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+const chatSend = (peer, obj) => {
+  if (peer.ws.readyState === peer.ws.OPEN) peer.ws.send(JSON.stringify(obj));
+};
+
 server.on("upgrade", (req, socket, head) => {
   socket.on("error", () => {});
-  if ((req.url || "").split("?")[0] !== "/anchor") {
+  const path = (req.url || "").split("?")[0];
+  if (path !== "/anchor" && path !== "/chat") {
     socket.destroy();
     return;
   }
@@ -514,7 +531,80 @@ server.on("upgrade", (req, socket, head) => {
     socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
     return;
   }
+  if (path === "/chat") return chatWss.handleUpgrade(req, socket, head, (ws) => chatWss.emit("connection", ws, req));
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+});
+
+chatWss.on("connection", (ws) => {
+  let me = null; // set by the hello packet
+  let room = null;
+  let alive = true;
+  let stamps = [];
+  ws.on("pong", () => (alive = true));
+  const pinger = setInterval(() => {
+    if (!alive) return ws.terminate();
+    alive = false;
+    try {
+      ws.ping();
+    } catch {}
+  }, PING_MS);
+
+  const leave = () => {
+    clearInterval(pinger);
+    if (!me || !room) return;
+    room.peers.delete(me.id);
+    for (const p of room.peers.values()) chatSend(p, { t: "leave", id: me.id });
+    if (!room.peers.size) chatRooms.delete(room.id);
+    me = null;
+  };
+
+  ws.on("message", (data) => {
+    alive = true;
+    let msg;
+    try {
+      msg = JSON.parse(String(data));
+    } catch {
+      return;
+    }
+    if (!msg || typeof msg !== "object") return;
+    if (!me) {
+      if (msg.t !== "hello") return;
+      const id = cleanText(msg.room, 64);
+      if (!id) return ws.close(1008, "room required");
+      room = chatRooms.get(id) || { id, peers: new Map(), history: [] };
+      if (room.peers.size >= CHAT_MAX_PEERS) return ws.close(1013, "room full");
+      chatRooms.set(id, room);
+      me = { id: nextChatId++, name: cleanText(msg.name, 24) || "Player", ws };
+      chatSend(me, {
+        t: "welcome",
+        id: me.id,
+        peers: [...room.peers.values()].map((p) => ({ id: p.id, name: p.name })),
+        history: room.history,
+      });
+      for (const p of room.peers.values()) chatSend(p, { t: "join", id: me.id, name: me.name });
+      room.peers.set(me.id, me);
+      return;
+    }
+    if (msg.t === "msg") {
+      const now = Date.now();
+      stamps = stamps.filter((t) => now - t < 4000);
+      if (stamps.length >= 5) return chatSend(me, { t: "slow" });
+      stamps.push(now);
+      const text = cleanText(msg.text, CHAT_MAX_TEXT);
+      if (!text) return;
+      const out = { t: "msg", id: me.id, from: me.name, text, ts: now };
+      room.history.push({ id: me.id, from: me.name, text, ts: now });
+      if (room.history.length > CHAT_HISTORY) room.history.shift();
+      for (const p of room.peers.values()) chatSend(p, out);
+    } else if (msg.t === "talk") {
+      for (const p of room.peers.values()) if (p !== me) chatSend(p, { t: "talk", id: me.id, on: !!msg.on });
+    } else if (msg.t === "sig") {
+      const to = room.peers.get(msg.to);
+      if (to && to !== me && msg.data && typeof msg.data === "object") chatSend(to, { t: "sig", from: me.id, data: msg.data });
+    }
+  });
+  ws.on("close", leave);
+  ws.on("error", leave);
 });
 
 let nextId = 1;
@@ -689,6 +779,11 @@ wss.on("connection", (ws, req) => {
 function shutdown(sig) {
   log(`${sig}: closing ${wss.clients.size} player connection(s)`);
   for (const ws of wss.clients) {
+    try {
+      ws.close(1012, "server restarting");
+    } catch {}
+  }
+  for (const ws of chatWss.clients) {
     try {
       ws.close(1012, "server restarting");
     } catch {}
