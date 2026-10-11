@@ -860,11 +860,12 @@ Note* Audio_AllocNote(SequenceLayer* layer) {
     Note* ret;
     u32 policy = layer->channel->noteAllocPolicy;
 
-    // Co-op ocarina voices (PHA-4168) are layers 1-3 on the ocarina SFX channel, whose script
-    // limits it to one note while the local ocarina plays. Let those layers use any free note.
+    // Co-op ocarina voices (PHA-4168) are layers 1-3 on the ocarina SFX channel. That channel's
+    // script limits it to one note while the local ocarina plays and frees its own note pool when
+    // the local note ends, so those layers take notes from the global pool only.
     if (layer != layer->channel->layers[0] &&
         layer->channel == gAudioContext.seqPlayers[SEQ_PLAYER_SFX].channels[13]) {
-        policy = 0;
+        policy = 8;
     }
 
     if (policy & 1) {

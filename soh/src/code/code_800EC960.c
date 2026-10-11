@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <libultraship/libultra.h>
 #include "global.h"
 #include "soh/OTRGlobals.h"
@@ -1702,6 +1703,7 @@ u8 gOcaRemoteLayerScript[OCA_REMOTE_VOICES][2][12];
 static u32 sOcaVoiceClient[OCA_REMOTE_VOICES];
 static u8 sOcaVoiceUsed[OCA_REMOTE_VOICES];
 static u8 sOcaVoiceBuf[OCA_REMOTE_VOICES];
+static u8 sOcaVoiceWait[OCA_REMOTE_VOICES];
 
 // Same instrument and velocity tables as the ocarina SFX script in sequence 0.
 static const u8 sOcaInstTable[8] = { 52, 85, 86, 89, 83, 82, 52, 52 };
@@ -1762,6 +1764,29 @@ void Audio_OcaRemoteNote(u32 clientId, s8 instrument, u8 note, Vec3f* pos) {
     script[9] = 0xFF; // end
 
     Audio_QueueCmdS8(0x3A << 24 | SEQ_PLAYER_SFX << 16 | OCA_REMOTE_CHANNEL << 8 | (slot + 1), sOcaVoiceBuf[slot]);
+    sOcaVoiceWait[slot] = 3;
+}
+
+// Called every frame while a partner's note is held. When any ocarina-bank sound effect stops
+// (including the local note), sequence 0's shared stop routine deletes all four layers of the
+// channel, so restart this partner's layer if it is gone.
+void Audio_OcaRemoteKeepAlive(u32 clientId) {
+    SequenceChannel* channel = gAudioContext.seqPlayers[SEQ_PLAYER_SFX].channels[OCA_REMOTE_CHANNEL];
+    s32 slot = Audio_OcaRemoteSlot(clientId, false);
+    SequenceLayer* layer;
+
+    if (slot < 0) {
+        return;
+    }
+    if (sOcaVoiceWait[slot] != 0) {
+        sOcaVoiceWait[slot]--; // let the queued start reach the audio thread first
+        return;
+    }
+    layer = channel->layers[slot + 1];
+    if (layer == NULL || !layer->enabled) {
+        Audio_QueueCmdS8(0x3A << 24 | SEQ_PLAYER_SFX << 16 | OCA_REMOTE_CHANNEL << 8 | (slot + 1), sOcaVoiceBuf[slot]);
+        sOcaVoiceWait[slot] = 3;
+    }
 }
 
 void Audio_OcaRemoteStop(u32 clientId) {
@@ -1772,6 +1797,25 @@ void Audio_OcaRemoteStop(u32 clientId) {
     }
     sOcaVoiceUsed[slot] = false;
     Audio_QueueCmdS8(0x3A << 24 | SEQ_PLAYER_SFX << 16 | OCA_REMOTE_CHANNEL << 8 | (slot + 1), -1);
+}
+
+// Test probe: per-layer detail for the ocarina SFX channel.
+void Audio_OcaRemoteDiag(char* out, s32 size) {
+    SequenceChannel* channel = gAudioContext.seqPlayers[SEQ_PLAYER_SFX].channels[OCA_REMOTE_CHANNEL];
+    s32 n = snprintf(out, size, "ch e%d pol%d |", channel->enabled, channel->noteAllocPolicy);
+    s32 i;
+
+    for (i = 0; i < 4 && n < size; i++) {
+        SequenceLayer* layer = channel->layers[i];
+
+        if (layer == NULL) {
+            n += snprintf(out + n, size - n, " L%d null", i);
+        } else {
+            n += snprintf(out + n, size - n, " L%d e%d f%d n%d own%d d%d", i, layer->enabled, layer->finished,
+                          layer->note != NULL,
+                          layer->note != NULL && layer->note->playbackState.parentLayer == layer, layer->delay);
+        }
+    }
 }
 
 // Test probe: bit i set if voice slot i is held, bit (4+i) if its layer has a note playing.

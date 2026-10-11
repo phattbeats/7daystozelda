@@ -14,7 +14,9 @@ void Player_UseItem(PlayState* play, Player* player, s32 item);
 void Player_Draw(Actor* actor, PlayState* play);
 void Audio_OcaRemoteNote(u32 clientId, s8 instrument, u8 note, Vec3f* pos);
 void Audio_OcaRemoteStop(u32 clientId);
+void Audio_OcaRemoteKeepAlive(u32 clientId);
 s32 Audio_OcaRemoteVoiceState(void);
+void Audio_OcaRemoteDiag(char* out, s32 size);
 }
 
 static int sOcaVoiced = 0; // PHA-4168 test probe counter
@@ -30,6 +32,9 @@ const char* anchor_test_oca() {
     j["voiced"] = sOcaVoiced;
     j["localNote"] = Audio_OcaGetLocalNote();
     j["voices"] = Audio_OcaRemoteVoiceState();
+    char diag[256];
+    Audio_OcaRemoteDiag(diag, sizeof(diag));
+    j["diag"] = diag;
     j["clients"] = nlohmann::json::array();
     if (Anchor::Instance != nullptr) {
         for (auto& [id, c] : Anchor::Instance->clients) {
@@ -184,6 +189,8 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
             Audio_OcaRemoteStop(DUMMY_CLIENT_ID);
         }
         client.ocaPlayedNote = client.ocaNote;
+    } else if (client.ocaNote != 0xFF) {
+        Audio_OcaRemoteKeepAlive(DUMMY_CLIENT_ID);
     }
 
     if (player->modelGroup != client.modelGroup) {
