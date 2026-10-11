@@ -8,6 +8,7 @@
 #include "BgmSync.h"
 #include "PushBlockSync.h"
 #include "AmbientSync.h"
+#include "HeldItemSync.h"
 #include "WorldObjectSync.h"
 #include <libultraship/libultraship.h>
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -636,6 +637,10 @@ void Anchor::RegisterHooks() {
     // Cuccos, dogs and other wanderers follow one client's copy (see Packets/AmbientSync.cpp)
     RegisterAmbientSyncHooks(isConnected);
 
+    // Bombs, bombchus and carried/thrown pots and rocks show on the partner's screen
+    // (see Packets/HeldItemSync.cpp)
+    RegisterHeldItemSyncHooks(isConnected);
+
     // Grottos, personal pickups and Skulltula tokens (see Packets/WorldObject.cpp)
     RegisterWorldObjectHooks(isConnected);
 
@@ -662,6 +667,7 @@ void Anchor::RegisterHooks() {
         CutsceneSyncTick();           // reconcile cutscene pull-replay
         BgmSyncTick();                // spectate restore READS myLifeState
         PushBlockTick();              // pending remote pushes + room-entry block request
+        HeldItemSyncTick();           // stream owned bombs/chus/carried props, spawn partner ghosts
         AmbientSyncTick();            // stream driven cuccos/dogs/walkers (READS the EnemySync authority)
         WorldObjectTick();            // ages the personal-pickup window
     });

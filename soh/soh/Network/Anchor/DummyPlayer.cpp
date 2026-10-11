@@ -136,6 +136,9 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     player->invincibilityTimer = client.invincibilityTimer;
     player->unk_862 = client.unk_862;
     player->av1.actionVar1 = client.actionVar1;
+    // Deku stick length and flame: Player_Update isn't run for the puppet, so nothing else sets them
+    player->unk_85C = client.stickLength;
+    player->unk_860 = client.stickFlame;
 
     if (player->modelGroup != client.modelGroup) {
         // Hack to account for usage of gSaveContext

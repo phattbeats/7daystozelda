@@ -34,7 +34,7 @@ Rules:
 | Dodongo's Cavern stairs (Bg_Ddan_Kd), DC skull jaw (Bg_Dodoago), DMT boulder (Bg_Spot16_Bombstone), Spirit goddess face (Bg_Jya_Megami), Spirit Trial web (Bg_Gnd_Soulmeiro), silver-gauntlet boulders (En_Ishi large), golden-gauntlet pillars (Bg_Heavy_Block) | share outcome | Stayed whole for the partner until the room reloaded, which left them stuck behind something the other player opened | **Fixed**: each breaks or opens when its flag arrives |
 | Hidden grottos, bombed or hammered (Door_Ana) | share outcome | No flag, so the partner saw no hole | **Fixed**: WORLD_OBJECT "grotto" opens the partner's copy at the same spot |
 | Hidden grottos, Song of Storms | duplicate | The player who plays the song opens their own | Unchanged |
-| Liftables (pots, rocks, bushes held by a player) | duplicate | The partner sees the puppet's carry pose and the object still on the ground | Unchanged (cosmetic) |
+| Liftables (pots, rocks, bushes held by a player) | duplicate | The partner sees the puppet's carry pose and the object still on the ground | **Changed in #4180**: a ghost of the carried or thrown prop shows in the puppet's hands and in flight; see docs/design/coop-held-item-sync.md |
 | 7DtZ supply caches (SevenDays/Loot.cpp) | share outcome | Owner records the cache as opened; the partner's lid swings open; no double loot | Unchanged (already worked) |
 
 Not covered (left as is):
