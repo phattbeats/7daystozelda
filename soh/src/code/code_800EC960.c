@@ -1690,23 +1690,107 @@ s8 Audio_OcaGetLocalInstrument(void) {
     return D_80130F10;
 }
 
-static f32 sRemoteOcaFreq = 1.0f;
-static f32 sRemoteOcaVol = 87.0f / 127.0f;
+// Orchestra (PHA-4168): the ocarina SFX channel only voices one note, so remote players'
+// notes play as extra layers (1-3) on that channel. Layer 0 stays the local ocarina, so up
+// to 3 partners plus you can sound at once. Each remote client holds a voice slot while its
+// note is held. The layer scripts are double-buffered: the audio thread may still be
+// reading the old one when a new note is written.
+#define OCA_REMOTE_VOICES 3
+#define OCA_REMOTE_CHANNEL 13
 
-void Audio_OcaRemoteNote(s8 instrument, u8 note, Vec3f* pos) {
-    // The ocarina SFX channel is monophonic; our own note always wins.
-    if (Audio_OcaGetLocalNote() != 0xFF || instrument < 1) {
-        return;
+u8 gOcaRemoteLayerScript[OCA_REMOTE_VOICES][2][12];
+static u32 sOcaVoiceClient[OCA_REMOTE_VOICES];
+static u8 sOcaVoiceUsed[OCA_REMOTE_VOICES];
+static u8 sOcaVoiceBuf[OCA_REMOTE_VOICES];
+
+// Same instrument and velocity tables as the ocarina SFX script in sequence 0.
+static const u8 sOcaInstTable[8] = { 52, 85, 86, 89, 83, 82, 52, 52 };
+static const u8 sOcaVelTable[8] = { 115, 115, 100, 115, 100, 115, 115, 115 };
+
+static s32 Audio_OcaRemoteSlot(u32 clientId, s32 alloc) {
+    s32 i;
+
+    for (i = 0; i < OCA_REMOTE_VOICES; i++) {
+        if (sOcaVoiceUsed[i] && sOcaVoiceClient[i] == clientId) {
+            return i;
+        }
     }
-    Audio_QueueCmdS8(0x6 << 24 | SEQ_PLAYER_SFX << 16 | 0xD07, instrument - 1);
-    Audio_QueueCmdS8(0x6 << 24 | SEQ_PLAYER_SFX << 16 | 0xD05, note);
-    Audio_PlaySoundGeneral(NA_SE_OC_OCARINA, pos, 4, &sRemoteOcaFreq, &sRemoteOcaVol, &gSfxDefaultReverb);
+    if (alloc) {
+        for (i = 0; i < OCA_REMOTE_VOICES; i++) {
+            if (!sOcaVoiceUsed[i]) {
+                sOcaVoiceUsed[i] = true;
+                sOcaVoiceClient[i] = clientId;
+                return i;
+            }
+        }
+    }
+    return -1;
 }
 
-void Audio_OcaRemoteStop(void) {
-    if (Audio_OcaGetLocalNote() == 0xFF) {
-        Audio_StopSfxById(NA_SE_OC_OCARINA);
+void Audio_OcaRemoteNote(u32 clientId, s8 instrument, u8 note, Vec3f* pos) {
+    s32 slot;
+    s32 idx;
+    u8* script;
+    f32 dist;
+    f32 scale;
+
+    if (instrument < 1) {
+        return;
     }
+    slot = Audio_OcaRemoteSlot(clientId, true);
+    if (slot < 0) {
+        return; // voice cap reached: this partner is not heard until a slot frees up
+    }
+
+    idx = (instrument - 1) & 7;
+    // Quieter with distance from the camera, but never silent.
+    dist = sqrtf(SQ(pos->x) + SQ(pos->y) + SQ(pos->z));
+    scale = 1.0f - dist / 2000.0f;
+    scale = CLAMP(scale, 0.25f, 1.0f);
+
+    sOcaVoiceBuf[slot] ^= 1;
+    script = gOcaRemoteLayerScript[slot][sOcaVoiceBuf[slot]];
+    script[0] = 0xC4; // legato
+    script[1] = 0xC6; // instr
+    script[2] = sOcaInstTable[idx];
+    script[3] = 0xC2; // transpose
+    script[4] = note;
+    script[5] = 0x40 | 39; // notedv C4
+    script[6] = 0xFF;      // duration 0x7FFF (held until stopped)
+    script[7] = 0xFF;
+    script[8] = (u8)(sOcaVelTable[idx] * scale);
+    script[9] = 0xFF; // end
+
+    Audio_QueueCmdS8(0x3A << 24 | SEQ_PLAYER_SFX << 16 | OCA_REMOTE_CHANNEL << 8 | (slot + 1), sOcaVoiceBuf[slot]);
+}
+
+void Audio_OcaRemoteStop(u32 clientId) {
+    s32 slot = Audio_OcaRemoteSlot(clientId, false);
+
+    if (slot < 0) {
+        return;
+    }
+    sOcaVoiceUsed[slot] = false;
+    Audio_QueueCmdS8(0x3A << 24 | SEQ_PLAYER_SFX << 16 | OCA_REMOTE_CHANNEL << 8 | (slot + 1), -1);
+}
+
+// Test probe: bit i set if voice slot i is held, bit (4+i) if its layer has a note playing.
+s32 Audio_OcaRemoteVoiceState(void) {
+    SequenceChannel* channel = gAudioContext.seqPlayers[SEQ_PLAYER_SFX].channels[OCA_REMOTE_CHANNEL];
+    s32 state = 0;
+    s32 i;
+
+    for (i = 0; i < OCA_REMOTE_VOICES; i++) {
+        SequenceLayer* layer = channel->layers[i + 1];
+
+        if (sOcaVoiceUsed[i]) {
+            state |= 1 << i;
+        }
+        if (layer != NULL && layer->enabled && layer->note != NULL) {
+            state |= 1 << (4 + i);
+        }
+    }
+    return state;
 }
 
 void func_800ED848(u8 inputEnabled) {

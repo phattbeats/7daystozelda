@@ -677,6 +677,10 @@ void func_800E6128(SequencePlayer* seqPlayer, AudioCmd* cmd) {
     }
 }
 
+extern u8 gOcaRemoteLayerScript[3][2][12];
+s32 AudioSeq_SeqChannelSetLayer(SequenceChannel* channel, s32 layerIdx);
+void AudioSeq_SeqLayerFree(SequenceChannel* channel, s32 layerIdx);
+
 void func_800E6300(SequenceChannel* channel, AudioCmd* cmd) {
     switch (cmd->op) {
         case CHAN_UPD_VOL_SCALE:
@@ -741,6 +745,16 @@ void func_800E6300(SequenceChannel* channel, AudioCmd* cmd) {
             return;
         case CHAN_UPD_STEREO:
             channel->stereo.asByte = cmd->asUbyte;
+            return;
+        case 0x3A: // Co-op ocarina voice (PHA-4168): start (buffer 0/1) or free (-1) layer arg2
+            if (channel != &gAudioContext.sequenceChannelNone && cmd->arg2 >= 1 && cmd->arg2 <= 3) {
+                if (cmd->asSbyte < 0) {
+                    AudioSeq_SeqLayerFree(channel, cmd->arg2);
+                } else if (channel->enabled && AudioSeq_SeqChannelSetLayer(channel, cmd->arg2) == 0) {
+                    channel->layers[cmd->arg2]->scriptState.pc =
+                        gOcaRemoteLayerScript[cmd->arg2 - 1][cmd->asSbyte & 1];
+                }
+            }
             return;
     }
 }

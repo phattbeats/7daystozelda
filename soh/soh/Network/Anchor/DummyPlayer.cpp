@@ -12,8 +12,9 @@ extern PlayState* gPlayState;
 
 void Player_UseItem(PlayState* play, Player* player, s32 item);
 void Player_Draw(Actor* actor, PlayState* play);
-void Audio_OcaRemoteNote(s8 instrument, u8 note, Vec3f* pos);
-void Audio_OcaRemoteStop(void);
+void Audio_OcaRemoteNote(u32 clientId, s8 instrument, u8 note, Vec3f* pos);
+void Audio_OcaRemoteStop(u32 clientId);
+s32 Audio_OcaRemoteVoiceState(void);
 }
 
 static int sOcaVoiced = 0; // PHA-4168 test probe counter
@@ -28,6 +29,7 @@ const char* anchor_test_oca() {
     nlohmann::json j;
     j["voiced"] = sOcaVoiced;
     j["localNote"] = Audio_OcaGetLocalNote();
+    j["voices"] = Audio_OcaRemoteVoiceState();
     j["clients"] = nlohmann::json::array();
     if (Anchor::Instance != nullptr) {
         for (auto& [id, c] : Anchor::Instance->clients) {
@@ -147,7 +149,7 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
 
     if (client.sceneNum != gPlayState->sceneNum || !client.online || !client.isSaveLoaded) {
         if (client.ocaPlayedNote != 0xFF) {
-            Audio_OcaRemoteStop();
+            Audio_OcaRemoteStop(DUMMY_CLIENT_ID);
             client.ocaPlayedNote = 0xFF;
         }
         actor->world.pos.x = -9999.0f;
@@ -176,10 +178,10 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     // Voice the partner's ocarina notes (PHA-4168); retrigger on each new note.
     if (client.ocaNote != client.ocaPlayedNote) {
         if (client.ocaNote != 0xFF) {
-            Audio_OcaRemoteNote(client.ocaInstrument, client.ocaNote, &actor->projectedPos);
+            Audio_OcaRemoteNote(DUMMY_CLIENT_ID, client.ocaInstrument, client.ocaNote, &actor->projectedPos);
             sOcaVoiced++;
         } else {
-            Audio_OcaRemoteStop();
+            Audio_OcaRemoteStop(DUMMY_CLIENT_ID);
         }
         client.ocaPlayedNote = client.ocaNote;
     }
@@ -279,4 +281,7 @@ void DummyPlayer_Draw(Actor* actor, PlayState* play) {
 }
 
 void DummyPlayer_Destroy(Actor* actor, PlayState* play) {
+    Player* player = (Player*)actor;
+
+    Audio_OcaRemoteStop(DUMMY_CLIENT_ID);
 }
