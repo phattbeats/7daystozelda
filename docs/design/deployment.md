@@ -8,11 +8,11 @@ The top half describes how things are now and how to redeploy. The bottom half i
 
 | Item | Value |
 | --- | --- |
-| Live image | `soh-web:pha4048` (repo main fb1b0eb + 2a9972d), started 2026-10-11 00:51 UTC, healthy |
-| Rollback | `soh-web:pre-pha4048` (= pha4125b). The old container is kept stopped as `soh-web-pre-pha4048` |
+| Live image | `soh-web:pha4155` (repo main a9864f4: PHA-4155 lobby quick match and open rooms, server.js + index only, game files unchanged from pha4048), started 2026-10-11 02:50 UTC, healthy |
+| Rollback | `soh-web:pre-pha4155` (= pha4048). The old container is kept stopped as `soh-web-pre-pha4155` |
 | Lobby page | `soh.js?v=af74dd85` |
 | Game files (md5, first 8) | soh.wasm 6dc097b2, soh.data eaa1dc66, soh.o2r 679138c5 |
-| server.js | same as repo main `web/server.js` |
+| server.js | same as repo main `web/server.js`. Since PHA-4155 it also keeps the in-memory public-room directory behind `/api/rooms`, `/api/quickplay` and `/api/rooms/publish` (env `ROOM_SEATS`, `MATCH_RANGE`; see web/README.md). A restart forgets which rooms are public; players already in them keep playing |
 | Relay | `soh-anchor` (ghcr.io/garrettjoecox/anchor:latest), only on the `soh-coop` network, not published |
 | Networks | soh-web is on `soh-coop` (to reach the relay) and `phattvip` (so SWAG can reach it) |
 | Logs | json-file, max-size 50m, max-file 1 (the old runbook said 10m x 3; copy whatever `docker inspect` shows) |
