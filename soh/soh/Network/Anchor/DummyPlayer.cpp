@@ -16,6 +16,36 @@ void Audio_OcaRemoteNote(s8 instrument, u8 note, Vec3f* pos);
 void Audio_OcaRemoteStop(void);
 }
 
+static int sOcaVoiced = 0; // PHA-4168 test probe counter
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+extern "C" {
+u8 Audio_OcaGetLocalNote(void);
+EMSCRIPTEN_KEEPALIVE
+const char* anchor_test_oca() {
+    static std::string out;
+    nlohmann::json j;
+    j["voiced"] = sOcaVoiced;
+    j["localNote"] = Audio_OcaGetLocalNote();
+    j["clients"] = nlohmann::json::array();
+    if (Anchor::Instance != nullptr) {
+        for (auto& [id, c] : Anchor::Instance->clients) {
+            j["clients"].push_back({ { "id", id },
+                                     { "self", c.self },
+                                     { "ocaNote", c.ocaNote },
+                                     { "ocaInstrument", c.ocaInstrument },
+                                     { "played", c.ocaPlayedNote },
+                                     { "puppetOca", c.player != nullptr &&
+                                                        (c.player->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING) != 0 } });
+        }
+    }
+    out = j.dump();
+    return out.c_str();
+}
+}
+#endif
+
 // Hijacking player->zTargetActiveTimer (unused s32 for the dummy) to store the clientId for convenience
 #define DUMMY_CLIENT_ID player->zTargetActiveTimer
 
@@ -147,6 +177,7 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     if (client.ocaNote != client.ocaPlayedNote) {
         if (client.ocaNote != 0xFF) {
             Audio_OcaRemoteNote(client.ocaInstrument, client.ocaNote, &actor->projectedPos);
+            sOcaVoiced++;
         } else {
             Audio_OcaRemoteStop();
         }
