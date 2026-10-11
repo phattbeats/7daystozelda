@@ -25,7 +25,8 @@ RT_TEXTURE = 0x4F544558
 TEX_RGBA32 = 1
 NAMES = ["workbench", "barricade", "spikes", "chest", "scarecrow", "guardbaba", "torch", "stonewall",
          "bombtrap", "gate", "ironwall", "palisade", "floorplank", "floorranch", "floorstone", "deck",
-         "step", "ladder", "stairs", "doorswamp", "doormusic", "doorpirate", "packup", "packall"]
+         "step", "ladder", "stairs", "doorswamp", "doormusic", "doorpirate",
+         "chairinn", "chairmilkbar", "bench", "bedinn", "bedmayor", "dresser", "drawers", "bookshelf", "painting", "milkcan", "rug", "barrel", "barrelromani", "wagonwheel", "stall", "packup", "packall"]
 
 
 def header(restype):

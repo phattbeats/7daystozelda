@@ -2,7 +2,7 @@ exec(open('h.py').read())
 import io
 from PIL import Image, ImageChops, ImageStat
 O='raw/'
-SUBJ={'barricade':0,'spikes':1,'workbench':2,'chest':3,'scarecrow':5,'guardbaba':6,'torch':7,'stonewall':8,'bombtrap':9,'gate':10,'ironwall':11,'palisade':12,'floorplank':13,'floorranch':14,'floorstone':15,'deck':16,'step':17,'ladder':18,'stairs':19,'doorswamp':20,'doormusic':21,'doorpirate':22,'packup':100,'packall':101}
+SUBJ={'barricade':0,'spikes':1,'workbench':2,'chest':3,'scarecrow':5,'guardbaba':6,'torch':7,'stonewall':8,'bombtrap':9,'gate':10,'ironwall':11,'palisade':12,'floorplank':13,'floorranch':14,'floorstone':15,'deck':16,'step':17,'ladder':18,'stairs':19,'doorswamp':20,'doormusic':21,'doorpirate':22,'chairinn':23,'chairmilkbar':24,'bench':25,'bedinn':26,'bedmayor':27,'dresser':28,'drawers':29,'bookshelf':30,'painting':31,'milkcan':32,'rug':33,'barrel':34,'barrelromani':35,'wagonwheel':36,'stall':37,'packup':100,'packall':101}
 TURN={'stairs':0x6000}  # its treads toward the camera
 CLIP={'x':0,'y':0,'width':960,'height':540}
 def grab(): return Image.open(io.BytesIO(page.screenshot(clip=CLIP))).convert('RGB')
