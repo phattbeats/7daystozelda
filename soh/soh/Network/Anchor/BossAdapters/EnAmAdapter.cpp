@@ -24,6 +24,9 @@ extern PlayState* gPlayState;
  * Armos, category BG) is not tracked at all.
  */
 
+// ArmosBehavior's AM_BEHAVIOR_DO_NOTHING lives in z_en_am.c, not the header.
+static constexpr int AM_BEHAVIOR_DO_NOTHING = 3;
+
 enum AmPhase : uint8_t {
     AM_PHASE_ASLEEP = 0,
     AM_PHASE_AWAKE = 1,
