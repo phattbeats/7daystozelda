@@ -93,6 +93,22 @@ static BossVa* FindPart(int16_t params) {
     return nullptr;
 }
 
+// The host only reaches the body's death with all three supports cut, and the
+// death cutscene's burst steps run inside the cut action. A client that joins
+// the defeat late (its own intro was still running) never saw those cuts.
+static void Va_CutAllSupports() {
+    if (gPlayState == NULL) {
+        return;
+    }
+    for (int i = 0; i < 3; i++) {
+        if (FindPart(VA_PARAM_STUMP_1 + i) == nullptr) {
+            if (BossVa* support = FindPart(VA_PARAM_SUPPORT_1 + i)) {
+                BossVa_SyncCutSupport(support, gPlayState);
+            }
+        }
+    }
+}
+
 static uint8_t Va_GetPhase(Actor* actor) {
     BossVaSyncState s;
     BossVa_SyncGet(&s);
@@ -289,6 +305,7 @@ static bool Va_OnPhaseChange(Actor* actor, uint8_t fromPhase, uint8_t toPhase) {
     }
     BossVaSyncState s;
     BossVa_SyncGet(&s);
+    ESYNC_LOG("[BarinadeSync] edge: csState={} fightPhase={}", s.csState, s.fightPhase);
     if (s.csState < BOSSVA_SYNC_BATTLE) {
         // Still in our own intro: starting the death now would cut into it.
         // Join the defeat when the intro hands over (polled in ShouldMirror).
@@ -306,6 +323,7 @@ static bool Va_OnPhaseChange(Actor* actor, uint8_t fromPhase, uint8_t toPhase) {
 static void Va_OnRemoteDefeat(Actor* actor) {
     BossVaSyncState s;
     BossVa_SyncGet(&s);
+    ESYNC_LOG("[BarinadeSync] remote defeat rx: params={} csState={} fightPhase={}", actor->params, s.csState, s.fightPhase);
     if (s.csState >= BOSSVA_SYNC_DEATH_START) {
         return; // already dying locally
     }
@@ -339,6 +357,7 @@ extern "C" void Anchor_BarinadeIntro(Actor* body, int introOver) {
         return;
     }
     sPendingDefeat = false;
+    Va_CutAllSupports();
     BossVa_SyncStartDeath((BossVa*)body, gPlayState);
     ESYNC_LOG("[BarinadeSync] local intro over: joining the deferred defeat (intro hook)");
 }
@@ -359,6 +378,7 @@ static bool Va_ShouldMirror(Actor* actor, uint8_t streamedPhase) {
         } else if (s.csState >= BOSSVA_SYNC_BATTLE) {
             // Local intro is over: join the defeat the partner already won.
             sPendingDefeat = false;
+            Va_CutAllSupports();
             BossVa_SyncStartDeath((BossVa*)actor, gPlayState);
             ESYNC_LOG("[BarinadeSync] local intro over: joining the deferred defeat");
             return false;
