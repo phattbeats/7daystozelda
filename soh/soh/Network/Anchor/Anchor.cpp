@@ -1,4 +1,5 @@
 #include "Anchor.h"
+#include "CoopLifeSync.h"
 #include <nlohmann/json.hpp>
 #include <libultraship/libultraship.h>
 #include "soh/OTRGlobals.h"
@@ -166,6 +167,8 @@ void Anchor::ProcessIncomingPacketQueue() {
                 HandlePacket_GiveItem(payload);
             else if (packetType == PLAYER_LIFE_STATE)
                 HandlePacket_PlayerLifeState(payload);
+            else if (packetType == "PLAYER_REVIVE") // PHA-4177: { targetClientId }, handled by CoopLifeSync
+                CoopLifeSyncReviveRequest(payload["clientId"].get<uint32_t>());
             else if (packetType == PLAYER_SFX)
                 HandlePacket_PlayerSfx(payload);
             else if (packetType == PUSH_BLOCK)

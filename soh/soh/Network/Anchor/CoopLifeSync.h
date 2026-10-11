@@ -1,6 +1,7 @@
 #ifndef NETWORK_ANCHOR_COOP_LIFE_SYNC_H
 #define NETWORK_ANCHOR_COOP_LIFE_SYNC_H
 #ifdef __cplusplus
+#include <cstdint>
 
 // Co-op death / spectate / revival (Feature A of the game-flow design).
 //
@@ -23,6 +24,12 @@ void RegisterCoopLifeSyncHooks(bool isConnected);
 // tick order (SETS myLifeState before EnemySync/BgmSync read it), not by a self-
 // registered OnGameFrameUpdate hook.
 void CoopLifeSyncTick();
+
+// PHA-4177: true when we are downed and no partner is left standing.
+bool CoopLifeSyncAllDown();
+
+// PLAYER_REVIVE received from a partner: stand up with half hearts if still downed.
+void CoopLifeSyncReviveRequest(uint32_t fromClientId);
 
 #endif // __cplusplus
 #endif // NETWORK_ANCHOR_COOP_LIFE_SYNC_H

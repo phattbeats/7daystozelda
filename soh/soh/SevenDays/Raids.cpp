@@ -4,6 +4,7 @@
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
 #include "soh/ShipInit.hpp"
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Network/Anchor/CoopLifeSync.h"
 #include "soh/Network/Anchor/EnemySync.h"
 #include "soh/Network/Anchor/HordeNight.h"
 #include "soh/Notification/Notification.h"
@@ -1960,7 +1961,10 @@ void RaidsOnFrame() {
 
     // Losing a night: everyone down during a raid (co-op only reaches vanilla
     // game over when nobody is left standing).
-    int gameOver = gPlayState->gameOverCtx.state != GAMEOVER_INACTIVE ? 1 : 0;
+    // Connected, a downed player waits out a timer instead of reaching game over, so
+    // "everyone down" is the life-sync's call.
+    int gameOver = Connected() ? (CoopLifeSyncAllDown() ? 1 : 0)
+                               : (gPlayState->gameOverCtx.state != GAMEOVER_INACTIVE ? 1 : 0);
     bool raidHere = (sDir.active && sDir.kind == KIND_RAID &&
                      (sDir.status == WAVE_INCOMING || sDir.status == WAVE_ASSAULT)) ||
                     (sPeer.scene == gPlayState->sceneNum && Now() - sPeer.heardAt < 12.0 &&

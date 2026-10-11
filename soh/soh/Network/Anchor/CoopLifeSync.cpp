@@ -3,7 +3,11 @@
 #include "EnemySync.h"
 #include "CoopWarp.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
+#include "soh/Notification/Notification.h"
 #include <libultraship/libultraship.h>
+#include <chrono>
+#include <cmath>
+#include <deque>
 
 extern "C" {
 #include "z64.h"
@@ -20,6 +24,8 @@ extern PlayState* gPlayState;
 // LinkAnimationHeader symbol but a static const char[] OTR path from the asset header
 // above — cast at the call site, matching CrawlSpeed.cpp.)
 void func_80836448(PlayState* play, Player* thisx, LinkAnimationHeader* anim);
+void Play_SetRespawnData(PlayState* play, s32 respawnMode, s16 entranceIndex, s32 roomIndex, s32 playerParams,
+                         Vec3f* pos, s16 yaw);
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +62,53 @@ s32 sUndimFrames = 0;
 
 // Last enemy-authority id we observed, for handoff diagnostics.
 uint32_t sLastAuthorityId = UINT32_MAX;
+
+// ---------------------------------------------------------------------------
+// Downed timer, respawn and revive (PHA-4177)
+//
+// A no-fairy death never opens the vanilla game-over menu while connected: the
+// funnel stays blocked and the player is DOWNED for kDownedSecs. A standing partner
+// can revive them (hold A beside the body); otherwise the timer reloads the
+// scene at a recent safe spot with half the rupees and half the hearts.
+// ---------------------------------------------------------------------------
+constexpr double kDownedSecs = 30.0;
+constexpr double kReviveHoldSecs = 1.5;
+constexpr f32 kReviveRange = 70.0f;
+constexpr size_t kSafeSamples = 10; // one per second: the oldest is ~10 s before the fall
+
+struct SafeSpot {
+    s16 scene;
+    s16 entrance;
+    s32 room;
+    Vec3f pos;
+    s16 yaw;
+};
+
+double sDownedSince = 0.0;
+bool sRespawnIssued = false;
+bool sCountdownWarned = false;
+bool sSuppressVoidDamage = false; // the respawn rides the void-out path; skip its heart of damage
+s32 sReviveHealth = 0;            // >0 while a partner revive is healing us: heal stops here (half hearts)
+std::deque<SafeSpot> sSafeSpots;
+double sLastSafeSample = 0.0;
+double sReviveHoldStart = -1.0;
+double sReviveSentAt = -100.0;
+uint32_t sReviveHoldTarget = 0;
+bool sRevivePrompted = false;
+
+double Now() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void Toast(const std::string& prefix, const std::string& message, float secs = 5.0f) {
+    Notification::Emit({ .prefix = prefix, .message = message, .remainingTime = secs });
+}
+
+// Half the heart containers, rounded down to a whole heart, never under one heart.
+s16 HalfHearts() {
+    s16 half = (gSaveContext.healthCapacity / 2) & ~0xF;
+    return half < 0x10 ? 0x10 : half;
+}
 
 Anchor* A() {
     return Anchor::Instance;
@@ -238,6 +291,145 @@ void UpdateSpectate(PlayState* play) {
     }
 }
 
+
+// Record a grounded, quiet position about once a second while standing. The respawn
+// uses the oldest sample (~10 s back) so we don't wake up next to whatever killed us.
+void TrackSafeSpots(PlayState* play, Player* player) {
+    if (sLife != LocalLife::Alive || (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE)) ||
+        !(player->actor.bgCheckFlags & 1) || (player->stateFlags1 & PLAYER_STATE1_IN_WATER) ||
+        play->transitionTrigger != TRANS_TRIGGER_OFF || gSaveContext.health <= 0) {
+        return;
+    }
+    if (!sSafeSpots.empty() && sSafeSpots.back().scene != play->sceneNum) {
+        sSafeSpots.clear();
+    }
+    double now = Now();
+    if (now - sLastSafeSample < 1.0) {
+        return;
+    }
+    sLastSafeSample = now;
+    sSafeSpots.push_back({ play->sceneNum, (s16)gSaveContext.entranceIndex, play->roomCtx.curRoom.num,
+                           player->actor.world.pos, player->actor.shape.rot.y });
+    if (sSafeSpots.size() > kSafeSamples) {
+        sSafeSpots.pop_front();
+    }
+}
+
+// Vanilla "Continue" with this game's death tax: back at a recent safe spot in the
+// same scene (or the scene entrance if we have none), half the rupees, half the hearts.
+void RespawnFromDeath(PlayState* play) {
+    sRespawnIssued = true;
+    SPDLOG_INFO("[LifeSync] downed timer expired: respawn (safeSpots={})", sSafeSpots.size());
+
+    s16 rupees = (s16)gSaveContext.rupees;
+    if (rupees > 1) {
+        Rupees_ChangeBy(-(rupees / 2));
+    }
+
+    if (!sSafeSpots.empty() && sSafeSpots.front().scene == play->sceneNum) {
+        SafeSpot& spot = sSafeSpots.front();
+        Play_SetRespawnData(play, RESPAWN_MODE_DOWN, spot.entrance, spot.room, 0xDFF, &spot.pos, spot.yaw);
+        sSuppressVoidDamage = true;
+        Play_TriggerVoidOut(play);
+    } else {
+        Play_TriggerRespawn(play);
+        gSaveContext.respawnFlag = -2;
+    }
+    sSafeSpots.clear();
+
+    play->gameplayFrames = 0; // no autosave on the way back up
+    gSaveContext.nextTransitionType = TRANS_TYPE_FADE_BLACK;
+    gSaveContext.health = HalfHearts();
+    gSaveContext.healthAccumulator = 0;
+    gSaveContext.magicState = MAGIC_STATE_IDLE;
+    gSaveContext.prevMagicState = MAGIC_STATE_IDLE;
+    gSaveContext.magicCapacity = 0;
+    gSaveContext.magicFillTarget = gSaveContext.magic;
+    gSaveContext.magicLevel = gSaveContext.magic = 0;
+    Audio_QueueSeqCmd(0xF << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0xA);
+}
+
+// A partner's revive is the fairy revive with the heal capped at half hearts: the
+// vanilla death action plays the fairy, then heals via healthAccumulator and stands
+// us up once it drains. Stopping the heal at the cap lets it finish early.
+void TickReviveHealth() {
+    if (sLife == LocalLife::Alive) {
+        sSuppressVoidDamage = false; // consumed by the new Link's init, or never needed
+    }
+    if (sReviveHealth <= 0) {
+        return;
+    }
+    if (sLife == LocalLife::Alive || sLife == LocalLife::Downed) {
+        if (sLife == LocalLife::Alive) {
+            sReviveHealth = 0;
+        }
+        return;
+    }
+    if (gSaveContext.health >= sReviveHealth) {
+        gSaveContext.health = (s16)sReviveHealth;
+        gSaveContext.healthAccumulator = 0;
+    }
+}
+
+void StartPartnerRevive(PlayState* play, Player* player, uint32_t reviverId) {
+    sReviveHealth = HalfHearts();
+    sBlockedFunnel = false;
+    sRespawnIssued = true;
+    play->gameOverCtx.state = GAMEOVER_REVIVE_START;
+    player->av1.actionVar1 = 1; // the death action's fairy-revive branch
+    const std::string name = (A() != nullptr && A()->clients.contains(reviverId)) ? A()->clients[reviverId].name : "A friend";
+    Toast("Revived!", name + " got you back on your feet.", 5.0f);
+    SPDLOG_INFO("[LifeSync] revived by client={}", reviverId);
+}
+
+// Standing beside a downed partner: hold A to revive them.
+void TickReviveHold(PlayState* play, Player* player) {
+    AnchorClient* target = nullptr;
+    if (A() != nullptr && sLife == LocalLife::Alive && !(player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE)) &&
+        play->msgCtx.msgMode == MSGMODE_NONE) {
+        for (auto& [id, c] : A()->clients) {
+            if (c.self || !c.online || !c.isSaveLoaded || c.lifeState != LIFE_STATE_DOWNED ||
+                c.sceneNum != play->sceneNum) {
+                continue;
+            }
+            f32 dx = c.posRot.pos.x - player->actor.world.pos.x;
+            f32 dz = c.posRot.pos.z - player->actor.world.pos.z;
+            if (std::sqrt(dx * dx + dz * dz) <= kReviveRange &&
+                std::fabs(c.posRot.pos.y - player->actor.world.pos.y) < 60.0f) {
+                target = &c;
+                break;
+            }
+        }
+    }
+    if (target == nullptr) {
+        sReviveHoldStart = -1.0;
+        sRevivePrompted = false;
+        return;
+    }
+    if (!sRevivePrompted) {
+        sRevivePrompted = true;
+        Toast("Revive", "Hold A to revive " + target->name, 4.0f);
+    }
+    double now = Now();
+    if (!CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_A)) {
+        sReviveHoldStart = -1.0;
+        return;
+    }
+    if (sReviveHoldStart < 0.0 || sReviveHoldTarget != target->clientId) {
+        sReviveHoldStart = now;
+        sReviveHoldTarget = target->clientId;
+    }
+    if (now - sReviveHoldStart >= kReviveHoldSecs && now - sReviveSentAt > 3.0) {
+        sReviveSentAt = now;
+        sReviveHoldStart = -1.0;
+        nlohmann::json payload;
+        payload["type"] = "PLAYER_REVIVE";
+        payload["targetClientId"] = target->clientId;
+        A()->SendJsonToRemote(payload);
+        Toast("Revive", "Pulling " + target->name + " back up...", 3.0f);
+    }
+}
+
 // Called each frame by the Anchor per-frame dispatcher (registered on OnGameFrameUpdate;
 // game.c:356 — after Play_Update/Play_Draw, so it reads this frame's death-flow state and
 // the VB flag the player update already set). The dispatcher runs it AFTER the packet-
@@ -259,9 +451,25 @@ void Tick() {
         // Just parked. Undo any death dim for a few frames and reset the follow latch.
         sUndimFrames = 50;
         sFollowWarpPending = false;
+        sDownedSince = Now();
+        sRespawnIssued = false;
+        sCountdownWarned = false;
+        Toast("Down!", "You'll get back up in 30 seconds. A friend can revive you.", 7.0f);
     }
 
+    TrackSafeSpots(gPlayState, player);
+    TickReviveHealth();
+    TickReviveHold(gPlayState, player);
+
     if (sLife == LocalLife::Downed) {
+        double left = kDownedSecs - (Now() - sDownedSince);
+        if (!sCountdownWarned && left <= 10.0) {
+            sCountdownWarned = true;
+            Toast("Down!", "Getting back up in 10 seconds...", 4.0f);
+        }
+        if (left <= 0.0 && !sRespawnIssued) {
+            RespawnFromDeath(gPlayState);
+        }
         UpdateSpectate(gPlayState);
         if (sUndimFrames > 0) {
             Environment_FadeOutGameOverLights(gPlayState);
@@ -286,6 +494,12 @@ void ResetLocal() {
     sFollowWarpPending = false;
     sUndimFrames = 0;
     sLastAuthorityId = UINT32_MAX;
+    sRespawnIssued = false;
+    sSuppressVoidDamage = false;
+    sReviveHealth = 0;
+    sSafeSpots.clear();
+    sReviveHoldStart = -1.0;
+    sRevivePrompted = false;
 }
 
 } // namespace
@@ -295,6 +509,26 @@ void ResetLocal() {
 // is guaranteed by call sequence, not by unordered_map iteration.
 void CoopLifeSyncTick() {
     Tick();
+}
+
+// Everyone is down: no standing partner is left to revive us. Used by the raid
+// "night lost" check, which used to key off gameOverCtx (now also set while DOWNED).
+bool CoopLifeSyncAllDown() {
+    return sLife == LocalLife::Downed && !PartnerAlive();
+}
+
+// PLAYER_REVIVE from a partner who finished the hold. Only honored while parked at
+// the death funnel (not mid-anim, not already respawning).
+void CoopLifeSyncReviveRequest(uint32_t fromClientId) {
+    if (A() == nullptr || gPlayState == nullptr || sLife != LocalLife::Downed || sRespawnIssued ||
+        gPlayState->gameOverCtx.state != GAMEOVER_DEATH_WAIT_GROUND) {
+        return;
+    }
+    Player* player = GET_PLAYER(gPlayState);
+    if (player == nullptr || player->actor.update == nullptr || gPlayState->transitionTrigger != TRANS_TRIGGER_OFF) {
+        return;
+    }
+    StartPartnerRevive(gPlayState, player, fromClientId);
 }
 
 void RegisterCoopLifeSyncHooks(bool isConnected) {
@@ -315,9 +549,18 @@ void RegisterCoopLifeSyncHooks(bool isConnected) {
     // flipping. Setting sBlockedFunnel here is what tells the tick we are DOWNED (parked)
     // rather than still DYING (anim playing).
     COND_VB_SHOULD(VB_ADVANCE_TO_GAME_OVER_MENU, isConnected, {
-        if (PartnerAlive()) {
+        // PHA-4177: also block when nobody is left standing. The vanilla menu waited for
+        // input and froze both screens; the downed timer respawns us instead.
+        *should = false;
+        sBlockedFunnel = true;
+    });
+
+    // The respawn rides the void-out path (so we land at a safe spot, not the scene
+    // entrance); that path charges a heart of void damage, which death already cost.
+    COND_VB_SHOULD(VB_INFLICT_VOID_DAMAGE, isConnected, {
+        if (sSuppressVoidDamage) {
+            sSuppressVoidDamage = false;
             *should = false;
-            sBlockedFunnel = true;
         }
     });
 
@@ -327,7 +570,7 @@ void RegisterCoopLifeSyncHooks(bool isConnected) {
     // (revive range) so the vanilla revive lights play, and during a real both-dead game
     // over (partner not alive) so the dim shows as normal.
     COND_VB_SHOULD(VB_FADE_IN_GAME_OVER_LIGHTS, isConnected, {
-        if (gPlayState != nullptr && PartnerAlive()) {
+        if (gPlayState != nullptr) {
             s16 gs = gPlayState->gameOverCtx.state;
             if (gs >= GAMEOVER_DEATH_START && gs < GAMEOVER_REVIVE_START) {
                 *should = false;
