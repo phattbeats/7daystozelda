@@ -1,0 +1,5 @@
+page.set_viewport_size({'width':900,'height':1000})
+ev('document.getElementById("mm").scrollIntoView({block:"center"})'); time.sleep(0.5)
+shot('/tmp/z4155/rig/ev/%s-lobby.png'%TAG)
+page.click('#btn-quick'); time.sleep(2.5)
+print(ev('JSON.stringify({note:document.getElementById("mm-note").textContent, room:document.getElementById("f-room").value, started:gameStarted, hash:location.hash})'))

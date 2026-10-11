@@ -14,6 +14,9 @@
 //   PING_MS      WebSocket keepalive interval (default 25000)
 //   ACCESS_KEY   optional. When set, the site and the relay need it: open
 //                https://host/?key=ACCESS_KEY once and a cookie remembers it.
+//   ROOM_SEATS   players per public room for matchmaking (default 4)
+//   MATCH_RANGE  how far apart (in gamestage points) quick match may pair you
+//                with a room before it opens a new one instead (default 6)
 
 const http = require("http");
 const net = require("net");
@@ -231,10 +234,253 @@ function serveManifest(req, res) {
   res.end(req.method === "HEAD" ? undefined : JSON.stringify(manifest));
 }
 
+// ---- lobby: public rooms + matchmaking (#4155) ----
+// The same idea as CS Party's quick play, fitted to a drop-in co-op world. A room
+// is public only when someone made or listed it through this API; rooms named by
+// hand stay unlisted. The bridge watches the packets it already relays: the
+// HANDSHAKE says which room a browser joined, ALL_CLIENT_STATE says who is
+// online there, and UPDATE_TEAM_STATE (sent on every save) carries the room's
+// progress. Joining a room hands you its progress (UpdateTeamState.cpp), so quick
+// match looks for the room whose progress is nearest yours.
+const ROOM_SEATS = Math.max(2, parseInt(process.env.ROOM_SEATS || "4", 10) || 4);
+const MATCH_RANGE = Math.max(0, parseFloat(process.env.MATCH_RANGE || "6") || 0);
+const HOLD_MS = 120 * 1000; // a quick-match seat waits this long for its player to load in
+const FRESH_MS = 3 * 60 * 1000; // an empty room just made by quick match stays listed this long
+const FORGET_MS = 6 * 60 * 60 * 1000; // an empty room's record is dropped after this
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const rooms = new Map(); // roomId -> room
+
+// Progress summary: the game's own raid gamestage (Raids.cpp Gamestage()) without
+// its player-count term, plus the counters that tell two saves apart.
+const DUNGEON_BITS = [0x12, 0x13, 0x14, 0x00, 0x01, 0x02, 0x03, 0x04]; // stones, then medallions
+function int(v, max) {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) ? Math.max(0, Math.min(max, n)) : 0;
+}
+function cleanStage(s) {
+  if (!s || typeof s !== "object") return null;
+  const st = {
+    dungeons: int(s.dungeons, 8),
+    hearts: int(s.hearts, 17),
+    raids: int(s.raids, 9999),
+    days: int(s.days, 99999),
+    interval: int(s.interval, 7),
+  };
+  st.gs = 3 * st.dungeons + st.hearts + st.raids;
+  return st;
+}
+// A SaveContext as UPDATE_TEAM_STATE sends it (JsonConversions.hpp).
+function stageFromTeamState(state) {
+  if (!state || typeof state !== "object") return null;
+  const quest = Number(state.inventory && state.inventory.questItems) >>> 0;
+  let dungeons = DUNGEON_BITS.filter((b) => quest & (1 << b)).length;
+  const deku = Array.isArray(state.eventChkInf) ? Number(state.eventChkInf[0]) & 0x80 : 0;
+  if (!(quest & (1 << 0x12)) && deku) dungeons++; // Deku Tree dead, emerald still in flight
+  const c = (state.sevenDays && state.sevenDays.base && state.sevenDays.base.counters) || {};
+  return cleanStage({
+    dungeons,
+    hearts: Number(state.healthCapacity) / 16 - 3,
+    raids: c.hordeNightsSurvived,
+    days: c.daysSurvived,
+    interval: c.raidInterval,
+  });
+}
+// Lower is closer. Gamestage drives the raids, so it dominates; days and a
+// different raid interval break ties between rooms at the same stage.
+function stageDistance(a, b) {
+  if (!a || !b) return null;
+  return Math.abs(a.gs - b.gs) + 0.25 * Math.min(Math.abs(a.days - b.days), 20) + (a.interval && b.interval && a.interval !== b.interval ? 2 : 0);
+}
+
+function getRoom(id, create) {
+  let r = rooms.get(id);
+  if (!r && create) {
+    r = { id, isPublic: false, looking: false, stage: null, stageAt: 0, roster: null, bridges: new Map(), holds: new Map(), createdAt: Date.now(), emptySince: Date.now() };
+    rooms.set(id, r);
+  }
+  return r;
+}
+function pruneHolds(r, now) {
+  for (const [token, exp] of r.holds) if (exp <= now) r.holds.delete(token);
+}
+// Names of players online in the room: the relay's own roster (it also counts
+// desktop players), else the browsers this bridge carries.
+function roomPlayers(r) {
+  if (r.roster) return r.roster;
+  return [...new Set(r.bridges.values())];
+}
+function roomFree(r, now) {
+  pruneHolds(r, now);
+  return ROOM_SEATS - roomPlayers(r).length - r.holds.size;
+}
+function listed(r, now) {
+  if (!r.isPublic) return false;
+  return roomPlayers(r).length > 0 || r.holds.size > 0 || now - r.createdAt < FRESH_MS;
+}
+function newCode() {
+  for (;;) {
+    let c = "mm-";
+    for (let i = 0; i < 5; i++) c += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)];
+    if (!rooms.has(c)) return c;
+  }
+}
+function roomView(r, me, now) {
+  return {
+    room: r.id,
+    players: roomPlayers(r).slice(0, ROOM_SEATS),
+    seats: ROOM_SEATS,
+    free: Math.max(0, roomFree(r, now)),
+    looking: r.looking,
+    stage: r.stage,
+    distance: stageDistance(me, r.stage),
+  };
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, r] of rooms) {
+    pruneHolds(r, now);
+    if (roomPlayers(r).length || r.holds.size) r.emptySince = now;
+    else if (now - r.emptySince > FORGET_MS) rooms.delete(id);
+  }
+}, 60 * 1000).unref();
+
+// Bridge hooks.
+function bridgeJoined(roomId, bridgeId, name) {
+  if (typeof roomId !== "string" || !roomId) return;
+  const r = getRoom(roomId.slice(0, 64), true);
+  r.bridges.set(bridgeId, String(name || "Player").slice(0, 24));
+  r.emptySince = Date.now();
+  // The oldest seat held for this room is the one this player was given.
+  const first = r.holds.keys().next();
+  if (!first.done) r.holds.delete(first.value);
+}
+function bridgeLeft(roomId, bridgeId) {
+  const r = roomId && rooms.get(roomId);
+  if (!r) return;
+  r.bridges.delete(bridgeId);
+  if (!r.bridges.size) r.roster = null; // nobody left here to report the relay's roster
+}
+function bridgeRoster(roomId, state) {
+  const r = roomId && rooms.get(roomId);
+  if (!r || !Array.isArray(state)) return;
+  r.roster = state.filter((c) => c && c.online !== false).map((c) => String(c.name || "Player").slice(0, 24));
+}
+function bridgeTeamState(roomId, state) {
+  const r = roomId && rooms.get(roomId);
+  const st = r && stageFromTeamState(state);
+  if (!st) return;
+  if (!r.stageAt || st.gs !== r.stage.gs) log(`[lobby] ${r.id}: progress gs ${st.gs} (${st.dungeons} dungeons, ${st.hearts} extra hearts, ${st.raids} raids, day ${st.days + 1})`);
+  r.stage = st;
+  r.stageAt = Date.now();
+}
+
+// API. Small JSON in, small JSON out; same invite key as the page.
+const hits = new Map(); // ip -> {n, reset}
+setInterval(() => hits.clear(), 10 * 60 * 1000).unref();
+function rateLimited(req) {
+  const ip = req.headers["cf-connecting-ip"] || req.socket.remoteAddress || "?";
+  const now = Date.now();
+  let h = hits.get(ip);
+  if (!h || h.reset <= now) hits.set(ip, (h = { n: 0, reset: now + 60 * 1000 }));
+  return ++h.n > 30;
+}
+function sendJson(res, code, body, extra) {
+  res.writeHead(code, { ...extra, "Content-Type": MIME[".json"], "Cache-Control": "no-store" }).end(JSON.stringify(body));
+}
+function readJson(req, cb) {
+  let size = 0;
+  const parts = [];
+  req.on("data", (c) => {
+    size += c.length;
+    if (size > 4096) return req.destroy();
+    parts.push(c);
+  });
+  req.on("end", () => {
+    try {
+      cb(JSON.parse(Buffer.concat(parts).toString("utf8") || "{}"));
+    } catch {
+      cb(null);
+    }
+  });
+}
+function cleanRoomName(v) {
+  return typeof v === "string" ? v.trim().slice(0, 32) : "";
+}
+
+function handleApi(req, res, pathOnly, extra) {
+  const now = Date.now();
+  if (pathOnly === "/api/rooms" && req.method === "GET") {
+    const q = new URL(req.url, "http://x").searchParams;
+    const me = q.has("gs") ? cleanStage({ dungeons: q.get("dn"), hearts: q.get("h"), raids: q.get("r"), days: q.get("d"), interval: q.get("i") }) : null;
+    const list = [...rooms.values()].filter((r) => listed(r, now)).map((r) => roomView(r, me, now));
+    // Rooms looking for players first, then nearest progress, then fullest.
+    list.sort((a, b) => b.looking - a.looking || (a.distance ?? 1e9) - (b.distance ?? 1e9) || a.free - b.free);
+    return sendJson(res, 200, { seats: ROOM_SEATS, range: MATCH_RANGE, rooms: list.slice(0, 50) }, extra);
+  }
+  if (req.method !== "POST") return sendJson(res, 405, { error: "method" }, extra);
+  if (rateLimited(req)) return sendJson(res, 429, { error: "slow down" }, extra);
+  readJson(req, (body) => {
+    if (!body || typeof body !== "object") return sendJson(res, 400, { error: "bad json" }, extra);
+    const me = cleanStage(body.stage);
+    if (pathOnly === "/api/quickplay") {
+      // The nearest public room that is looking and has a free seat, if it is
+      // within MATCH_RANGE; ties go to the fuller room. Otherwise open a new one
+      // that is looking, so the next player near this progress lands with you.
+      let best = null;
+      let bestD = Infinity;
+      for (const r of rooms.values()) {
+        if (!r.looking || !listed(r, now) || roomFree(r, now) <= 0) continue;
+        const d = stageDistance(me, r.stage) ?? (me && me.gs === 0 && !r.stage ? 0 : null);
+        if (d === null || d > MATCH_RANGE) continue;
+        if (d < bestD || (d === bestD && roomFree(r, now) < roomFree(best, now))) {
+          best = r;
+          bestD = d;
+        }
+      }
+      let created = false;
+      if (!best) {
+        best = getRoom(newCode(), true);
+        best.isPublic = best.looking = true;
+        best.stage = me; // until the first save from inside it arrives
+        created = true;
+      }
+      best.holds.set(crypto.randomBytes(8).toString("hex"), now + HOLD_MS);
+      log(`[lobby] quick match -> ${best.id} (${created ? "new" : "distance " + bestD}, gs ${me ? me.gs : "?"})`);
+      return sendJson(res, 200, { room: best.id, created, distance: created ? 0 : bestD, ...roomView(best, me, now) }, extra);
+    }
+    if (pathOnly === "/api/rooms/publish") {
+      // List a room by name (the "list my room" box). Only a room nobody is in
+      // yet, or one that is already public, so nobody can expose a private room
+      // that others are playing in.
+      const id = cleanRoomName(body.room);
+      if (!id) return sendJson(res, 400, { error: "room" }, extra);
+      const r = getRoom(id, true);
+      if (!r.isPublic && roomPlayers(r).length) return sendJson(res, 409, { error: "room in use" }, extra);
+      r.isPublic = true;
+      r.looking = body.looking !== false;
+      r.createdAt = now;
+      if (!r.stage && me) r.stage = me;
+      return sendJson(res, 200, roomView(r, me, now), extra);
+    }
+    if (pathOnly === "/api/rooms/unpublish") {
+      const r = rooms.get(cleanRoomName(body.room));
+      if (r) r.isPublic = r.looking = false;
+      return sendJson(res, 200, { ok: true }, extra);
+    }
+    sendJson(res, 404, { error: "not found" }, extra);
+  });
+}
+
 const server = http.createServer((req, res) => {
   if (req.url === "/healthz") {
     res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store" }).end("ok");
     return;
+  }
+  const apiPath = (req.url || "/").split("?")[0];
+  if (apiPath.startsWith("/api/")) {
+    const access = checkAccess(req);
+    if (!access.ok) return sendJson(res, 403, { error: "invite only" });
+    return handleApi(req, res, apiPath, access.setCookie ? { "Set-Cookie": access.setCookie } : {});
   }
   if (req.method !== "GET" && req.method !== "HEAD") {
     res.writeHead(405).end();
@@ -291,6 +537,7 @@ wss.on("connection", (ws, req) => {
     if (closed) return;
     closed = true;
     clearInterval(pinger);
+    bridgeLeft(roomId, id);
     if (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING) ws.close(code, why.slice(0, 120));
     tcp.destroy();
   };
@@ -330,7 +577,8 @@ wss.on("connection", (ws, req) => {
       chunks = [];
       chunkBytes = 0;
       start = idx + 1;
-      if (ownId === null && packet.includes('"ALL_CLIENT_STATE"')) learnOwnId(packet);
+      if (packet.includes('"ALL_CLIENT_STATE"')) onClientState(packet);
+      else if (roomId && packet.includes('"UPDATE_TEAM_STATE"')) watchTeamState(packet);
       if (packet.length && ws.readyState === ws.OPEN) ws.send(packet.toString("utf8"));
     }
     if (start < chunk.length) {
@@ -350,14 +598,26 @@ wss.on("connection", (ws, req) => {
   const heldForId = [];
   let heldBytes = 0;
 
-  const learnOwnId = (packet) => {
+  const onClientState = (packet) => {
     try {
       const msg = JSON.parse(packet.toString("utf8"));
+      if (msg.type !== "ALL_CLIENT_STATE") return;
+      bridgeRoster(roomId, msg.state);
+      if (ownId !== null) return;
       const me = Array.isArray(msg.state) ? msg.state.find((c) => c && c.self === true) : null;
       if (!me || !Number.isSafeInteger(me.clientId)) return;
       ownId = me.clientId;
       for (const held of heldForId.splice(0)) forward(held);
       heldBytes = 0;
+    } catch {}
+  };
+
+  // Lobby (#4155): which room this browser is in, and that room's progress.
+  let roomId = null;
+  const watchTeamState = (packet) => {
+    try {
+      const msg = typeof packet === "object" && !Buffer.isBuffer(packet) ? packet : JSON.parse(packet.toString("utf8"));
+      if (msg.type === "UPDATE_TEAM_STATE") bridgeTeamState(roomId, msg.state);
     } catch {}
   };
 
@@ -380,6 +640,7 @@ wss.on("connection", (ws, req) => {
       return; // not JSON: the relay couldn't use it either
     }
     if (msg === null || typeof msg !== "object" || Array.isArray(msg)) return;
+    if (msg.type === "UPDATE_TEAM_STATE") watchTeamState(msg);
     if (msg.clientId === ownId) return writeFramed(body);
     msg.clientId = ownId;
     writeFramed(Buffer.from(JSON.stringify(msg)));
@@ -393,6 +654,13 @@ wss.on("connection", (ws, req) => {
     if (body.indexOf(0) !== -1) return;
     if (!sentJoin) {
       sentJoin = true;
+      try {
+        const hello = JSON.parse(body.toString("utf8"));
+        if (hello && hello.type === "HANDSHAKE" && typeof hello.roomId === "string" && hello.roomId) {
+          roomId = hello.roomId.slice(0, 64);
+          bridgeJoined(roomId, id, hello.clientState && hello.clientState.name);
+        }
+      } catch {}
       return writeFramed(body);
     }
     if (ownId === null) {

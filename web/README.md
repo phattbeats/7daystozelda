@@ -44,6 +44,14 @@ Desktop SoH players connect Anchor straight to the relay: uncomment `43383` unde
 
 The page is a lobby: drop your ROM (once per browser), type your name, pick a room and a fairy color, tick horde night, and **Join room**. **Copy invite link** gives friends a link with the room (and key, if you used one) filled in; they add their name.
 
+### Quick match and open rooms (PHA-4155)
+
+Under the name and room boxes the lobby shows your progress, read from your newest save (pick another file, or "New game", when you have several). **Quick match** puts you in an open public room whose progress is near yours. Joining a room gives you its progress (hearts, dungeons, flags, base), so this keeps you close to where you were. When no open room is within `MATCH_RANGE`, it opens a new public room (`mm-XXXXX`), and the next players near your progress are sent there. **Open rooms** lists the public rooms, with their players, progress and how close each one is to yours. Tick **List my room** to make the room you join by name public too. Rooms you name and don't list stay private: they never show up anywhere.
+
+Progress is the game's own raid gamestage (`Raids.cpp` `Gamestage()`) minus the player term: 3 × dungeon rewards + extra heart containers + raids survived. Days survived and a different raid interval break ties. `server.js` keeps the room directory in memory. It learns who is in a room from the relay's `ALL_CLIENT_STATE`, and a room's progress from the `UPDATE_TEAM_STATE` every save sends. The game needs no change.
+
+API (same invite key as the page): `GET /api/rooms?gs=&dn=&h=&r=&d=&i=` lists public rooms, with `distance` when you pass your progress. `POST /api/quickplay {stage}` returns `{room, created, distance}` and holds a seat for 2 minutes. `POST /api/rooms/publish {room, stage}` lists a room; it answers 409 if the room is private with players in it. Env: `ROOM_SEATS` (default 4) and `MATCH_RANGE` (default 6 gamestage points).
+
 Links skip the lobby when they carry both room and name:
 
 ```
