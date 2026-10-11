@@ -471,12 +471,84 @@ function handleApi(req, res, pathOnly, extra) {
   });
 }
 
+// ---- cloud saves (#3856) ----
+// GET/PUT /api/save keeps one JSON bundle per signed-in account. SWAG's Authentik
+// forward auth sets X-Authentik-Username; X-Soh-Auth must carry SAVE_AUTH_SECRET
+// (SWAG adds it) so nothing else on the network can claim an identity.
+// Layout: SAVE_DIR/<user>/current.json plus the last SAVE_VERSIONS older copies.
+const SAVE_DIR = process.env.SAVE_DIR || "";
+const SAVE_AUTH_SECRET = process.env.SAVE_AUTH_SECRET || "";
+const SAVE_MAX = parseInt(process.env.SAVE_MAX_BYTES || String(6 * 1024 * 1024), 10);
+const SAVE_VERSIONS = 10;
+
+function saveUser(req) {
+  if (!SAVE_DIR || !SAVE_AUTH_SECRET) return "";
+  const got = Buffer.from(String(req.headers["x-soh-auth"] || ""));
+  const want = Buffer.from(SAVE_AUTH_SECRET);
+  if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return "";
+  const name = String(req.headers["x-authentik-username"] || "").trim().toLowerCase();
+  // A hash keeps the folder name safe whatever characters the username has.
+  return name ? crypto.createHash("sha256").update(name).digest("hex").slice(0, 32) : "";
+}
+
+function handleSave(req, res) {
+  const user = saveUser(req);
+  const hdr = { "Cache-Control": "no-store" };
+  if (!user) return sendJson(res, 401, { error: "sign in" }, hdr);
+  const dir = path.join(SAVE_DIR, user);
+  const cur = path.join(dir, "current.json");
+  if (req.method === "GET") {
+    fs.readFile(cur, (err, data) => {
+      if (err) return sendJson(res, 404, { error: "no save" }, hdr);
+      res.writeHead(200, { "Content-Type": "application/json", ...hdr }).end(data);
+    });
+    return;
+  }
+  if (req.method !== "PUT") return sendJson(res, 405, { error: "method" }, hdr);
+  const chunks = [];
+  let size = 0;
+  let dead = false;
+  req.on("data", (c) => {
+    size += c.length;
+    if (size > SAVE_MAX) {
+      dead = true;
+      sendJson(res, 413, { error: "too big" }, hdr);
+      req.destroy();
+    } else chunks.push(c);
+  });
+  req.on("end", () => {
+    if (dead) return;
+    let bundle;
+    try {
+      bundle = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      if (!bundle || typeof bundle !== "object" || typeof bundle.files !== "object") throw 0;
+    } catch {
+      return sendJson(res, 400, { error: "bad bundle" }, hdr);
+    }
+    try {
+      fs.mkdirSync(path.join(dir, "versions"), { recursive: true });
+      if (fs.existsSync(cur)) fs.copyFileSync(cur, path.join(dir, "versions", `${Date.now()}.json`));
+      const saved = { ...bundle, savedAt: Date.now() };
+      const tmp = cur + ".tmp";
+      fs.writeFileSync(tmp, JSON.stringify(saved));
+      fs.renameSync(tmp, cur);
+      const old = fs.readdirSync(path.join(dir, "versions")).sort().reverse().slice(SAVE_VERSIONS);
+      for (const f of old) fs.unlinkSync(path.join(dir, "versions", f));
+      sendJson(res, 200, { ok: true, savedAt: saved.savedAt }, hdr);
+    } catch (e) {
+      log(`[save] write failed: ${e.message}`);
+      sendJson(res, 500, { error: "write failed" }, hdr);
+    }
+  });
+}
+
 const server = http.createServer((req, res) => {
   if (req.url === "/healthz") {
     res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store" }).end("ok");
     return;
   }
   const apiPath = (req.url || "/").split("?")[0];
+  if (apiPath === "/api/save") return handleSave(req, res);
   if (apiPath.startsWith("/api/")) {
     const access = checkAccess(req);
     if (!access.ok) return sendJson(res, 403, { error: "invite only" });
