@@ -144,6 +144,16 @@ static void Va_SerializeExtras(Actor* actor, nlohmann::json& x) {
 static void Va_ApplyBodyExtras(BossVa* body, const nlohmann::json& x) {
     static uint8_t sAbsent[VA_PARAM_BARI_COUNT] = {};
 
+    {
+        // The shared statics drive our own intro cutscene. Until it hands over,
+        // the host's copy of them (csState, fightPhase, door...) would skip it.
+        BossVaSyncState local;
+        BossVa_SyncGet(&local);
+        if (local.csState < BOSSVA_SYNC_BATTLE) {
+            return;
+        }
+    }
+
     if (x.contains("st") && x["st"].size() == 10) {
         const auto& st = x["st"];
         BossVaSyncState s;
