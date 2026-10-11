@@ -12,6 +12,8 @@ extern PlayState* gPlayState;
 
 void Player_UseItem(PlayState* play, Player* player, s32 item);
 void Player_Draw(Actor* actor, PlayState* play);
+void Audio_OcaRemoteNote(s8 instrument, u8 note, Vec3f* pos);
+void Audio_OcaRemoteStop(void);
 }
 
 // Hijacking player->zTargetActiveTimer (unused s32 for the dummy) to store the clientId for convenience
@@ -114,6 +116,10 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     AnchorClient& client = Anchor::Instance->clients[DUMMY_CLIENT_ID];
 
     if (client.sceneNum != gPlayState->sceneNum || !client.online || !client.isSaveLoaded) {
+        if (client.ocaPlayedNote != 0xFF) {
+            Audio_OcaRemoteStop();
+            client.ocaPlayedNote = 0xFF;
+        }
         actor->world.pos.x = -9999.0f;
         actor->world.pos.y = -9999.0f;
         actor->world.pos.z = -9999.0f;
@@ -136,6 +142,16 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     player->invincibilityTimer = client.invincibilityTimer;
     player->unk_862 = client.unk_862;
     player->av1.actionVar1 = client.actionVar1;
+
+    // Voice the partner's ocarina notes (PHA-4168); retrigger on each new note.
+    if (client.ocaNote != client.ocaPlayedNote) {
+        if (client.ocaNote != 0xFF) {
+            Audio_OcaRemoteNote(client.ocaInstrument, client.ocaNote, &actor->projectedPos);
+        } else {
+            Audio_OcaRemoteStop();
+        }
+        client.ocaPlayedNote = client.ocaNote;
+    }
 
     if (player->modelGroup != client.modelGroup) {
         // Hack to account for usage of gSaveContext
