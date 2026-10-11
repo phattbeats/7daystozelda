@@ -21,6 +21,8 @@ extern "C" {
 #include "functions.h"
 #include "src/overlays/actors/ovl_En_Bom/z_en_bom.h"
 #include "src/overlays/actors/ovl_En_Bom_Chu/z_en_bom_chu.h"
+#include "src/overlays/actors/ovl_En_Ru1/z_en_ru1.h"
+#include "objects/object_ru1/object_ru1.h"
 extern PlayState* gPlayState;
 }
 
@@ -44,6 +46,13 @@ extern PlayState* gPlayState;
  *   in the stream), props vanish with a break sound.
  * - A carried prop leaves its original on the partner's screen; the partner's copy is
  *   hidden and frozen while the ghost is out, then removed when the prop breaks.
+ * - Princess Ruto in Jabu-Jabu (#4195) is one persistent NPC per client, so she is not
+ *   ghosted: the partner's own Ruto is taken over (frozen, posed from the stream, kept
+ *   drawn) while the owner carries or throws her. If the partner's copy is gone (she
+ *   leaves when her room is left behind) a stand-in Ruto is spawned. When the stream
+ *   ends she is dropped where the owner's Ruto came to rest and runs her own logic
+ *   again, so she lands, can be picked up, and the throw onto the Sapphire platform
+ *   starts that cutscene on the partner's screen too.
  */
 
 namespace {
@@ -76,12 +85,21 @@ struct Remote {
     bool hasAxes = false;
     f32 axes[9]{};
     bool spent = false; // our ghost already finished (exploded/broke); don't spawn another for this item
+    s32 rutoAction = 0;
+    s8 rutoRooms[3]{};
 };
 
 struct Ghost {
     Actor* actor = nullptr;
     Actor* original = nullptr; // partner-side copy hidden while this carried prop is out
     ActorFunc originalDraw = nullptr;
+    // Ruto: the partner's own Ruto taken over (adopted) or a spawned stand-in, and the state to put back.
+    bool adopted = false;
+    s32 savedAction = 0;
+    s32 savedDrawConfig = 0;
+    Vec3f savedPos{};
+    Vec3s savedRot{};
+    Vec3s savedShape{};
 };
 
 std::unordered_map<Actor*, Own> sOwn;
@@ -110,6 +128,20 @@ bool IsBomb(s16 id) {
 
 bool IsProp(s16 id) {
     return id == ACTOR_OBJ_TSUBO || id == ACTOR_OBJ_KIBAKO || id == ACTOR_EN_KUSA || id == ACTOR_EN_ISHI;
+}
+
+bool IsRuto(s16 id) {
+    return id == ACTOR_EN_RU1;
+}
+
+// Ruto's own states while she is in someone's arms (31 sitting, 32 squirming, 34 sees the Sapphire)
+// and while she flies or sinks after a throw (28 falling, 29 in water, 30 sinking).
+bool RutoCarried(s32 action) {
+    return action == 31 || action == 32 || action == 34;
+}
+
+bool RutoAirborne(s32 action) {
+    return action >= 28 && action <= 30;
 }
 
 bool IsDriven(s16 id) {
@@ -182,7 +214,7 @@ bool ClaimBomb(Actor* actor) {
 
 void CollectOwned(std::vector<Actor*>& out) {
     ActorContext* ctx = &gPlayState->actorCtx;
-    for (s32 cat : { ACTORCAT_EXPLOSIVE, ACTORCAT_PROP }) {
+    for (s32 cat : { ACTORCAT_EXPLOSIVE, ACTORCAT_PROP, ACTORCAT_NPC }) {
         for (Actor* a = ctx->actorLists[cat].head; a != NULL; a = a->next) {
             if (a->update == NULL || a->init != NULL || sGhostActors.count(a)) {
                 continue;
@@ -199,7 +231,7 @@ void CollectOwned(std::vector<Actor*>& out) {
                     sOwn[a].key = sNextKey++;
                 }
                 out.push_back(a);
-            } else if (IsProp(a->id)) {
+            } else if (IsProp(a->id) || IsRuto(a->id)) {
                 bool held = IsHeldLocally(a);
                 auto it = sOwn.find(a);
                 if (it == sOwn.end()) {
@@ -216,7 +248,10 @@ void CollectOwned(std::vector<Actor*>& out) {
                     own.airUntil = sTick + AIR_TICKS; // just thrown
                 }
                 own.wasHeld = held;
-                if (!held && sTick > own.airUntil) {
+                // Ruto keeps streaming until she has come to rest (her state lags the release by a frame).
+                bool landed = IsRuto(a->id) && !held && !RutoAirborne(((EnRu1*)a)->action) &&
+                              !RutoCarried(((EnRu1*)a)->action);
+                if (!held && (sTick > own.airUntil || landed)) {
                     sOwn.erase(it);
                     continue;
                 }
@@ -250,6 +285,11 @@ nlohmann::json Snapshot(Actor* a) {
                                          chu->axisLeft.z });
     } else {
         e["h"] = Vec(a->home.pos);
+    }
+    if (IsRuto(a->id)) {
+        EnRu1* ruto = (EnRu1*)a;
+        e["ra"] = ruto->action;
+        e["rm"] = nlohmann::json::array({ ruto->roomNum1, ruto->roomNum2, ruto->roomNum3 });
     }
     return e;
 }
@@ -328,7 +368,115 @@ void HideOriginal(Ghost& g, const Remote& r) {
     }
 }
 
+bool PartnerStillHere(uint32_t from) {
+    Anchor* anchor = Anchor::Instance;
+    auto it = anchor->clients.find(from);
+    return it != anchor->clients.end() && it->second.online && it->second.sceneNum == gPlayState->sceneNum;
+}
+
+Actor* FindRutoSwitch() {
+    for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_BG].head; a != NULL; a = a->next) {
+        if (a->id == ACTOR_BG_BDAN_OBJECTS && a->params == 0) {
+            return a;
+        }
+    }
+    return NULL;
+}
+
+// The partner's own Ruto, if this client has one that is not already a ghost.
+EnRu1* LocalRuto() {
+    for (Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_NPC].head; a != NULL; a = a->next) {
+        if (a->id == ACTOR_EN_RU1 && a->update != NULL && a->init == NULL && !sGhostActors.count(a)) {
+            return (EnRu1*)a;
+        }
+    }
+    return NULL;
+}
+
+void PoseRuto(EnRu1* ruto) {
+    ruto->drawConfig = 1; // opaque; her cutscene and wait states draw nothing
+    ruto->alpha = 255;
+    ruto->actor.shape.shadowAlpha = 255;
+    ruto->actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED;
+    Animation_Change(&ruto->skelAnime, (AnimationHeader*)gRutoChildSittingAnim, 1.0f, 0,
+                     Animation_GetLastFrame((void*)gRutoChildSittingAnim), ANIMMODE_LOOP, 0.0f);
+}
+
+void SpawnRuto(uint64_t key, const Remote& r) {
+    EnRu1* ruto = LocalRuto();
+    if (ruto != NULL && (IsHeldLocally(&ruto->actor) || RutoCarried(ruto->action))) {
+        return; // both players lifted their own Ruto: each keeps theirs
+    }
+    Ghost& g = sGhosts[key];
+    if (ruto != NULL) {
+        g.adopted = true;
+        g.savedAction = ruto->action;
+        g.savedDrawConfig = ruto->drawConfig;
+        g.savedPos = ruto->actor.world.pos;
+        g.savedRot = ruto->actor.world.rot;
+        g.savedShape = ruto->actor.shape.rot;
+    } else {
+        // Type 10 is her post-cutscene setup: no flag checks, no duplicate check, room -1.
+        Actor* actor = Actor_Spawn(&gPlayState->actorCtx, gPlayState, ACTOR_EN_RU1, r.pos.x, r.pos.y, r.pos.z,
+                                   r.shape.x, r.shape.y, r.shape.z, (r.params & 0xFF00) | 10, false);
+        if (actor == NULL || actor->update == NULL) {
+            sGhosts.erase(key);
+            return;
+        }
+        ruto = (EnRu1*)actor;
+    }
+    g.actor = &ruto->actor;
+    sGhostActors[g.actor] = key;
+    PoseRuto(ruto);
+    ApplyPose(g.actor, r);
+}
+
+// The owner let go of Ruto and she came to rest (or the owner left). Hand her back to her own logic.
+void EndRuto(const Ghost& g, const Remote& r) {
+    Actor* actor = g.actor;
+    sGhostActors.erase(actor);
+    if (actor->update == NULL) {
+        return;
+    }
+    EnRu1* ruto = (EnRu1*)actor;
+    // Only a Ruto that was waiting to be picked up (27), carried or in the air follows the owner's;
+    // one in a talk or cutscene state goes back to it.
+    bool fromCarry =
+        !g.adopted || g.savedAction == 27 || RutoCarried(g.savedAction) || RutoAirborne(g.savedAction);
+    if (!PartnerStillHere(r.from) || !fromCarry) {
+        if (!g.adopted) {
+            Actor_Kill(actor);
+            return;
+        }
+        actor->world.pos = g.savedPos;
+        actor->world.rot = g.savedRot;
+        actor->shape.rot = g.savedShape;
+        ruto->action = g.savedAction;
+        ruto->drawConfig = g.savedDrawConfig;
+        return;
+    }
+    // Drop her where the owner's Ruto is: she falls (state 28), lands and offers to be carried
+    // again, or lands on the Sapphire platform and starts that cutscene here as well.
+    ruto->roomNum2 = r.rutoRooms[1];
+    ruto->roomNum3 = r.rutoRooms[2];
+    if (!g.adopted) {
+        ruto->roomNum1 = r.rutoRooms[0];
+        ruto->unk_28C = (BgBdanObjects*)FindRutoSwitch();
+    }
+    actor->parent = NULL;
+    actor->velocity = Vec3f{ 0.0f, 0.0f, 0.0f };
+    actor->speedXZ = 0.0f;
+    actor->minVelocityY = -6.8f;
+    actor->gravity = -1.3f;
+    ruto->action = 28;
+    ruto->drawConfig = 1;
+}
+
 void SpawnGhost(uint64_t key, const Remote& r) {
+    if (IsRuto(r.id)) {
+        SpawnRuto(key, r);
+        return;
+    }
     Actor* actor = Actor_Spawn(&gPlayState->actorCtx, gPlayState, r.id, r.pos.x, r.pos.y, r.pos.z, r.shape.x,
                                r.shape.y, r.shape.z, r.params, false);
     if (actor == NULL) {
@@ -346,12 +494,6 @@ void SpawnGhost(uint64_t key, const Remote& r) {
     ApplyPose(actor, r);
 }
 
-bool PartnerStillHere(uint32_t from) {
-    Anchor* anchor = Anchor::Instance;
-    auto it = anchor->clients.find(from);
-    return it != anchor->clients.end() && it->second.online && it->second.sceneNum == gPlayState->sceneNum;
-}
-
 // The owner's item is gone: it exploded, broke, or the owner left.
 void EndGhost(uint64_t key, const Remote& r) {
     auto it = sGhosts.find(key);
@@ -361,6 +503,10 @@ void EndGhost(uint64_t key, const Remote& r) {
     Ghost g = it->second;
     sGhosts.erase(it);
     Actor* actor = g.actor;
+    if (IsRuto(r.id)) {
+        EndRuto(g, r);
+        return;
+    }
 
     if (g.original != NULL && sHidden.erase(g.original)) {
         if (PartnerStillHere(r.from)) {
@@ -405,8 +551,20 @@ void ReceiveTick() {
             }
             continue;
         }
-        if (IsDriven(r.id) && git->second.actor->update != NULL) {
-            ApplyPose(git->second.actor, r);
+        Ghost& g = git->second;
+        if (IsRuto(r.id) && !g.adopted && LocalRuto() != NULL) {
+            // The partner's own Ruto came back (her room loaded): drop the stand-in and take hers over.
+            Actor* standIn = g.actor;
+            sGhostActors.erase(standIn);
+            sGhosts.erase(git);
+            Actor_Kill(standIn);
+            continue;
+        }
+        if (IsDriven(r.id) && g.actor->update != NULL) {
+            ApplyPose(g.actor, r);
+            if (IsRuto(r.id)) {
+                SkelAnime_Update(&((EnRu1*)g.actor)->skelAnime);
+            }
         }
     }
     for (uint64_t key : done) {
@@ -510,6 +668,12 @@ void Anchor::HandlePacket_HeldItems(nlohmann::json payload) {
         if (e.contains("h")) {
             r.home = JsonVecF(e["h"]);
         }
+        if (e.contains("ra")) {
+            r.rutoAction = e["ra"].get<s32>();
+            for (int i = 0; i < 3; i++) {
+                r.rutoRooms[i] = e["rm"][i].get<s8>();
+            }
+        }
         r.hasAxes = e.contains("a");
         if (r.hasAxes) {
             for (int i = 0; i < 9; i++) {
@@ -530,6 +694,7 @@ extern "C" {
 // 5: kill every forced actor (as if it broke).
 // 6: put Deku Sticks (a = 0) or bombs (a = 1) on C-Left, with ammo.
 // 7: set the stick Link is holding to flame timer a (lit when non-zero).
+// 8: put this client's Ruto (spawned if missing) a units ahead of Link, sitting and ready to be lifted.
 // The dump also lists each puppet's stick length and flame.
 EMSCRIPTEN_KEEPALIVE
 const char* anchor_test_held(int cmd, double a, double b, double c) {
@@ -585,6 +750,29 @@ const char* anchor_test_held(int cmd, double a, double b, double c) {
             case 7:
                 player->unk_860 = (s16)a;
                 break;
+            case 8: {
+                s16 yaw = player->actor.shape.rot.y;
+                Vec3f at = { pos.x + Math_SinS(yaw) * (f32)a, pos.y, pos.z + Math_CosS(yaw) * (f32)a };
+                EnRu1* ruto = LocalRuto();
+                if (ruto == NULL) {
+                    ruto = (EnRu1*)Actor_Spawn(&gPlayState->actorCtx, gPlayState, ACTOR_EN_RU1, at.x, at.y, at.z, 0,
+                                               yaw + 0x8000, 0, 10, false);
+                }
+                if (ruto != NULL && ruto->actor.update != NULL) {
+                    s8 room = gPlayState->roomCtx.curRoom.num;
+                    ruto->actor.world.pos = at;
+                    ruto->actor.room = -1;
+                    ruto->roomNum1 = ruto->roomNum2 = ruto->roomNum3 = room;
+                    ruto->unk_28C = (BgBdanObjects*)FindRutoSwitch();
+                    PoseRuto(ruto);
+                    ruto->actor.velocity = Vec3f{ 0.0f, 0.0f, 0.0f };
+                    ruto->actor.speedXZ = 0.0f;
+                    ruto->actor.minVelocityY = -6.8f;
+                    ruto->actor.gravity = -1.3f;
+                    ruto->action = 28; // falls into place, then offers to be lifted (27)
+                }
+                break;
+            }
         }
     }
     nlohmann::json own = nlohmann::json::array();
@@ -614,6 +802,27 @@ const char* anchor_test_held(int cmd, double a, double b, double c) {
             }
         }
     }
+    nlohmann::json rutos = nlohmann::json::array();
+    if (gPlayState != NULL) {
+        for (Actor* r = gPlayState->actorCtx.actorLists[ACTORCAT_NPC].head; r != NULL; r = r->next) {
+            if (r->id != ACTOR_EN_RU1) {
+                continue;
+            }
+            EnRu1* ruto = (EnRu1*)r;
+            auto g = sGhostActors.find(r);
+            rutos.push_back({ { "action", ruto->action },
+                              { "draw", ruto->drawConfig },
+                              { "alpha", ruto->alpha },
+                              { "ghost", g != sGhostActors.end() },
+                              { "adopted", g != sGhostActors.end() && sGhosts.count(g->second) &&
+                                               sGhosts[g->second].adopted },
+                              { "held", r->parent != NULL },
+                              { "rooms", { ruto->roomNum1, ruto->roomNum2, ruto->roomNum3 } },
+                              { "x", r->world.pos.x },
+                              { "y", r->world.pos.y },
+                              { "z", r->world.pos.z } });
+        }
+    }
     Player* self = gPlayState != NULL ? GET_PLAYER(gPlayState) : NULL;
     nlohmann::json j = { { "tick", sTick },
                          { "puppets", puppets },
@@ -623,6 +832,10 @@ const char* anchor_test_held(int cmd, double a, double b, double c) {
                                         : nlohmann::json() },
                          { "own", own },
                          { "ghosts", ghosts },
+                         { "rutos", rutos },
+                         { "room", gPlayState != NULL ? gPlayState->roomCtx.curRoom.num : -1 },
+                         { "scene", gPlayState != NULL ? gPlayState->sceneNum : -1 },
+                         { "pos", self ? Vec(self->actor.world.pos) : nlohmann::json() },
                          { "hidden", sHidden.size() },
                          { "remote", sRemote.size() },
                          { "rejected", sRejected.size() } };
