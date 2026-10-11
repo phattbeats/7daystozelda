@@ -6,7 +6,7 @@ IndexedDB origin keeps working), relay 43496 (anchor binary byte-patched), daemo
 
 - `b.py` (host side): `st(c)`/`pr(tag)` print scene, `roomCtx.curRoom.num`, Link pos, health, gameOver state and the
   Barinade probe; `do(c, code)`, `shot(c, name)` (to /tmp/z4196/ev), `logs(c)` greps BossEntry/LifeSync/CoopWarp.
-- `KILL`: kills the local Link at once by writing `gSaveContext.health` = 0 (HEAP16 byte address 8706600 in this
+- `KILL`: writes `gSaveContext.health` = 0 at `HP_ADDR` (8706648 in the 5d6c33b wasm, 8706600 in b2558c7; it moves per build).  Find it by bombing once (health != capacity), scanning HEAP16 for the `healthCapacity, health` pair, then `raid('heal')` and keeping the candidate that changed.
   wasm; find it again for another build by scanning HEAP16 for the `healthCapacity, health` pair from
   `sevendays_test_raid_state`, then `raid('heal')` and keep the candidate that changed). Bombs (`raid('bomb')`)
   also work but can blast Link out of the Jabu mouth.
