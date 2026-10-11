@@ -143,6 +143,33 @@ static void DummyPlayer_SmoothClimb(AnchorClient& client, ClimbSmoothing& sm) {
     }
 }
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+// PHA-4184 test probe: raw packet position vs what the puppet actor shows, per remote client.
+extern "C" EMSCRIPTEN_KEEPALIVE const char* anchor_test_climb() {
+    static std::string out;
+    nlohmann::json j = nlohmann::json::array();
+    if (Anchor::Instance != nullptr) {
+        for (auto& [id, c] : Anchor::Instance->clients) {
+            if (c.self) {
+                continue;
+            }
+            auto it = sClimbSmoothing.find(c.clientId);
+            nlohmann::json e = { { "id", id },
+                                 { "climbing", (c.stateFlags1 & PLAYER_STATE1_CLIMBING_LADDER) != 0 },
+                                 { "smooth", it != sClimbSmoothing.end() && it->second.active },
+                                 { "raw", { c.posRot.pos.x, c.posRot.pos.y, c.posRot.pos.z } } };
+            if (c.player != nullptr) {
+                e["shown"] = { c.player->actor.world.pos.x, c.player->actor.world.pos.y, c.player->actor.world.pos.z };
+            }
+            j.push_back(e);
+        }
+    }
+    out = j.dump();
+    return out.c_str();
+}
+#endif
+
 // Update the actor with new data from the client
 void DummyPlayer_Update(Actor* actor, PlayState* play) {
     Player* player = (Player*)actor;
