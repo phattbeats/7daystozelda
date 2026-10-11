@@ -131,6 +131,13 @@ void RequestPositionWarp(s16 entranceIndex, s16 room, PosRot dest) {
     sPending.queuedAt = std::chrono::steady_clock::now();
 }
 
+void CancelEntranceWarp(s16 entranceIndex) {
+    if (sPending.kind == PendingWarpKind::Entrance && sPending.entranceIndex == entranceIndex) {
+        sPending.kind = PendingWarpKind::None;
+        SPDLOG_INFO("[CoopWarp] cancelled warp entrance={}", entranceIndex);
+    }
+}
+
 void RegisterCoopWarpHooks(bool isConnected) {
     // Drop any in-flight request on disconnect so a reconnect starts clean.
     if (!isConnected) {

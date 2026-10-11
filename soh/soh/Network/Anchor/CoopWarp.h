@@ -30,6 +30,10 @@ void RequestEntranceWarp(s16 entranceIndex, s32 cutsceneIndex);
 // scene-follow, where re-triggering a cutscene would be wrong.
 void RequestPositionWarp(s16 entranceIndex, s16 room, PosRot dest);
 
+// Drop the pending entrance warp if it still targets entranceIndex (no-op otherwise, so a
+// newer request that superseded it survives).
+void CancelEntranceWarp(s16 entranceIndex);
+
 // Registers CoopWarp's connection-state bookkeeping. Called from Anchor::RegisterHooks
 // with the current connection state (mirrors the PuppetFairy pattern); clears any pending
 // request on disconnect. The queued-warp drain itself runs via CoopWarpTick.

@@ -55,6 +55,7 @@ bool sBlockedFunnel = false;
 // divergence. ExecutePositionWarp's void-damage suppression uses a single static
 // hook id, so two concurrent position warps would clobber it — never queue two.
 bool sFollowWarpPending = false;
+s16 sFollowWarpEntrance = 0; // the entrance the pending follow targets, for cancelling it
 
 // Frames left to drive Environment_FadeOutGameOverLights after entering DOWNED,
 // undoing any residual game-over dim before the VB fade gate fully took hold.
@@ -175,6 +176,13 @@ void SetLife(LocalLife next, const char* label) {
         return;
     }
     SPDLOG_INFO("[LifeSync] local {}", label);
+    // The follow warp can't fire while we lie dead (Player_InCsMode gates CoopWarp), so it
+    // drains the moment we're back up: a partner who just revived us would watch us warp
+    // away to the scene they left (PHA-4196). Leaving DOWNED drops it.
+    if (sLife == LocalLife::Downed && sFollowWarpPending) {
+        CancelEntranceWarp(sFollowWarpEntrance);
+        sFollowWarpPending = false;
+    }
     sLife = next;
     if (A() != nullptr) {
         A()->SendPacket_PlayerLifeState(WireOf(next));
@@ -243,6 +251,7 @@ void UpdateSpectate(PlayState* play) {
         if (!sFollowWarpPending) {
             RequestEntranceWarp((s16)peer->entranceIndex, -1);
             sFollowWarpPending = true;
+            sFollowWarpEntrance = (s16)peer->entranceIndex;
             SPDLOG_INFO("[LifeSync] spectate follow client={} scene={} (warp)", peer->clientId, peer->sceneNum);
         }
         return;

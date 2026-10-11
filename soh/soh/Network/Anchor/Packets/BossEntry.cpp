@@ -97,6 +97,12 @@ struct PendingBossEntry {
 
 PendingBossEntry sPendingBossEntry; // single in-flight pull (boss co-entry is sequential)
 
+// Boss scene whose BOSS_ENTRY still has to go out, or -1. OnSceneInit runs inside
+// OTRPlay_SpawnScene before the player actor exists, so IsSaveLoaded() is false there and
+// a send from the hook was silently dropped on every boss load: nobody was ever pulled
+// in (PHA-4196). The hook queues it; BossEntryTick sends once the scene is up.
+s16 sQueuedTxScene = -1;
+
 // Longer than CoopWarp's 30 s WARP_EXPIRY plus the (instant) transition + load, so a
 // merely-deferred warp (partner mid-cutscene) is always resolved by the scene-arrival
 // path; the timeout path only fires once the pull warp is provably dead. Same 40-vs-30
@@ -224,6 +230,18 @@ void Anchor::HandlePacket_BossEntry(nlohmann::json payload) {
 // pull warp so a superseded/expired pull can never wedge the latch.
 void BossEntryTick() {
     ReconcileBossEntry();
+
+    if (sQueuedTxScene >= 0 && Anchor::Instance != nullptr && gPlayState != nullptr) {
+        if (gPlayState->sceneNum != sQueuedTxScene) {
+            sQueuedTxScene = -1; // left before it could go out
+        } else if (Anchor::Instance->IsSaveLoaded()) {
+            const BossEntryInfo* boss = FindBossByScene(sQueuedTxScene);
+            sQueuedTxScene = -1;
+            if (boss != nullptr) {
+                Anchor::Instance->SendPacket_BossEntry(boss->bossScene, boss->bossEntrance);
+            }
+        }
+    }
 }
 
 void RegisterBossEntryHooks(bool isConnected) {
@@ -231,6 +249,7 @@ void RegisterBossEntryHooks(bool isConnected) {
     // the first legitimate broadcast.
     if (!isConnected) {
         DropPendingBossEntry();
+        sQueuedTxScene = -1;
     }
 
     // SENDER: detect boss-scene loads. Runs on every scene load; only boss scenes
@@ -255,8 +274,6 @@ void RegisterBossEntryHooks(bool isConnected) {
             return;
         }
 
-        if (Anchor::Instance != nullptr) {
-            Anchor::Instance->SendPacket_BossEntry(sceneNum, boss->bossEntrance);
-        }
+        sQueuedTxScene = sceneNum; // sent by BossEntryTick once the player exists
     });
 }
