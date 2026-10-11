@@ -1680,6 +1680,35 @@ void func_800ED458(s32 arg0) {
     }
 }
 
+// Co-op (PHA-4168): the local note being held (0xFF = none) and the active instrument,
+// sent to peers; plus voice for a remote player's notes on this machine.
+u8 Audio_OcaGetLocalNote(void) {
+    return (D_80130F3C != 0) ? sCurOcarinaBtnVal : 0xFF;
+}
+
+s8 Audio_OcaGetLocalInstrument(void) {
+    return D_80130F10;
+}
+
+static f32 sRemoteOcaFreq = 1.0f;
+static f32 sRemoteOcaVol = 87.0f / 127.0f;
+
+void Audio_OcaRemoteNote(s8 instrument, u8 note, Vec3f* pos) {
+    // The ocarina SFX channel is monophonic; our own note always wins.
+    if (Audio_OcaGetLocalNote() != 0xFF || instrument < 1) {
+        return;
+    }
+    Audio_QueueCmdS8(0x6 << 24 | SEQ_PLAYER_SFX << 16 | 0xD07, instrument - 1);
+    Audio_QueueCmdS8(0x6 << 24 | SEQ_PLAYER_SFX << 16 | 0xD05, note);
+    Audio_PlaySoundGeneral(NA_SE_OC_OCARINA, pos, 4, &sRemoteOcaFreq, &sRemoteOcaVol, &gSfxDefaultReverb);
+}
+
+void Audio_OcaRemoteStop(void) {
+    if (Audio_OcaGetLocalNote() == 0xFF) {
+        Audio_StopSfxById(NA_SE_OC_OCARINA);
+    }
+}
+
 void func_800ED848(u8 inputEnabled) {
     sOcarinaInpEnabled = inputEnabled;
 }

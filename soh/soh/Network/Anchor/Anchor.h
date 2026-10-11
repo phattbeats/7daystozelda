@@ -61,6 +61,9 @@ typedef struct {
     s8 invincibilityTimer;
     s16 unk_862;
     s8 actionVar1;
+    u8 ocaNote = 0xFF; // ocarina note being held (0xFF = none), PHA-4168
+    s8 ocaInstrument = 0;
+    u8 ocaPlayedNote = 0xFF; // last note we voiced locally for this puppet
 
     // Ptr to the dummy player
     Player* player;

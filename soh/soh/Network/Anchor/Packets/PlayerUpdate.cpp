@@ -7,6 +7,8 @@ extern "C" {
 #include "macros.h"
 #include "variables.h"
 extern PlayState* gPlayState;
+u8 Audio_OcaGetLocalNote(void);
+s8 Audio_OcaGetLocalInstrument(void);
 }
 
 /**
@@ -64,6 +66,8 @@ void Anchor::SendPacket_PlayerUpdate() {
     payload["invincibilityTimer"] = player->invincibilityTimer;
     payload["unk_862"] = player->unk_862;
     payload["actionVar1"] = player->av1.actionVar1;
+    payload["ocaNote"] = Audio_OcaGetLocalNote();
+    payload["ocaInstrument"] = Audio_OcaGetLocalInstrument();
     payload["quiet"] = true;
 
     for (auto& [clientId, client] : clients) {
@@ -109,6 +113,8 @@ void Anchor::HandlePacket_PlayerUpdate(nlohmann::json payload) {
         client.invincibilityTimer = payload["invincibilityTimer"].get<s8>();
         client.unk_862 = payload["unk_862"].get<s16>();
         client.actionVar1 = payload["actionVar1"].get<s8>();
+        client.ocaNote = payload.value("ocaNote", 0xFF);
+        client.ocaInstrument = payload.value("ocaInstrument", 0);
     }
 
     if (shouldRefreshActors) {
