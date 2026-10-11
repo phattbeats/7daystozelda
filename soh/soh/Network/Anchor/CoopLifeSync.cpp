@@ -223,7 +223,7 @@ void UpdateLocalLife(PlayState* play) {
 }
 
 // Spectate: chase the living peer's puppet. Same-scene -> free-cam follow; different
-// scene -> a single position warp to follow them, corpse re-killed after transition.
+// scene -> a single entrance warp to follow them, corpse re-killed after transition.
 void UpdateSpectate(PlayState* play) {
     AnchorClient* peer = FindLivingPeer();
     if (peer == nullptr) {
@@ -234,13 +234,14 @@ void UpdateSpectate(PlayState* play) {
     }
 
     if (peer->sceneNum != play->sceneNum) {
-        // Living peer is in another scene: follow with one position warp. respawnFlag=1
-        // suppresses entrance cutscenes (desired for a corpse follow). The live
-        // cross-scene position isn't streamed (PLAYER_UPDATE is same-scene only), so we
-        // land via the peer's entrance with their last-known pose; once same-scene the
-        // camera re-acquires the puppet.
+        // Living peer is in another scene: follow with one entrance warp, landing on the
+        // peer's entrance spawn in that entrance's own room; once same-scene the camera
+        // re-acquires the puppet. Not a position warp: PLAYER_UPDATE is same-scene only,
+        // so peer->posRot is their pose in the scene they LEFT, and room 0 is not the
+        // arena in any two-room boss scene. That put a downed player in unloaded space
+        // beside a wall where nobody could reach the corpse (PHA-4196, Barinade).
         if (!sFollowWarpPending) {
-            RequestPositionWarp((s16)peer->entranceIndex, 0, peer->posRot);
+            RequestEntranceWarp((s16)peer->entranceIndex, -1);
             sFollowWarpPending = true;
             SPDLOG_INFO("[LifeSync] spectate follow client={} scene={} (warp)", peer->clientId, peer->sceneNum);
         }
