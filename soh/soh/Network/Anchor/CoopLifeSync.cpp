@@ -55,7 +55,9 @@ bool sBlockedFunnel = false;
 // divergence. ExecutePositionWarp's void-damage suppression uses a single static
 // hook id, so two concurrent position warps would clobber it — never queue two.
 bool sFollowWarpPending = false;
-s16 sFollowWarpEntrance = 0; // the entrance the pending follow targets, for cancelling it
+// Entrance the queued follow warp targets, or -1. Kept apart from sFollowWarpPending, which
+// the same-scene branch clears as soon as the partner walks back to us.
+s16 sFollowWarpEntrance = -1;
 
 // Frames left to drive Environment_FadeOutGameOverLights after entering DOWNED,
 // undoing any residual game-over dim before the VB fade gate fully took hold.
@@ -179,8 +181,9 @@ void SetLife(LocalLife next, const char* label) {
     // The follow warp can't fire while we lie dead (Player_InCsMode gates CoopWarp), so it
     // drains the moment we're back up: a partner who just revived us would watch us warp
     // away to the scene they left (PHA-4196). Leaving DOWNED drops it.
-    if (sLife == LocalLife::Downed && sFollowWarpPending) {
+    if (sLife == LocalLife::Downed && sFollowWarpEntrance >= 0) {
         CancelEntranceWarp(sFollowWarpEntrance);
+        sFollowWarpEntrance = -1;
         sFollowWarpPending = false;
     }
     sLife = next;
@@ -612,5 +615,6 @@ void RegisterCoopLifeSyncHooks(bool isConnected) {
             sBlockedFunnel = true;
         }
         sFollowWarpPending = false;
+        sFollowWarpEntrance = -1; // the follow (if any) has landed
     });
 }
