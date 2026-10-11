@@ -1,4 +1,5 @@
 #include "Anchor.h"
+#include <unordered_map>
 #include "soh/Network/Anchor/EnemySync.h"
 #include "soh/Enhancements/nametag.h"
 #include "soh/frame_interpolation.h"
@@ -102,6 +103,73 @@ void Math_Vec3s_Copy(Vec3s* dest, Vec3s* src) {
     dest->z = src->z;
 }
 
+// Ladder climbs advance in coarse steps per packet, so the puppet looked jerky to spectators. While the owner is on
+// a ladder, ease the displayed position and pose toward the latest packet instead of snapping to it.
+struct ClimbSmoothing {
+    bool active = false;
+    Vec3f pos;
+    Vec3s joints[24];
+    Vec3s rot;
+};
+static std::unordered_map<uint32_t, ClimbSmoothing> sClimbSmoothing;
+
+static void DummyPlayer_SmoothClimb(AnchorClient& client, ClimbSmoothing& sm) {
+    bool climbing = (client.stateFlags1 & PLAYER_STATE1_CLIMBING_LADDER) != 0;
+    Vec3f target = client.posRot.pos;
+    if (!climbing || (sm.active && Math_Vec3f_DistXYZ(&sm.pos, &target) > 150.0f)) {
+        sm.active = false;
+        return;
+    }
+    if (!sm.active) {
+        sm.active = true;
+        sm.pos = target;
+        for (int i = 0; i < 24; i++) {
+            sm.joints[i] = client.jointTable[i];
+        }
+        sm.rot = client.posRot.rot;
+    } else {
+        const f32 k = 0.35f;
+        sm.pos.x += (target.x - sm.pos.x) * k;
+        sm.pos.y += (target.y - sm.pos.y) * k;
+        sm.pos.z += (target.z - sm.pos.z) * k;
+        for (int i = 0; i < 24; i++) {
+            sm.joints[i].x += (s16)(client.jointTable[i].x - sm.joints[i].x) * k;
+            sm.joints[i].y += (s16)(client.jointTable[i].y - sm.joints[i].y) * k;
+            sm.joints[i].z += (s16)(client.jointTable[i].z - sm.joints[i].z) * k;
+        }
+        sm.rot.y += (s16)(client.posRot.rot.y - sm.rot.y) * k;
+        sm.rot.x = client.posRot.rot.x;
+        sm.rot.z = client.posRot.rot.z;
+    }
+}
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+// PHA-4184 test probe: raw packet position vs what the puppet actor shows, per remote client.
+extern "C" EMSCRIPTEN_KEEPALIVE const char* anchor_test_climb() {
+    static std::string out;
+    nlohmann::json j = nlohmann::json::array();
+    if (Anchor::Instance != nullptr) {
+        for (auto& [id, c] : Anchor::Instance->clients) {
+            if (c.self) {
+                continue;
+            }
+            auto it = sClimbSmoothing.find(c.clientId);
+            nlohmann::json e = { { "id", id },
+                                 { "climbing", (c.stateFlags1 & PLAYER_STATE1_CLIMBING_LADDER) != 0 },
+                                 { "smooth", it != sClimbSmoothing.end() && it->second.active },
+                                 { "raw", { c.posRot.pos.x, c.posRot.pos.y, c.posRot.pos.z } } };
+            if (c.player != nullptr) {
+                e["shown"] = { c.player->actor.world.pos.x, c.player->actor.world.pos.y, c.player->actor.world.pos.z };
+            }
+            j.push_back(e);
+        }
+    }
+    out = j.dump();
+    return out.c_str();
+}
+#endif
+
 // Update the actor with new data from the client
 void DummyPlayer_Update(Actor* actor, PlayState* play) {
     Player* player = (Player*)actor;
@@ -126,6 +194,15 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     Math_Vec3s_Copy(&actor->shape.rot, &client.posRot.rot);
     Math_Vec3f_Copy(&actor->world.pos, &client.posRot.pos);
     player->skelAnime.jointTable = client.jointTable;
+    {
+        ClimbSmoothing& sm = sClimbSmoothing[client.clientId];
+        DummyPlayer_SmoothClimb(client, sm);
+        if (sm.active) {
+            Math_Vec3f_Copy(&actor->world.pos, &sm.pos);
+            Math_Vec3s_Copy(&actor->shape.rot, &sm.rot);
+            player->skelAnime.jointTable = sm.joints;
+        }
+    }
     player->currentBoots = client.currentBoots;
     player->currentShield = client.currentShield;
     player->currentTunic = client.currentTunic;
