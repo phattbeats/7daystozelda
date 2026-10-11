@@ -30,7 +30,7 @@
 #define vaCamRotMod headRot.x
 #define vaBodySpinRate headRot.y
 
-// #4048: soh/Network/Anchor/BossAdapters/BarinadeAdapter.cpp (introOver 0 = a new body, 1 = the local intro handed over)
+// #4048: soh/Network/Anchor/BossAdapters/BarinadeAdapter.cpp (introOver 0 = a new body, 1 = the local intro handed over, 2 = body Update tick)
 void Anchor_BarinadeIntro(Actor* body, int introOver);
 
 #define PHASE_2 3
@@ -2841,6 +2841,12 @@ void BossVa_Update(Actor* thisx, PlayState* play2) {
     s32 i;
 
     this->actionFunc(this, play);
+
+#if defined(ENABLE_REMOTE_CONTROL) || defined(__EMSCRIPTEN__)
+    if (this->actor.params == BOSSVA_BODY) {
+        Anchor_BarinadeIntro(&this->actor, 2);
+    }
+#endif
 
     switch (this->actor.params) {
         case BOSSVA_BODY:

@@ -80,6 +80,8 @@ static constexpr int ABSENT_BARI_GRACE = 25;
 // The host won while our own intro cutscene was still playing (set by the phase
 // edge or a remote defeat, consumed once the local intro hands over).
 static bool sPendingDefeat = false;
+static int sStartDeathIn = -1;
+static constexpr int VA_DEFERRED_DEATH_DELAY = 90;
 
 static BossVa* FindPart(int16_t params) {
     if (gPlayState == NULL) {
@@ -351,17 +353,27 @@ static void Va_OnLocalResume(Actor* actor) {
 // host's stream stops once its boss dies, so ShouldMirror is not called again
 // to notice that our intro ended: the intro tells us itself.
 extern "C" void Anchor_BarinadeIntro(Actor* body, int introOver) {
-    if (!introOver) {
+    if (introOver == 0) {
         sPendingDefeat = false;
+        sStartDeathIn = -1;
         return;
     }
-    if (!sPendingDefeat || gPlayState == NULL) {
+    if (introOver == 1) {
+        if (sPendingDefeat) {
+            sPendingDefeat = false;
+            // Let the zappers and supports settle into their battle actions
+            // first: the death cutscene's zapper steps run inside them.
+            sStartDeathIn = VA_DEFERRED_DEATH_DELAY;
+            ESYNC_LOG("[BarinadeSync] local intro over: joining the deferred defeat in {} frames", sStartDeathIn);
+        }
         return;
     }
-    sPendingDefeat = false;
-    Va_CutAllSupports();
-    BossVa_SyncStartDeath((BossVa*)body, gPlayState);
-    ESYNC_LOG("[BarinadeSync] local intro over: joining the deferred defeat (intro hook)");
+    if (sStartDeathIn > 0 && --sStartDeathIn == 0 && gPlayState != NULL) {
+        sStartDeathIn = -1;
+        Va_CutAllSupports();
+        BossVa_SyncStartDeath((BossVa*)body, gPlayState);
+        ESYNC_LOG("[BarinadeSync] deferred defeat started");
+    }
 }
 
 static bool Va_HandlesDefeat(Actor* actor) {
