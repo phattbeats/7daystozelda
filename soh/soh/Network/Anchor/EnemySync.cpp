@@ -287,9 +287,11 @@ static bool IsTrackedCategory(Actor* actor) {
 
 // The Big Octo's first fight starts as a PROP (its Init changes category before any hook
 // sees it) and only becomes an ENEMY when the fight begins, so it is tracked by id
-// (#4055). Everything else is tracked by category.
+// (#4055). Leevers (#4172) are ACTORCAT_MISC until they die, so they would also slip past
+// the category test: the spawner is frozen on mirrors and nothing replicated the burrowed
+// pop-out, so the partner never saw them. Everything else is tracked by category.
 static bool IsTrackedActor(Actor* actor) {
-    return IsTrackedCategory(actor) || actor->id == ACTOR_EN_BIGOKUTA;
+    return IsTrackedCategory(actor) || actor->id == ACTOR_EN_BIGOKUTA || actor->id == ACTOR_EN_REEBA;
 }
 
 // Whitelisted enemy projectiles, replicated via fire-and-forget spawn (never
