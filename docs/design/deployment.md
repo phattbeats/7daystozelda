@@ -1,84 +1,88 @@
 # 7 Days to Zelda: deployment runbook (#3856)
 
-Live at **https://zelda.phatt.vip** (Ship of Harkinian True Co-op, browser build). Deployed 2026-10-01 on PHATT-RAID.
+Live at **https://zelda.phatt.vip**. This is the browser build of Ship of Harkinian True Co-op plus the 7 Days mode. It runs on PHATT-RAID. First deployed 2026-10-01. This runbook was reviewed against the live server on 2026-10-11.
 
-## Steps taken
+The top half describes how things are now and how to redeploy. The bottom half is the history of #3856's own changes. Every later deploy (40+ of them, one per issue) is recorded in the GitHub commit log as "live index for the PHA-xxxx deploy".
 
-1. **Source.** The `soh-coop-web` bundle, extracted into the deploy directory on the host.
-2. **Image.** `docker build -t soh-web:latest .` in that directory (node:22-alpine, has a healthcheck).
-3. **Containers.** The host has no `docker compose`, so these are the plain-docker equivalent of the bundled compose file:
+## 1. Current state (checked 2026-10-11)
+
+| Item | Value |
+| --- | --- |
+| Live image | `soh-web:pha4048` (repo main fb1b0eb + 2a9972d), started 2026-10-11 00:51 UTC, healthy |
+| Rollback | `soh-web:pre-pha4048` (= pha4125b). The old container is kept stopped as `soh-web-pre-pha4048` |
+| Lobby page | `soh.js?v=af74dd85` |
+| Game files (md5, first 8) | soh.wasm 6dc097b2, soh.data eaa1dc66, soh.o2r 679138c5 |
+| server.js | same as repo main `web/server.js` |
+| Relay | `soh-anchor` (ghcr.io/garrettjoecox/anchor:latest), only on the `soh-coop` network, not published |
+| Networks | soh-web is on `soh-coop` (to reach the relay) and `phattvip` (so SWAG can reach it) |
+| Logs | json-file, max-size 50m, max-file 1 (the old runbook said 10m x 3; copy whatever `docker inspect` shows) |
+| Cert | SWAG Let's Encrypt cert for phatt.vip includes `zelda.phatt.vip`, expires 2026-12-31, auto-renews |
+| Access | `ACCESS_KEY` is set. `/` answers 200 without the key (share-preview tags only). The game files, the mp3 and `/anchor` answer 403 without the key or its cookie |
+| Health | `https://zelda.phatt.vip/healthz` returns 200 |
+
+## 2. How it fits together
+
+1. **Cloudflare** has a proxied CNAME `zelda` pointing to `phatt.vip` in zone phatt.vip.
+2. **SWAG** has `zelda` in `SUBDOMAINS` in its Unraid template (backed up first). `appdata/swag/nginx/proxy-confs/zelda.subdomain.conf` proxies `zelda.*` to `soh-web:8080` (lazy resolve, `client_max_body_size 0`). The cert lists each subdomain by name. A wildcard does not cover it, whatever the old bundle README says.
+3. **soh-web** is node:22-alpine running `web/server.js`. It serves `/app/public`, checks the invite key, and proxies the `/anchor` WebSocket to `soh-anchor:43383`.
+4. **soh-anchor** is the co-op relay.
+5. **Saves stay in each player's browser.** The game writes `/Save` and `/persist` (settings) to IndexedDB through Emscripten IDBFS, every 20 s and when the tab hides (`soh/soh/web/web_main.cpp`). The server keeps no saves. Clearing site data, or switching browser or device, starts over. Cloud saves are planned; see the `cloud-saves-plan` document.
+6. **The ROM never leaves the player's machine.** Players drop their own .z64 into the page. It is unpacked in the browser (#3860 fixed the extractor). The private copy of the ROM and `oot.o2r` are in Nextcloud `PHATT-TECH/Projects/7daystozelda/rom/` and are never public.
+
+### Where things live
+
+- **Source of truth:** GitHub `phattbeats/7daystozelda`, branch main (public). `web/server.js`, `web/Dockerfile`, `web/public/index.html` (the live lobby), `web/swag/`, `docs/`. Release `buildtree-2026-10-02` holds the emscripten build tree.
+- **Nextcloud** `PHATT-TECH/Projects/7daystozelda/`: `homepage-art/` (lobby art, `title-theme.mp3`, title/MM/icon pack inputs), `rom/` (private), `devlog/`.
+- **On the host:** build directories `<appdata>/7daystozelda/deploy-*`. The old `soh-coop-web/` folder there is stale; don't build from it.
+
+## 3. Redeploying (the recipe every deploy since #3904 has used)
+
+Run docker over `ssh raid`. phatt-claw can list and inspect the containers but can't build images or read their logs.
+
+1. **Push first.** Commit the change to main as phattbeats (no co-author lines), `git fetch`, rebase, and push. Make sure the push really landed: a rejected non-fast-forward push is easy to miss. Several deploys can land in one evening, so check `docker inspect soh-web --format '{{.Config.Image}}'` right before you swap. Anything deployed but not on main gets silently reverted by the next deploy.
+2. **Build the game** from the build tree. Use `tools/limited-build.sh` (`-j2`, nice). A full `ninja -j10` has crashed the server.
+3. **Ship only what changed.** If `soh.data` matches the live md5, ship only soh.js and soh.wasm (and soh.o2r if it changed). Make a fresh `gzip -9 -k -f` of every file you change: server.js prefers a `.gz` next to the file, so a stale .gz serves the old build.
+4. **Start the lobby page from the live one** (`docker exec soh-web cat /app/public/index.html`, the same as repo `web/public/index.html`). Bump `soh.js?v=<first 8 of the soh.js md5>`. Cloudflare has cached .js and .mp3 for 4 h before, which paired an old soh.js with a new soh.wasm and gave a black screen.
+5. **Build the image** in a new `deploy-<tag>/` dir: `FROM soh-web:<current live tag>` plus `COPY public/ /app/public/` (and `server.js` if it changed). `docker tag` the current live image as `pre-<tag>`.
+6. **Recreate the container:**
    ```
-   docker network create soh-coop
-   docker run -d --name soh-anchor --restart unless-stopped --network soh-coop ghcr.io/garrettjoecox/anchor:latest
-   docker run -d --name soh-web --restart unless-stopped --network soh-coop \
-     -e ANCHOR_HOST=soh-anchor -e ANCHOR_PORT=43383 -e ACCESS_KEY= soh-web:latest
-   docker network connect phattvip soh-web      # SWAG's network
+   docker inspect soh-web --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^(ACCESS_KEY|ANCHOR_HOST|ANCHOR_PORT|NODE_ENV|PORT)=' > env.list   # umask 077; delete after
+   docker stop soh-web && docker rename soh-web soh-web-pre-<tag>
+   docker run -d --name soh-web --restart unless-stopped --network soh-coop --env-file env.list \
+     --log-opt max-size=50m --log-opt max-file=1 soh-web:<tag>
+   docker network connect phattvip soh-web
    ```
-   Both containers have log rotation set (10m x 3). Anchor is not exposed to the internet; port 43383 is not published.
-4. **SWAG proxy conf.** Added the bundled `zelda.subdomain.conf` to the reverse proxy's proxy-confs directory. It proxies `zelda.*` to `soh-web:8080` using lazy resolve.
-5. **SWAG docker config.** Added `zelda` to the proxy container's `SUBDOMAINS` list (backed up the template first) and recreated the container. SWAG issued a new Let's Encrypt cert through Cloudflare DNS validation. The cert covers `zelda.phatt.vip` and expires 2026-12-30. Note: the bundled README says a wildcard cert covers the subdomain. That is wrong; the cert lists each subdomain by name.
-6. **Cloudflare.** Created a proxied CNAME `zelda` → `phatt.vip` in zone phatt.vip, matching the existing records.
+   Never print the ACCESS_KEY. If it is left out, the site is open to anyone.
+7. **Check it:** `/healthz` 200; the keyed page loads the new `soh.js?v=`; the live soh.js and soh.wasm md5 match the build; `/soh.wasm` without the key gives 403.
+8. **Record it:** commit the live index to main ("live index for the PHA-xxxx deploy (soh.js?v=…, image soh-web:…)").
 
-## Verification
-- `https://zelda.phatt.vip/` returns 200 and `/healthz` returns 200. `soh-web` is healthy.
-- A WebSocket upgrade on `/anchor` returns `101 Switching Protocols`, so the co-op relay is reachable through Cloudflare and SWAG.
-- Other sites came back after the SWAG restart: nextcloud returns 302 and plex returns 401, as before.
+**Rollback:** `docker stop soh-web && docker rename soh-web soh-web-bad`, then `docker rename soh-web-pre-<tag> soh-web && docker start soh-web`. It keeps its networks and env.
 
-## Open items
-- **No invite key is set.** Anyone with the URL can load the game. To lock it, recreate `soh-web` with `-e ACCESS_KEY=$(openssl rand -hex 12)` and share `https://zelda.phatt.vip/?key=<key>`.
-- Not yet tested with a real ROM, per the build's README.
-- These containers are not Unraid templates, so they won't appear with editable settings in the Docker tab. They do restart on their own (`unless-stopped`).
-- Redeploy a new build: extract it, run `docker build -t soh-web:latest .`, then `docker rm -f soh-web` and repeat the `soh-web` run and network connect commands from step 3.
+### Things every deploy must keep
 
+- **The lobby page:** the `og:`/`twitter:` share tags and `favicon*?v=` links; the inline `Object.defineProperty(document,"title",…)` tab-title lock right after `<title>`; the 7 Days-only form (no Horde/7 Days checkboxes); the `#f-raids` Days-between-raids select; the menu music card with `title-theme.mp3?v=…`; the fairy and tunic pickers.
+- **soh.o2r layers:** title pack, then the MM model pack (`art/mm-pack/build_mm_pack.py`), then the Workbench icons (`art/icons/build_icon_pack.py`). Start from the live o2r and drop `objects/7dtz_mm/` before re-appending.
+- **Rules from Brandon:** no ImGui toasts or popups for players (notices are OoT text boxes); no on-screen Craft button; pre-game choices go on the lobby, not in game; never change the existing mobile pad.
 
-## Change 2026-10-01: custom fairy color picker
-Requested so b-mech can make his fairy black.
-- Added a **Custom** option next to the four presets in the lobby. It opens a gradient picker with a saturation/brightness square, a hue bar, a hex box, and **Black** / **White** shortcuts. Custom starts at black.
-- The picked color goes out as the same `color=RRGGBB` value the presets use. It is remembered per browser, carried in invite links, and a link such as `#color=000000` reopens the picker with that color.
-- Edited `public/index.html` only (and regenerated `index.html.gz`), then rebuilt `soh-web` and recreated the container with the same run commands as step 3. Backups: `public/index.html.pre-fairypicker` and `index.html.gz.pre-fairypicker`. The lobby source patch under `src/OOT-True-Co-op/0005-*` was **not** updated, so a rebuild from source would drop the picker.
-- Verified in headless Chromium against the live site: presets still work, dragging and hex entry set the color, Black gives 000000, saved/linked custom colors restore with the picker open, and there are no page errors.
-- **Not verified in-game.** If the fairy glow is drawn additively, pure black (000000) may show as no glow. If that happens, use a near-black like 1A1A1A.
+## 4. Review findings (2026-10-11)
 
+- **All #3856 requests are live:** the fairy colour (now #3901's core, aura and tunic pickers, which replaced the first gradient picker), menu music MP3 at 15%, no Craft button, raid days on the lobby, OoT text-box notices, and the 1.2x workbench.
+- **The repo's lobby page lagged one deploy behind.** `web/public/index.html` on main still loaded `soh.js?v=bcc2899c` (pha4125b). The live page loads `af74dd85` (pha4048). Fixed in the same commit as this runbook. Nothing else differs.
+- **Docker disk is 96% full** (447G used, 19G free). The 7DtZ share of that is small: about 574 MB of deploy dirs, 9 `soh-web` tags, and 5 stopped `soh-web-*` containers. Docker reports 17.6 GB of reclaimable images across the whole host. Each deploy adds a build dir and a stopped container. Pruning down to the last two rollbacks needs Brandon's OK.
+- **Not checked in-game on the live site:** pure-black fairy glow, a new save picking up the lobby's raid days, and the text-box notices. They were tested on the local rig.
+- **Still drawn the modern way:** the co-op "Anchor Room" window and the old Tab-key Workbench window. They are menus, not popups, and were left as they are.
 
-## Incident 2026-10-01: game crashes when a ROM is uploaded
-- **Symptom:** the page shows "Unpacking finished without producing game data", then "The game crashed".
-- **Cause:** the browser build's ROM extractor aborts (`Aborted()` in wasm) right after "ROM validated". I reproduced it in headless Chromium with Brandon's ROM, `Legend of Zelda, The - Ocarina of Time (USA) (Rev 2).z64` (NTSC 1.2, sha1 41b3bd…57c2). The ROM is fine and is a supported version, and the extractor tables for it are bundled. The bug is in the wasm build, which was never tested with a real ROM. Follow-up issue: #3860.
-- **Fixed (#3860, live 2026-10-02):** the wasm extractor now unpacks the .z64 in the browser. Players drop the ROM itself in the ROM box; the pre-extracted `oot.o2r` workaround is retired. A spare `oot.o2r` remains in the private Nextcloud folder `PHATT-TECH/Projects/7daystozelda/` but is not needed.
+## 5. #3856 change history
 
-
-## Change 2026-10-03: menu music on the lobby
-Requested: play the OoT title theme (youtube.com/watch?v=exQIatKQyQk) on the main screen at 15% by default, with a slider.
-- A small card in the lobby's bottom-right corner shows a tiny YouTube player, a play/pause button and a volume slider (0-100%, default **15%**). The slider setting is saved per browser (`localStorage` key `soh.menuMusicVolume`). The track loops.
-- Browsers block sound until the visitor interacts with the page, so the music starts on the **first tap, click or key press** on the lobby. The card says "tap anywhere to start" until then.
-- When the game starts (the lobby overlay hides), the music fades out over about 1 second and the player is removed, so it never plays over the game's own music. If YouTube fails to load, the card removes itself.
-- The overlay got 96px of bottom padding so the card doesn't cover the footer on phones.
-- Deploy: tagged the old image `soh-web:pre-pha3856-music` (rollback), built `soh-web:latest` FROM it with only `public/index.html` and `.gz` changed (build dir `the `deploy-pha3856-music` build directory`), then recreated `soh-web` with the step 3 run command, log options, and `docker network connect phattvip`.
-- Saved to Nextcloud `7daystozelda/homepage-art/`: `live-index-pha3856-music.html` (the full live page) and `lobby-music.snippet.html` (just the widget: it goes right before `<script async src="soh.js...`). **The older `homepage-art/index.html` does not have this change.** On the next bundle unpack, re-insert the snippet or the music disappears.
-- Verified in headless Chromium (desktop and phone sizes) with the page swapped in: the player loads at 15% and starts playing after a click; moving the slider to 40% saves and survives a reload; hiding the overlay removes the player; no page errors. After the deploy, curl confirmed the live page serves the widget and /healthz returns 200. I couldn't rerun the browser test against the live URL because browserless was over capacity.
-
-## Change 2026-10-03 (later): menu music is now a hosted MP3, not YouTube
-Brandon asked for the MP3 instead of a YouTube player. This replaces the YouTube widget described above.
-- `public/title-theme.mp3`: 90 s, about 128 kbps, 1.4 MB, downloaded from the same video with yt-dlp. The page plays it through the Web Audio API on a seamless loop. A gain node handles volume, because iPhones ignore volume on a normal audio player and server.js doesn't support byte ranges or know the mp3 type.
-- The card has a play/pause button, a volume slider (default **15%**, remembered per browser under `soh.menuMusicVolume`), and the track name. No video. Music starts on the first tap, click or key press, and fades out over 1 s when the game starts.
-- The page loads `title-theme.mp3?v=ab03a2ad`. Cloudflare caches .mp3 for 4 h, including a 404 I triggered during deploy, so the version tag is required. Change it if the file changes.
-- Deploy: rollback image `soh-web:pre-pha3856-mp3`; build dir `the `deploy-pha3856-mp3` build directory` (FROM rollback + COPY public/); container recreated with the step 3 command, log options, and the phattvip network.
-- Nextcloud `homepage-art/` now holds `title-theme.mp3`, the updated `lobby-music.snippet.html`, and `live-index-pha3856-music.html` (the full live page). On a bundle unpack, copy the mp3 into public/ and insert the snippet before `<script async src="soh.js`.
-- Verified on the live site in headless Chromium: before a click the card says "tap anywhere to start"; a click starts audio at 15%; pause and resume work; a slider setting of 40 survives a reload; hiding the lobby closes the audio and removes the card; a phone-size tap also starts it; no page errors. /healthz 200, mp3 200, other sites unaffected.
-
-
-## Change 2026-10-03: invite key is on (#3914)
-Brandon OK'd printing the invite key in the 7DtZ devlog, which is for subscribers only.
-- Recreated `soh-web` from the same `soh-web:latest` image with the step 3 command, log options and the phattvip network. The only change is `-e ACCESS_KEY=<ACCESS_KEY>`.
-- Invite link: `https://zelda.phatt.vip/?key=<ACCESS_KEY>`. Room links take the key in front of the hash, for example `/?key=<ACCESS_KEY>#room=boys`.
-- Anyone who already opened the bare URL needs the keyed link once. After that, a cookie lasting a year remembers the key.
-- Verified on the live site: the bare `/` returns 403 with the "needs the invite link" page; `/?key=` returns 200 and sets the cookie; `/anchor` returns 403 for a WebSocket upgrade without the cookie and 101 with it; `/healthz` returns 200; the container is healthy.
-- **On every redeploy, keep `-e ACCESS_KEY=<ACCESS_KEY>`** in the run command. If you leave it out, the site is open again.
-
-
-## Change 2026-10-03: #3935 game build (spec gaps)
-Brandon asked for a redeploy after #3935.
-- Built from `main` at `54b3271` (includes #3901 colors and #3939 lobby pickers). Only `soh.js` and `soh.wasm` changed, plus fresh `.gz` copies. `soh.data` is byte-identical to the live one, so `soh.data` and `soh.o2r` (with the title pack) stay as they were.
-- `public/index.html` is the live page with `soh.js?v=66c28587` (was `f23bbb19`), plus its `.gz`.
-- Deploy: tagged `soh-web:pha3939` as the rollback `soh-web:pre-pha3935`, then built `soh-web:pha3935` (also tagged `latest`) FROM the rollback with `COPY public/`. Build dir: `the `deploy-pha3935` build directory`. Recreated `soh-web` with the step 3 command, the log options, `-e ACCESS_KEY` copied from the old container, and `docker network connect phattvip`.
-- Verified on the live site: `/healthz` 200, bare `/` 403, keyed URL 200; Cloudflare serves the new `soh.js` (md5 matches) and `soh.wasm` 200; container healthy. In the game on zelda.phatt.vip (GPU Chrome, solo, an imported save): new piece types load from the save, Link walks through the player gate, a barricade upgrades to stone then iron, an iron wall is repaired and a new one crafted and placed, Navi's C-Up tip and evening warning show, and a raid night spawned 9 raiders all 335+ from a torch while the bomb traps went off 3 times.
-- Rollback: `docker rm -f soh-web` and rerun the step 3 command with `soh-web:pre-pha3935`.
+- **2026-10-01, first deploy.** Steps 1 to 6 above. Containers were plain `docker run`, because the host has no `docker compose`. They aren't Unraid templates, so they don't appear with editable settings in the Docker tab.
+- **2026-10-01, fairy colour picker.** Added a Custom gradient picker with a Black shortcut so b-mech could make his fairy black. #3901/3939 later replaced it with the core, aura and tunic pickers.
+- **2026-10-01, ROM crash.** The in-browser extractor aborted right after "ROM validated". Brandon's USA 1.2 ROM was fine. The `oot.o2r` workaround was used until #3860 fixed the extractor (live 2026-10-02).
+- **2026-10-02, palette bug.** Kokiri drew with garbled palette textures. Fixed in #3860.
+- **2026-10-02, volume and graphics.** No change was needed: the in-game Esc menu already has separate music and SFX sliders and an Internal Resolution setting.
+- **2026-10-03, "4 player shouldn't be hardcoded".** No 4-player limit was found. Rooms, raids and horde targeting already scale with the players connected.
+- **2026-10-03, menu music.** The title theme plays on the lobby at 15%, with a slider (`localStorage` `soh.menuMusicVolume`). It was first a YouTube embed; Brandon asked for an MP3, so it is now `public/title-theme.mp3` (90 s loop) played through Web Audio, because iPhones ignore `<audio>` volume. It starts on the first tap and fades when the game starts. The mp3 is kept out of the public repo; its copy is in Nextcloud `homepage-art/`.
+- **2026-10-03, invite key (#3914).** `ACCESS_KEY` is set. Players use the `?key=` link once, and then a cookie lasting a year remembers it.
+- **2026-10-03, no Craft button.** The floating `##SevenDaysCraftButton` window was removed. Crafting opens from the pause menu's Workbench page, the Tab key, or a placed workbench. Repo 1781e0f.
+- **2026-10-03, raid days on the lobby.** The in-game "How often do raids come?" popup grabbed controllers, so it was removed. The lobby `#f-raids` select (default 3) sets `window._raidInterval`. The host's pick (or a solo player's) applies once per session. Repo 09f29fc.
+- **2026-10-06, notices and workbench.** `Notification::Emit` now draws OoT message boxes (`SevenDays::PushNotice` in Nights.cpp) instead of ImGui toasts. Repeated gains of the same item add up in one box. The boxes hide during text, cutscenes, the pause screen and Game Over. The workbench is now 1.2x (top at 35 units, about child Link's chest) instead of 1.8x. Repo 55f0e9f + 52eb0a1. #4028 later moved notices into their own overlay display list.
+- **2026-10-11, runbook review.** This rewrite. The repo's lobby page is synced to the live one.
