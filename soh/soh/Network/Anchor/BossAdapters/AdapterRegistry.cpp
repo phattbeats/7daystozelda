@@ -14,6 +14,7 @@ void RegisterMorphaAdapter();
 void RegisterGanondrofAdapter();
 void RegisterEnTorch2Adapter();
 void RegisterEnIkAdapter();
+void RegisterEnAmAdapter();
 void RegisterEnZfAdapter();
 void RegisterEnDhAdapter();
 void RegisterEnBigokutaAdapter();
@@ -55,6 +56,7 @@ void RegisterBuiltInAdapters() {
     RegisterGanondrofAdapter();
     RegisterEnTorch2Adapter();
     RegisterEnIkAdapter();
+    RegisterEnAmAdapter();
     RegisterEnZfAdapter();
     RegisterEnDhAdapter();
     RegisterEnBigokutaAdapter();
