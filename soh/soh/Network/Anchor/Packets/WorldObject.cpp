@@ -467,13 +467,32 @@ const char* anchor_test_world(int cmd, int a, int b, int c) {
         Flags_SetSwitch(gPlayState, a);
     } else if (cmd == 3) {
         Flags_UnsetSwitch(gPlayState, a);
+    } else if (cmd == 4) {
+        // #4167: hit the nearest prop of actor id `a` (within 150), as a weapon would.
+        Actor* best = nullptr;
+        f32 bestDist = 150.0f;
+        for (s32 cat = 0; cat < ACTORCAT_MAX; cat++) {
+            for (Actor* actor = gPlayState->actorCtx.actorLists[cat].head; actor != NULL; actor = actor->next) {
+                f32 d = Math_Vec3f_DistXZ(&actor->world.pos, &player->actor.world.pos);
+                if (actor->id == a && actor->update != NULL && d < bestDist && PropCollider(actor) != nullptr) {
+                    best = actor;
+                    bestDist = d;
+                }
+            }
+        }
+        if (best != nullptr) {
+            static ColliderInfo sTestHit;
+            sTestHit.toucher.dmgFlags = 0xFFFFFFFF;
+            PropCollider(best)->info.acHitInfo = &sTestHit;
+            PropCollider(best)->base.acFlags |= AC_HIT;
+        }
     }
 
     nlohmann::json actors = nlohmann::json::array();
     for (s32 cat = 0; cat < ACTORCAT_MAX; cat++) {
         for (Actor* actor = gPlayState->actorCtx.actorLists[cat].head; actor != NULL; actor = actor->next) {
             if (actor->id == ACTOR_OBJ_SWITCH || actor->id == ACTOR_EN_SI || actor->id == ACTOR_EN_ISHI ||
-                actor->id == ACTOR_EN_ITEM00 || actor->id == ACTOR_OBJ_SYOKUDAI) {
+                actor->id == ACTOR_EN_ITEM00 || actor->id == ACTOR_OBJ_SYOKUDAI || IsBreakableProp(actor->id)) {
                 actors.push_back({ { "id", actor->id },
                                    { "params", (u16)actor->params },
                                    { "scaleY", actor->scale.y },
