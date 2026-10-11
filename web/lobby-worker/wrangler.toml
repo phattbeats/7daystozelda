@@ -1,0 +1,20 @@
+# 7 Days to Zelda lobby directory (PHA-4155): lobby codes, public/private, progress matchmaking.
+# Same shape as CS Party's lobby Worker (one SQLite Durable Object holds the directory).
+# soh-web calls it server to server with LOBBY_SECRET; the game itself still runs through soh-web's /anchor bridge.
+# Local:  npm run dev   (secret from .dev.vars)
+# Live:   npx wrangler secret put LOBBY_SECRET   then   npm run deploy
+name = "zelda-lobby"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[[durable_objects.bindings]]
+name = "DIRECTORY"
+class_name = "Directory"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Directory"]
+
+[vars]
+ROOM_SEATS = "4"        # players per lobby
+MATCH_RANGE = "6"       # quick match joins a room within this many progress points

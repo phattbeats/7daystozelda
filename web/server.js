@@ -17,6 +17,10 @@
 //   ROOM_SEATS   players per public room for matchmaking (default 4)
 //   MATCH_RANGE  how far apart (in gamestage points) quick match may pair you
 //                with a room before it opens a new one instead (default 6)
+//   LOBBY_URL    optional. The zelda-lobby Cloudflare Worker (web/lobby-worker).
+//   LOBBY_SECRET When both are set, lobby codes, the public list and quick match
+//                live in the Worker and this server reports who is in each lobby.
+//                Without them the same API runs from this process's memory.
 
 const http = require("http");
 const net = require("net");
@@ -344,12 +348,53 @@ setInterval(() => {
   }
 }, 60 * 1000).unref();
 
+// ---- lobby codes (#4155) ----
+// A lobby is a room named lb-CODE. The code is what players share; the room is
+// public (listed, quick match can send people to it) or private (code only).
+// With LOBBY_URL the zelda-lobby Worker owns the codes and the public list.
+const LOBBY_URL = (process.env.LOBBY_URL || "").replace(/\/$/, "");
+const LOBBY_SECRET = process.env.LOBBY_SECRET || "";
+const lobbyRemote = () => !!(LOBBY_URL && LOBBY_SECRET);
+const LOBBY_CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
+async function lobbyCall(method, p, body) {
+  const r = await fetch(LOBBY_URL + p, {
+    method,
+    headers: { "x-lobby-secret": LOBBY_SECRET, "content-type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(5000),
+  });
+  return { status: r.status, json: await r.json().catch(() => ({ error: "bad reply" })) };
+}
+// Tell the Worker who is in a lobby: on every join/leave/save, and every 30 s
+// while anyone is there (it forgets players it has not heard about for 90 s).
+const reportTimers = new Map();
+function reportLobby(roomId) {
+  if (!lobbyRemote() || !/^lb-/.test(roomId || "") || reportTimers.has(roomId)) return;
+  reportTimers.set(
+    roomId,
+    setTimeout(() => {
+      reportTimers.delete(roomId);
+      const r = rooms.get(roomId);
+      if (!r) return;
+      lobbyCall("POST", "/v1/report", { room: roomId, players: roomPlayers(r), stage: r.stage }).catch((e) => log(`[lobby] report ${roomId} failed: ${e.message}`));
+    }, 1000)
+  );
+}
+setInterval(() => {
+  for (const [id, r] of rooms) if (/^lb-/.test(id) && roomPlayers(r).length) reportLobby(id);
+}, 30 * 1000).unref();
+function localLobbyView(r, me, now) {
+  const v = roomView(r, me, now);
+  return { ...v, code: r.id.slice(3), public: r.isPublic };
+}
+
 // Bridge hooks.
 function bridgeJoined(roomId, bridgeId, name) {
   if (typeof roomId !== "string" || !roomId) return;
   const r = getRoom(roomId.slice(0, 64), true);
   r.bridges.set(bridgeId, String(name || "Player").slice(0, 24));
   r.emptySince = Date.now();
+  reportLobby(roomId);
   // The oldest seat held for this room is the one this player was given.
   const first = r.holds.keys().next();
   if (!first.done) r.holds.delete(first.value);
@@ -359,11 +404,13 @@ function bridgeLeft(roomId, bridgeId) {
   if (!r) return;
   r.bridges.delete(bridgeId);
   if (!r.bridges.size) r.roster = null; // nobody left here to report the relay's roster
+  reportLobby(roomId);
 }
 function bridgeRoster(roomId, state) {
   const r = roomId && rooms.get(roomId);
   if (!r || !Array.isArray(state)) return;
   r.roster = state.filter((c) => c && c.online !== false).map((c) => String(c.name || "Player").slice(0, 24));
+  reportLobby(roomId);
 }
 function bridgeTeamState(roomId, state) {
   const r = roomId && rooms.get(roomId);
@@ -372,6 +419,7 @@ function bridgeTeamState(roomId, state) {
   if (!r.stageAt || st.gs !== r.stage.gs) log(`[lobby] ${r.id}: progress gs ${st.gs} (${st.dungeons} dungeons, ${st.hearts} extra hearts, ${st.raids} raids, day ${st.days + 1})`);
   r.stage = st;
   r.stageAt = Date.now();
+  reportLobby(roomId);
 }
 
 // API. Small JSON in, small JSON out; same invite key as the page.
@@ -407,8 +455,40 @@ function cleanRoomName(v) {
   return typeof v === "string" ? v.trim().slice(0, 32) : "";
 }
 
+// Lobby routes that the Worker answers when it is configured.
+function proxyLobby(req, res, pathOnly, extra, body) {
+  const q = new URL(req.url, "http://x").searchParams;
+  const ip = req.headers["cf-connecting-ip"] || req.socket.remoteAddress || "?";
+  let call;
+  if (pathOnly === "/api/rooms") call = lobbyCall("GET", "/v1/rooms?" + q.toString());
+  else if (pathOnly === "/api/quickplay") call = lobbyCall("POST", "/v1/quick", { stage: body.stage, ip });
+  else if (pathOnly === "/api/lobby/create") call = lobbyCall("POST", "/v1/create", { pid: body.pid, name: body.name, public: !!body.public, stage: body.stage, ip });
+  else if (pathOnly === "/api/lobby/visibility") call = lobbyCall("POST", "/v1/visibility", { code: String(body.code || ""), pid: body.pid, public: !!body.public });
+  else if (pathOnly === "/api/lobby/info") call = lobbyCall("GET", "/v1/room/" + encodeURIComponent(String(q.get("code") || "").toUpperCase()));
+  else return false;
+  call.then(
+    (r) => {
+      const j = r.json;
+      if (j && j.rooms) j.rooms.forEach((x) => (x.looking = true));
+      if (j && j.room && !j.error) j.looking = true;
+      sendJson(res, r.status, j, extra);
+    },
+    (e) => {
+      log(`[lobby] worker call failed: ${e.message}`);
+      sendJson(res, 502, { error: "lobby service unreachable" }, extra);
+    }
+  );
+  return true;
+}
+
 function handleApi(req, res, pathOnly, extra) {
   const now = Date.now();
+  if (lobbyRemote() && req.method === "GET" && proxyLobby(req, res, pathOnly, extra, {})) return;
+  if (pathOnly === "/api/lobby/info" && req.method === "GET") {
+    const code = String(new URL(req.url, "http://x").searchParams.get("code") || "").toUpperCase();
+    const r = LOBBY_CODE_RE.test(code) && rooms.get("lb-" + code);
+    return r ? sendJson(res, 200, localLobbyView(r, null, now), extra) : sendJson(res, 404, { error: "no such lobby" }, extra);
+  }
   if (pathOnly === "/api/rooms" && req.method === "GET") {
     const q = new URL(req.url, "http://x").searchParams;
     const me = q.has("gs") ? cleanStage({ dungeons: q.get("dn"), hearts: q.get("h"), raids: q.get("r"), days: q.get("d"), interval: q.get("i") }) : null;
@@ -422,6 +502,25 @@ function handleApi(req, res, pathOnly, extra) {
   readJson(req, (body) => {
     if (!body || typeof body !== "object") return sendJson(res, 400, { error: "bad json" }, extra);
     const me = cleanStage(body.stage);
+    if (lobbyRemote() && proxyLobby(req, res, pathOnly, extra, body)) return;
+    if (pathOnly === "/api/lobby/create") {
+      if (typeof body.pid !== "string" || body.pid.length < 8 || body.pid.length > 64) return sendJson(res, 400, { error: "bad player id" }, extra);
+      let code = newCode().slice(3);
+      while (rooms.has("lb-" + code)) code = newCode().slice(3);
+      const r = getRoom("lb-" + code, true);
+      r.isPublic = r.looking = !!body.public;
+      r.host = body.pid;
+      r.stage = me;
+      return sendJson(res, 200, localLobbyView(r, me, now), extra);
+    }
+    if (pathOnly === "/api/lobby/visibility") {
+      const r = rooms.get("lb-" + String(body.code || "").toUpperCase());
+      if (!r) return sendJson(res, 404, { error: "no such lobby" }, extra);
+      if (r.host !== body.pid) return sendJson(res, 403, { error: "only the host can change that" }, extra);
+      r.isPublic = r.looking = !!body.public;
+      r.createdAt = now;
+      return sendJson(res, 200, localLobbyView(r, me, now), extra);
+    }
     if (pathOnly === "/api/quickplay") {
       // The nearest public room that is looking and has a free seat, if it is
       // within MATCH_RANGE; ties go to the fuller room. Otherwise open a new one

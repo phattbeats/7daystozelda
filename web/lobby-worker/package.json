@@ -1,0 +1,7 @@
+{
+  "name": "zelda-lobby",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "wrangler dev --port 8788", "deploy": "wrangler deploy", "test": "node test/lobby_test.mjs" },
+  "devDependencies": { "wrangler": "^4.0.0" }
+}
