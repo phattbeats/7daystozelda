@@ -55,3 +55,13 @@ CVar `gRemote.Anchor.HeldItemSync` (default on) disables it.
 
 Status: compiled (`-fsyntax-only` against the PHA-4167 tree); two-client rig test pending in
 the batched build.
+
+## Princess Ruto (PHA-4195)
+
+Ruto (`EnRu1`) is one persistent NPC per client (`room = -1`), so she was never mirrored: the carrier's Ruto rode on their Link while the partner's copy stayed where she sat, or was already gone (her action 27 kills her once her room is left). She now rides the same `HELD_ITEMS` stream with her action and room numbers (`ra`, `rm`):
+
+- Owner: streams her while she is lifted (31/32/34) and while she flies or sinks after a throw (28-30); the stream stops when she comes to rest.
+- Partner: takes over their own Ruto (update frozen, pose from the stream, sitting loop animated, drawn opaque). If they have none, a type-10 stand-in is spawned (no flag or duplicate checks); it is swapped for the partner's own Ruto if hers loads.
+- When the stream stops she is dropped at the owner's last position in state 28 with the owner's room numbers. She lands and offers herself to be carried, or lands on the Sapphire platform and starts that cutscene on the partner's screen too. A Ruto that was in a talk/cutscene state, or an owner who left, puts her back as she was.
+- Both players lifting their own Ruto: each keeps theirs (not mirrored).
+- Test hook: `anchor_test_held(8, dist)` puts a lift-ready Ruto `dist` ahead of Link; the dump lists `rutos` with action/draw/ghost/adopted/rooms.
