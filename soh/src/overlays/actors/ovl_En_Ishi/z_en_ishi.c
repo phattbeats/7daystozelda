@@ -248,10 +248,13 @@ void EnIshi_SpawnDustLarge(EnIshi* this, PlayState* play) {
     func_80033480(play, &pos, 140.0f, 0xA, 0xB4, 0x5A, 1);
 }
 
+// Anchor co-op (#4167): sends the break to the partner, and is false for a break the partner caused.
+extern s32 WorldObject_RockBreak(Actor* actor);
+
 void EnIshi_DropCollectible(EnIshi* this, PlayState* play) {
     s16 dropParams;
 
-    if ((this->actor.params & 1) == ROCK_SMALL) {
+    if ((this->actor.params & 1) == ROCK_SMALL && WorldObject_RockBreak(&this->actor)) {
         dropParams = (this->actor.params >> 8) & 0xF;
 
         if (dropParams >= 0xD) {

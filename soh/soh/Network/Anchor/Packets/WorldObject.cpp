@@ -9,6 +9,7 @@
 #include <cmath>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -20,6 +21,11 @@ extern "C" {
 #include "macros.h"
 #include "src/overlays/actors/ovl_Door_Ana/z_door_ana.h"
 #include "src/overlays/actors/ovl_En_Si/z_en_si.h"
+#include "src/overlays/actors/ovl_Obj_Tsubo/z_obj_tsubo.h"
+#include "src/overlays/actors/ovl_Obj_Kibako/z_obj_kibako.h"
+#include "src/overlays/actors/ovl_Obj_Kibako2/z_obj_kibako2.h"
+#include "src/overlays/actors/ovl_En_Kusa/z_en_kusa.h"
+#include "src/overlays/actors/ovl_En_Ishi/z_en_ishi.h"
 extern PlayState* gPlayState;
 
 void DoorAna_WaitClosed(DoorAna* doorAna, PlayState* play);
@@ -37,6 +43,12 @@ void DoorAna_WaitOpen(DoorAna* doorAna, PlayState* play);
  *   bombed or hammered open; no flag) opens locally. Partners in the scene open their
  *   closed copy at that spot, so nobody is left outside a hole the other one opened.
  *   Leaving the scene closes it again for everyone (vanilla).
+ *
+ * WORLD_OBJECT kind "prop" { sceneNum, room, id, pos }: sent when a pot, crate, bush or
+ *   small rock breaks (the moment it would drop its loot). Partners in the scene break
+ *   their copy at that spot the way a hit would (fragments, sound), but without the drop:
+ *   loot stays with whoever broke it. Props that are not there any more, or that the
+ *   partner is carrying, are left alone.
  *
  * Not a packet, but here because it is the same audit:
  * - Pickups: every client spawns its own copy of a drop (pots, grass, enemies), and each
@@ -58,6 +70,9 @@ u32 sTick = 0;
 u32 sPickupUntil = 0;
 s16 sPickupItem = ITEM_NONE;
 std::unordered_map<Actor*, bool> sGrottoClosed; // closed before this frame's update
+std::unordered_set<Actor*> sRemoteBreak;         // props a partner broke; no drop, no echo
+bool sPropSync = false;                          // hooks registered (connected)
+ColliderInfo sRemoteHit;                         // stands in for the weapon that "hit" them
 
 nlohmann::json VecJson(const Vec3f& v) {
     return nlohmann::json::array({ v.x, v.y, v.z });
@@ -187,7 +202,94 @@ void OnBossSpotActorInit(Actor* actor) {
     }
 }
 
+bool IsBreakableProp(s16 id) {
+    return id == ACTOR_OBJ_TSUBO || id == ACTOR_OBJ_KIBAKO || id == ACTOR_OBJ_KIBAKO2 || id == ACTOR_EN_KUSA ||
+           id == ACTOR_EN_ISHI;
+}
+
+ColliderCylinder* PropCollider(Actor* actor) {
+    switch (actor->id) {
+        case ACTOR_OBJ_TSUBO:
+            return &((ObjTsubo*)actor)->collider;
+        case ACTOR_OBJ_KIBAKO:
+            return &((ObjKibako*)actor)->collider;
+        case ACTOR_OBJ_KIBAKO2:
+            return &((ObjKibako2*)actor)->collider;
+        case ACTOR_EN_KUSA:
+            return &((EnKusa*)actor)->collider;
+        case ACTOR_EN_ISHI:
+            return &((EnIshi*)actor)->collider;
+        default:
+            return nullptr;
+    }
+}
+
+void SendProp(Actor* actor) {
+    Anchor* anchor = Anchor::Instance;
+    if (anchor == nullptr || !anchor->IsSaveLoaded() || gPlayState == NULL) {
+        return;
+    }
+
+    nlohmann::json payload;
+    payload["type"] = Anchor::WORLD_OBJECT;
+    payload["quiet"] = true;
+    payload["kind"] = "prop";
+    payload["sceneNum"] = gPlayState->sceneNum;
+    payload["room"] = actor->room;
+    payload["id"] = actor->id;
+    payload["pos"] = VecJson(actor->home.pos);
+
+    for (auto& [clientId, client] : anchor->clients) {
+        if (client.sceneNum == gPlayState->sceneNum && client.online && client.isSaveLoaded && !client.self) {
+            payload["targetClientId"] = clientId;
+            anchor->SendJsonToRemote(payload);
+        }
+    }
+}
+
+// The drop hook is the one place every prop passes through when it breaks, thrown,
+// cut or smashed. A break a partner caused is marked, drops nothing and is not echoed.
+void OnPropBreak(Actor* actor, bool* should) {
+    if (sRemoteBreak.erase(actor)) {
+        *should = false;
+        return;
+    }
+    SendProp(actor);
+}
+
+void BreakRemoteProp(s16 id, s16 room, const Vec3f& pos) {
+    for (s32 cat = 0; cat < ACTORCAT_MAX; cat++) {
+        for (Actor* a = gPlayState->actorCtx.actorLists[cat].head; a != NULL; a = a->next) {
+            if (a->id != id || a->update == NULL || a->init != NULL || a->parent != NULL || a->room != room ||
+                sRemoteBreak.count(a) || fabsf(a->home.pos.x - pos.x) > SAME_POS ||
+                fabsf(a->home.pos.y - pos.y) > SAME_POS || fabsf(a->home.pos.z - pos.z) > SAME_POS) {
+                continue;
+            }
+            ColliderCylinder* collider = PropCollider(a);
+            if (collider == nullptr) {
+                continue;
+            }
+            sRemoteHit.toucher.dmgFlags = 0xFFFFFFFF;
+            collider->info.acHitInfo = &sRemoteHit;
+            collider->base.acFlags |= AC_HIT;
+            sRemoteBreak.insert(a);
+            return;
+        }
+    }
+}
+
 } // namespace
+
+// Small rocks have no vanilla-behavior hook (adding one would rebuild everything that
+// includes the enum), so EnIshi_DropCollectible asks here instead.
+extern "C" s32 WorldObject_RockBreak(Actor* actor) {
+    if (!sPropSync) {
+        return true;
+    }
+    bool drop = true;
+    OnPropBreak(actor, &drop);
+    return drop;
+}
 
 bool WorldObject_IsPersonalPickup(const GetItemEntry& itemEntry) {
     return sTick <= sPickupUntil && itemEntry.modIndex == MOD_NONE && sPickupItem != ITEM_NONE &&
@@ -226,6 +328,14 @@ void Anchor::HandlePacket_WorldObject(nlohmann::json payload) {
         return;
     }
 
+    if (payload["kind"].get<std::string>() == "prop") {
+        if (payload.contains("id") && payload.contains("pos") && payload.contains("room") &&
+            IsBreakableProp(payload["id"].get<s16>())) {
+            BreakRemoteProp(payload["id"].get<s16>(), payload["room"].get<s16>(), JsonVec(payload["pos"]));
+        }
+        return;
+    }
+
     if (payload["kind"].get<std::string>() == "grotto") {
         Vec3f pos = JsonVec(payload["pos"]);
         for (auto& [actor, closed] : sGrottoClosed) {
@@ -242,6 +352,8 @@ void Anchor::HandlePacket_WorldObject(nlohmann::json payload) {
 
 void RegisterWorldObjectHooks(bool isConnected) {
     sGrottoClosed.clear();
+    sRemoteBreak.clear();
+    sPropSync = isConnected;
     sPickupUntil = 0;
     sPickupItem = ITEM_NONE;
     sBossSpot[0] = sBossSpot[1] = BossSpot{};
@@ -269,6 +381,17 @@ void RegisterWorldObjectHooks(bool isConnected) {
             // while the partner's copy is still waiting to be collected.
             SET_GS_FLAGS((token->actor.params & 0x1F00) >> 8, token->actor.params & 0xFF);
             GameInteractor_ExecuteOnFlagSet(FLAG_GS_TOKEN, token->actor.params);
+        }
+    });
+
+    // #4167: a pot, crate, bush or small rock one player breaks is gone for the partner too.
+    COND_VB_SHOULD(VB_POT_DROP_ITEM, isConnected, { OnPropBreak(va_arg(args, Actor*), should); });
+    COND_VB_SHOULD(VB_SMALL_CRATE_DROP_ITEM, isConnected, { OnPropBreak(va_arg(args, Actor*), should); });
+    COND_VB_SHOULD(VB_CRATE_DROP_ITEM, isConnected, { OnPropBreak(va_arg(args, Actor*), should); });
+    COND_VB_SHOULD(VB_GRASS_DROP_ITEM, isConnected, { OnPropBreak(va_arg(args, Actor*), should); });
+    COND_HOOK(OnActorDestroy, isConnected, [](void* refActor) {
+        if (!sRemoteBreak.empty()) {
+            sRemoteBreak.erase(static_cast<Actor*>(refActor));
         }
     });
 
