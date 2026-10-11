@@ -285,3 +285,27 @@ const char* anchor_test_inject(const char* json) {
 }
 }
 #endif
+
+// Minimap bridge (PHA-4170): the index-th remote player standing in the local scene. Returns 0 past the end.
+extern "C" s32 Anchor_MinimapPlayer(s32 index, f32* x, f32* z, s16* rotY, u8* rgb) {
+    if (Anchor::Instance == nullptr || gPlayState == nullptr || !Anchor::Instance->IsSaveLoaded()) {
+        return 0;
+    }
+    s32 n = 0;
+    for (auto& [clientId, client] : Anchor::Instance->clients) {
+        if (client.self || !client.online || !client.isSaveLoaded || client.sceneNum != gPlayState->sceneNum) {
+            continue;
+        }
+        if (n++ != index) {
+            continue;
+        }
+        *x = client.posRot.pos.x;
+        *z = client.posRot.pos.z;
+        *rotY = client.posRot.rot.y;
+        rgb[0] = client.tunic.r;
+        rgb[1] = client.tunic.g;
+        rgb[2] = client.tunic.b;
+        return 1;
+    }
+    return 0;
+}

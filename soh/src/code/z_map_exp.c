@@ -8,6 +8,8 @@
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/cosmetics/cosmeticsTypes.h"
 
+s32 Anchor_MinimapPlayer(s32 index, f32* x, f32* z, s16* rotY, u8* rgb);
+
 MapData* gMapData;
 
 s16 sPlayerInitialPosX = 0;
@@ -758,6 +760,38 @@ void Minimap_DrawCompassIcons(PlayState* play) {
 
         gDPSetPrimColor(OVERLAY_DISP++, 0, 0xFF, lastEntranceColor.r, lastEntranceColor.g, lastEntranceColor.b, 255);
         gSPDisplayList(OVERLAY_DISP++, gCompassArrowDL);
+
+        // Co-op partners in this scene, drawn in their tunic color (PHA-4170)
+        for (s32 i = 0; i < 8; i++) {
+            f32 wx, wz;
+            s16 rotY;
+            u8 rgb[3];
+            if (!Anchor_MinimapPlayer(i, &wx, &wz, &rotY, rgb)) {
+                continue;
+            }
+            s16 px = (s16)wx;
+            s16 pz = (s16)wz;
+            px /= R_COMPASS_SCALE_X * (CVarGetInteger(CVAR_ENHANCEMENT("MirroredWorld"), 0) ? -1 : 1);
+            pz /= R_COMPASS_SCALE_Y;
+            s32 posType = CVarGetInteger(CVAR_COSMETIC("HUD.Minimap.PosType"), 0);
+            f32 offX = (tempXOffset + px + (posType != ORIGINAL_LOCATION ? CVarGetInteger(CVAR_COSMETIC("HUD.Minimap.PosX"), 0) * 10 : 0) +
+                        (X_Margins_Minimap * 10)) / 10.0f;
+            f32 offY = (R_COMPASS_OFFSET_Y - (Y_Margins_Minimap * 10) - pz -
+                        (posType != ORIGINAL_LOCATION ? CVarGetInteger(CVAR_COSMETIC("HUD.Minimap.PosY"), 0) * 10 : 0)) / 10.0f;
+            if (posType == ANCHOR_LEFT) {
+                offX = OTRGetDimensionFromLeftEdge(offX);
+            } else if (posType != ANCHOR_NONE) {
+                offX = OTRGetDimensionFromRightEdge(offX);
+            }
+            Matrix_Translate(offX, offY, 0.0f, MTXMODE_NEW);
+            Matrix_Scale(0.5f, 0.5f, 0.5f, MTXMODE_APPLY);
+            Matrix_RotateX(-1.6f, MTXMODE_APPLY);
+            Matrix_RotateY(((0x7FFF - rotY) / 0x400) * (CVarGetInteger(CVAR_ENHANCEMENT("MirroredWorld"), 0) ? -1 : 1) / 10.0f,
+                           MTXMODE_APPLY);
+            gSPMatrix(OVERLAY_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0xFF, rgb[0], rgb[1], rgb[2], 255);
+            gSPDisplayList(OVERLAY_DISP++, gCompassArrowDL);
+        }
     }
 
     CLOSE_DISPS(play->state.gfxCtx);
