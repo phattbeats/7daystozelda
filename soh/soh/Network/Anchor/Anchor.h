@@ -63,6 +63,9 @@ typedef struct {
     s8 actionVar1;
     f32 stickLength = 0.0f; // Player::unk_85C: Deku stick length (0 = burnt out)
     s16 stickFlame = 0;     // Player::unk_860: Deku stick flame timer (non-zero = lit)
+    u8 ocaNote = 0xFF; // ocarina note being held (0xFF = none), PHA-4168
+    s8 ocaInstrument = 0;
+    u8 ocaPlayedNote = 0xFF; // last note we voiced locally for this puppet
 
     // Ptr to the dummy player
     Player* player;

@@ -13,7 +13,46 @@ extern PlayState* gPlayState;
 
 void Player_UseItem(PlayState* play, Player* player, s32 item);
 void Player_Draw(Actor* actor, PlayState* play);
+void Audio_OcaRemoteNote(u32 clientId, s8 instrument, u8 note, Vec3f* pos);
+void Audio_OcaRemoteStop(u32 clientId);
+void Audio_OcaRemoteKeepAlive(u32 clientId);
+s32 Audio_OcaRemoteVoiceState(void);
+void Audio_OcaRemoteDiag(char* out, s32 size);
 }
+
+static int sOcaVoiced = 0; // PHA-4168 test probe counter
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+extern "C" {
+u8 Audio_OcaGetLocalNote(void);
+EMSCRIPTEN_KEEPALIVE
+const char* anchor_test_oca() {
+    static std::string out;
+    nlohmann::json j;
+    j["voiced"] = sOcaVoiced;
+    j["localNote"] = Audio_OcaGetLocalNote();
+    j["voices"] = Audio_OcaRemoteVoiceState();
+    char diag[256];
+    Audio_OcaRemoteDiag(diag, sizeof(diag));
+    j["diag"] = diag;
+    j["clients"] = nlohmann::json::array();
+    if (Anchor::Instance != nullptr) {
+        for (auto& [id, c] : Anchor::Instance->clients) {
+            j["clients"].push_back({ { "id", id },
+                                     { "self", c.self },
+                                     { "ocaNote", c.ocaNote },
+                                     { "ocaInstrument", c.ocaInstrument },
+                                     { "played", c.ocaPlayedNote },
+                                     { "puppetOca", c.player != nullptr &&
+                                                        (c.player->stateFlags2 & PLAYER_STATE2_OCARINA_PLAYING) != 0 } });
+        }
+    }
+    out = j.dump();
+    return out.c_str();
+}
+}
+#endif
 
 // Hijacking player->zTargetActiveTimer (unused s32 for the dummy) to store the clientId for convenience
 #define DUMMY_CLIENT_ID player->zTargetActiveTimer
@@ -182,6 +221,10 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     AnchorClient& client = Anchor::Instance->clients[DUMMY_CLIENT_ID];
 
     if (client.sceneNum != gPlayState->sceneNum || !client.online || !client.isSaveLoaded) {
+        if (client.ocaPlayedNote != 0xFF) {
+            Audio_OcaRemoteStop(DUMMY_CLIENT_ID);
+            client.ocaPlayedNote = 0xFF;
+        }
         actor->world.pos.x = -9999.0f;
         actor->world.pos.y = -9999.0f;
         actor->world.pos.z = -9999.0f;
@@ -216,6 +259,19 @@ void DummyPlayer_Update(Actor* actor, PlayState* play) {
     // Deku stick length and flame: Player_Update isn't run for the puppet, so nothing else sets them
     player->unk_85C = client.stickLength;
     player->unk_860 = client.stickFlame;
+
+    // Voice the partner's ocarina notes (PHA-4168); retrigger on each new note.
+    if (client.ocaNote != client.ocaPlayedNote) {
+        if (client.ocaNote != 0xFF) {
+            Audio_OcaRemoteNote(DUMMY_CLIENT_ID, client.ocaInstrument, client.ocaNote, &actor->projectedPos);
+            sOcaVoiced++;
+        } else {
+            Audio_OcaRemoteStop(DUMMY_CLIENT_ID);
+        }
+        client.ocaPlayedNote = client.ocaNote;
+    } else if (client.ocaNote != 0xFF) {
+        Audio_OcaRemoteKeepAlive(DUMMY_CLIENT_ID);
+    }
 
     if (player->modelGroup != client.modelGroup) {
         // Hack to account for usage of gSaveContext
@@ -312,4 +368,7 @@ void DummyPlayer_Draw(Actor* actor, PlayState* play) {
 }
 
 void DummyPlayer_Destroy(Actor* actor, PlayState* play) {
+    Player* player = (Player*)actor;
+
+    Audio_OcaRemoteStop(DUMMY_CLIENT_ID);
 }

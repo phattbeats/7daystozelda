@@ -2253,6 +2253,12 @@ void sevendays_test_raid(const char* cmdC) {
         gSaveContext.equips.buttonItems[1] = ITEM_HOOKSHOT;
         gSaveContext.equips.cButtonSlots[0] = SLOT_HOOKSHOT;
         Interface_LoadItemIcon1(gPlayState, 1);
+    } else if (cmd == "equip:ocarina") {
+        // #4168 tests: the Fairy Ocarina on C-Left.
+        Item_Give(gPlayState, ITEM_OCARINA_FAIRY);
+        gSaveContext.equips.buttonItems[1] = ITEM_OCARINA_FAIRY;
+        gSaveContext.equips.cButtonSlots[0] = SLOT_OCARINA;
+        Interface_LoadItemIcon1(gPlayState, 1);
     } else if (cmd == "bomb") {
         // #3935 tests: a lit bomb 50 ahead of Link (boulders for Stone and Ore).
         Player* player = GET_PLAYER(gPlayState);
