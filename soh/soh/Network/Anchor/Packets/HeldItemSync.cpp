@@ -75,6 +75,7 @@ struct Remote {
     s16 timer = 0;
     bool hasAxes = false;
     f32 axes[9]{};
+    bool spent = false; // our ghost already finished (exploded/broke); don't spawn another for this item
 };
 
 struct Ghost {
@@ -397,7 +398,9 @@ void ReceiveTick() {
             continue;
         }
         if (git == sGhosts.end()) {
-            if (r.scene == gPlayState->sceneNum) {
+            // A bomb first seen mid-blast would spawn in its explosion state with no fuse and never be killed.
+            bool lateBlast = r.id == ACTOR_EN_BOM && r.params != BOMB_BODY;
+            if (r.scene == gPlayState->sceneNum && !r.spent && !lateBlast) {
                 SpawnGhost(key, r);
             }
             continue;
@@ -461,6 +464,10 @@ void RegisterHeldItemSyncHooks(bool isConnected) {
         sHidden.erase(actor);
         auto g = sGhostActors.find(actor);
         if (g != sGhostActors.end()) {
+            auto r = sRemote.find(g->second);
+            if (r != sRemote.end()) {
+                r->second.spent = true;
+            }
             sGhosts.erase(g->second);
             sGhostActors.erase(g);
         }
@@ -521,6 +528,9 @@ extern "C" {
 // 3: spawn a pot (a = 0) / crate (1) / rock (2) / bush (3) and treat it as carried (b = 1) or thrown.
 // 4: move the first forced actor by (a, c) on x/z and by b on y.
 // 5: kill every forced actor (as if it broke).
+// 6: put Deku Sticks (a = 0) or bombs (a = 1) on C-Left, with ammo.
+// 7: set the stick Link is holding to flame timer a (lit when non-zero).
+// The dump also lists each puppet's stick length and flame.
 EMSCRIPTEN_KEEPALIVE
 const char* anchor_test_held(int cmd, double a, double b, double c) {
     static std::string out;
@@ -563,6 +573,18 @@ const char* anchor_test_held(int cmd, double a, double b, double c) {
                     Actor_Kill(f);
                 }
                 break;
+            case 6: {
+                u8 item = a == 0 ? ITEM_STICK : ITEM_BOMB;
+                Item_Give(gPlayState, a == 0 ? ITEM_STICKS_10 : ITEM_BOMB_BAG_20);
+                Item_Give(gPlayState, a == 0 ? ITEM_STICKS_10 : ITEM_BOMBS_20);
+                gSaveContext.equips.buttonItems[1] = item;
+                gSaveContext.equips.cButtonSlots[0] = a == 0 ? SLOT_STICK : SLOT_BOMB;
+                Interface_LoadItemIcon1(gPlayState, 1);
+                break;
+            }
+            case 7:
+                player->unk_860 = (s16)a;
+                break;
         }
     }
     nlohmann::json own = nlohmann::json::array();
@@ -581,7 +603,24 @@ const char* anchor_test_held(int cmd, double a, double b, double c) {
         }
         ghosts.push_back(g);
     }
+    nlohmann::json puppets = nlohmann::json::array();
+    if (Anchor::Instance != nullptr) {
+        for (auto& [id, cl] : Anchor::Instance->clients) {
+            if (cl.player != nullptr && !cl.self) {
+                puppets.push_back({ { "id", id },
+                                    { "stickLength", cl.player->unk_85C },
+                                    { "stickFlame", cl.player->unk_860 },
+                                    { "item", cl.player->heldItemAction } });
+            }
+        }
+    }
+    Player* self = gPlayState != NULL ? GET_PLAYER(gPlayState) : NULL;
     nlohmann::json j = { { "tick", sTick },
+                         { "puppets", puppets },
+                         { "self", self ? nlohmann::json{ { "stickLength", self->unk_85C },
+                                                          { "stickFlame", self->unk_860 },
+                                                          { "item", self->heldItemAction } }
+                                        : nlohmann::json() },
                          { "own", own },
                          { "ghosts", ghosts },
                          { "hidden", sHidden.size() },
