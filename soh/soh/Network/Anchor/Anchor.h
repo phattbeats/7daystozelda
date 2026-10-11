@@ -61,6 +61,8 @@ typedef struct {
     s8 invincibilityTimer;
     s16 unk_862;
     s8 actionVar1;
+    f32 stickLength = 0.0f; // Player::unk_85C: Deku stick length (0 = burnt out)
+    s16 stickFlame = 0;     // Player::unk_860: Deku stick flame timer (non-zero = lit)
 
     // Ptr to the dummy player
     Player* player;
@@ -119,6 +121,7 @@ class Anchor : public Network {
     void HandlePacket_BgmPos(nlohmann::json payload);
     void HandlePacket_BgmPosRequest(nlohmann::json payload);
     void HandlePacket_AmbientState(nlohmann::json payload);
+    void HandlePacket_HeldItems(nlohmann::json payload);
     void HandlePacket_BgmRestart(nlohmann::json payload);
     void HandlePacket_BgmState(nlohmann::json payload);
     void HandlePacket_BossEntry(nlohmann::json payload);
@@ -167,6 +170,7 @@ class Anchor : public Network {
     // Packet types //
     inline static const std::string ALL_CLIENT_STATE = "ALL_CLIENT_STATE";
     inline static const std::string AMBIENT_STATE = "AMBIENT_STATE";
+    inline static const std::string HELD_ITEMS = "HELD_ITEMS";
     inline static const std::string BGM_POS = "BGM_POS";
     inline static const std::string BGM_POS_REQUEST = "BGM_POS_REQUEST";
     inline static const std::string BGM_RESTART = "BGM_RESTART";
