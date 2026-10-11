@@ -314,6 +314,7 @@ static bool Va_OnPhaseChange(Actor* actor, uint8_t fromPhase, uint8_t toPhase) {
         return false;
     }
     if (actor->params == VA_PARAM_BODY) {
+        Va_CutAllSupports();
         BossVa_SyncStartDeath((BossVa*)actor, gPlayState);
         ESYNC_LOG("[BarinadeSync] defeat handoff (SetupBodyDeath called locally)");
     }
@@ -332,6 +333,7 @@ static void Va_OnRemoteDefeat(Actor* actor) {
         ESYNC_LOG("[BarinadeSync] remote defeat deferred until the local intro ends");
         return;
     }
+    Va_CutAllSupports();
     BossVa_SyncStartDeath((BossVa*)actor, gPlayState);
     ESYNC_LOG("[BarinadeSync] remote defeat (missed phase edge, SetupBodyDeath called locally)");
 }
