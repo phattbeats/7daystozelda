@@ -81,7 +81,6 @@ static constexpr int ABSENT_BARI_GRACE = 25;
 // edge or a remote defeat, consumed once the local intro hands over).
 static bool sPendingDefeat = false;
 static int sStartDeathIn = -1;
-static constexpr int VA_DEFERRED_DEATH_DELAY = 90;
 
 static BossVa* FindPart(int16_t params) {
     if (gPlayState == NULL) {
@@ -109,6 +108,33 @@ static void Va_CutAllSupports() {
             }
         }
     }
+}
+
+// The zappers only reach their death steps (DEATH_ZAPPER_1..3) from the
+// "enraged" action, which they enter once the fight is in phase 4. A client
+// that joins the defeat late (its own fight never advanced past phase 0) has
+// to run the body through phase 4 first, so push the shared statics there and
+// start the death a few frames later, when the zappers have followed.
+static constexpr int VA_PHASE_4 = 15;
+static constexpr int VA_ENRAGE_FRAMES = 45;
+
+static void Va_JoinDefeat(BossVa* body) {
+    if (gPlayState == NULL) {
+        return;
+    }
+    BossVaSyncState s;
+    BossVa_SyncGet(&s);
+    if (s.fightPhase < VA_PHASE_4) {
+        s.fightPhase = VA_PHASE_4;
+        s.bodyState = 0;
+        BossVa_SyncSet(&s);
+        sStartDeathIn = VA_ENRAGE_FRAMES;
+        ESYNC_LOG("[BarinadeSync] late join: phase 4 now, death in {} frames", VA_ENRAGE_FRAMES);
+        return;
+    }
+    sStartDeathIn = -1;
+    Va_CutAllSupports();
+    BossVa_SyncStartDeath(body, gPlayState);
 }
 
 static uint8_t Va_GetPhase(Actor* actor) {
@@ -316,8 +342,7 @@ static bool Va_OnPhaseChange(Actor* actor, uint8_t fromPhase, uint8_t toPhase) {
         return false;
     }
     if (actor->params == VA_PARAM_BODY) {
-        Va_CutAllSupports();
-        BossVa_SyncStartDeath((BossVa*)actor, gPlayState);
+        Va_JoinDefeat((BossVa*)actor);
         ESYNC_LOG("[BarinadeSync] defeat handoff (SetupBodyDeath called locally)");
     }
     return true; // every part runs the death sequence's own code locally
@@ -335,8 +360,7 @@ static void Va_OnRemoteDefeat(Actor* actor) {
         ESYNC_LOG("[BarinadeSync] remote defeat deferred until the local intro ends");
         return;
     }
-    Va_CutAllSupports();
-    BossVa_SyncStartDeath((BossVa*)actor, gPlayState);
+    Va_JoinDefeat((BossVa*)actor);
     ESYNC_LOG("[BarinadeSync] remote defeat (missed phase edge, SetupBodyDeath called locally)");
 }
 
@@ -361,12 +385,22 @@ extern "C" void Anchor_BarinadeIntro(Actor* body, int introOver) {
     if (introOver == 1) {
         if (sPendingDefeat) {
             sPendingDefeat = false;
-            // Let the zappers and supports settle into their battle actions
-            // first: the death cutscene's zapper steps run inside them.
-            sStartDeathIn = VA_DEFERRED_DEATH_DELAY;
-            ESYNC_LOG("[BarinadeSync] local intro over: joining the deferred defeat in {} frames", sStartDeathIn);
+            ESYNC_LOG("[BarinadeSync] local intro over: joining the deferred defeat");
+            Va_JoinDefeat((BossVa*)body);
         }
         return;
+    }
+    // The death cutscene's zapper steps (cs 16-18) wait for that zapper to
+    // burst. A client that joined late had its zappers killed by the host's
+    // replayed deaths, so step over a zapper that is already gone.
+    {
+        BossVaSyncState cur;
+        BossVa_SyncGet(&cur);
+        if (cur.csState >= 16 && cur.csState <= 18 && FindPart(3 + (cur.csState - 16)) == nullptr) {
+            cur.csState++;
+            BossVa_SyncSet(&cur);
+            ESYNC_LOG("[BarinadeSync] zapper {} already gone: skipping its death step", cur.csState - 16);
+        }
     }
     if (sStartDeathIn > 0 && --sStartDeathIn == 0 && gPlayState != NULL) {
         sStartDeathIn = -1;
@@ -392,8 +426,7 @@ static bool Va_ShouldMirror(Actor* actor, uint8_t streamedPhase) {
         } else if (s.csState >= BOSSVA_SYNC_BATTLE) {
             // Local intro is over: join the defeat the partner already won.
             sPendingDefeat = false;
-            Va_CutAllSupports();
-            BossVa_SyncStartDeath((BossVa*)actor, gPlayState);
+            Va_JoinDefeat((BossVa*)actor);
             ESYNC_LOG("[BarinadeSync] local intro over: joining the deferred defeat");
             return false;
         }
