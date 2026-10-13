@@ -45,10 +45,4 @@ Built web bundles and test evidence (screenshots, videos, reports) are attached 
 `ACCESS_KEY` at deploy time and is not stored here.
 
 ## Not in this repository
-
-These stay private on Nextcloud (`PHATT-TECH/Projects/7daystozelda/`) because they are
-Nintendo-owned or third-party:
-
-- `rom/`: the OoT ROM and the `oot.o2r` extracted from it
-- `homepage-art/title-theme.mp3`: the lobby music
-- `outside-asset-downloads/OOTStyleModels.zip`: third-party models
+Any Nintendo  IP.
