@@ -107,9 +107,9 @@ void Toast(const std::string& prefix, const std::string& message, float secs = 5
     Notification::Emit({ .prefix = prefix, .message = message, .remainingTime = secs });
 }
 
-// Half the heart containers, rounded down to a whole heart, never under one heart.
+// Half the heart containers, in half-heart steps (3 hearts -> 1.5), never under one heart.
 s16 HalfHearts() {
-    s16 half = (gSaveContext.healthCapacity / 2) & ~0xF;
+    s16 half = (gSaveContext.healthCapacity / 2) & ~0x7;
     return half < 0x10 ? 0x10 : half;
 }
 
