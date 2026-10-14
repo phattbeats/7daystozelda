@@ -51,6 +51,7 @@ const MIME = {
   ".jpg": "image/jpeg",
   ".ico": "image/x-icon",
   ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
   ".webmanifest": "application/manifest+json",
 };
 
@@ -68,6 +69,12 @@ const PUBLIC_PATHS = new Set([
   "/favicon-32.png",
   "/favicon-96.png",
   "/og.jpg",
+  // PHA-4242: the invite-only page uses the lobby's fonts and art
+  "/fonts/cinzel-700.woff2",
+  "/fonts/nunito-600.woff2",
+  "/fonts/nunito-800.woff2",
+  "/home-logo.png",
+  "/home-bg.png",
 ]);
 
 // The link preview (Open Graph / Twitter card) for the "Invite only" page, so a
@@ -91,7 +98,7 @@ const SHARE_HEAD = `<meta name="description" content="${SHARE_DESC}">
 <meta property="og:url" content="${PUBLIC_URL}/"><meta property="og:image" content="${SHARE_IMAGE}">
 <meta property="og:image:type" content="image/jpeg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${SHARE_IMAGE}">
-<meta name="theme-color" content="#0b0f14">
+<meta name="theme-color" content="#0a0c13">
 <link rel="icon" href="/favicon.ico?v=${ICON_V}" sizes="48x48"><link rel="icon" href="/favicon-32.png?v=${ICON_V}" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/icon-180.png?v=${ICON_V}">`;
 
@@ -137,12 +144,24 @@ function checkAccess(req) {
   return { ok: false };
 }
 
-const DENIED_PAGE = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+const DENIED_PAGE = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>7 Days to Zelda - invite only</title>
 ${SHARE_HEAD}
-<body style="background:#0b0d12;color:#d8dbe2;font:16px system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0">
-<div style="max-width:28rem;padding:1rem;text-align:center"><h1 style="font-size:1.3rem">Invite only</h1>
-<p>This server needs the invite link. Ask whoever runs it for the full link (it has <code>?key=</code> in it).</p></div>`;
+<style>
+@font-face{font-family:Cinzel;src:url(/fonts/cinzel-700.woff2) format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:Nunito;src:url(/fonts/nunito-600.woff2) format("woff2");font-weight:400 650;font-display:swap}
+*{box-sizing:border-box;margin:0}
+body{min-height:100vh;display:grid;place-items:center;padding:24px 16px;color:#f1e9d6;font:500 16px/1.5 Nunito,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+background:linear-gradient(180deg,rgba(10,12,19,.35),rgba(10,12,19,.92)),url(/home-bg.png) center 30%/cover no-repeat,#0a0c13}
+main{width:min(100%,30rem);text-align:center}
+img{display:block;width:min(100%,24rem);height:auto;margin:0 auto 20px;filter:drop-shadow(0 8px 22px rgba(0,0,0,.75))}
+section{background:rgba(14,17,29,.9);border:1px solid rgba(232,201,128,.2);border-radius:14px;padding:24px;box-shadow:0 14px 36px rgba(0,0,0,.45)}
+h1{font:700 1.12rem/1.2 Cinzel,Georgia,serif;letter-spacing:.06em;color:#e8c980;margin-bottom:10px}
+p{color:#aba493}
+code{font:700 .9em ui-monospace,SFMono-Regular,Menlo,monospace;color:#f7e0a6}
+</style>
+<main><img src="/home-logo.png" alt="7 Days to Zelda" width="960" height="398">
+<section><h1>Invite only</h1><p>This server needs the invite link. Ask whoever runs it for the full link (it has <code>?key=</code> in it).</p></section></main>`;
 
 // ---- static files ----
 // Every asset revalidates (ETag/304), so a redeploy can never mix a new page
@@ -227,8 +246,8 @@ function serveManifest(req, res) {
     display: "fullscreen",
     display_override: ["fullscreen", "standalone"],
     orientation: "landscape",
-    background_color: "#0b0f14",
-    theme_color: "#0b0f14",
+    background_color: "#0a0c13",
+    theme_color: "#0a0c13",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
       { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },

@@ -140,7 +140,7 @@
     if (!join) return;
     var sec = document.createElement("section");
     sec.className = "panel";
-    sec.innerHTML = '<h2>Optional · HD textures</h2>' +
+    sec.innerHTML = '<h2>HD textures<span class="opt">Optional</span></h2>' +
       '<p class="muted small" style="margin:.2rem 0 .6rem">Sharper Link, enemies and items from a fan-made pack. For desktop browsers with plenty of memory. ' +
       'Download the <b>soh-o2r-hd</b> file from <a id="hd-get" target="_blank" rel="noopener">the pack author\'s GitHub</a>, unzip it, then pick the .o2r here. It stays in this browser; we host nothing.</p>' +
       '<div class="ready-row"><button type="button" class="linkish" id="hd-pick">Choose HD pack…</button>' +
