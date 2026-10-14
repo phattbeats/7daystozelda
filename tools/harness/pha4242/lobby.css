@@ -127,13 +127,14 @@ label.f input:focus,label.f select:focus,#mm-code:focus{border-color:var(--gold)
 #mm-file{width:auto;height:36px;font-size:.9rem}
 .mm-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);margin-top:var(--s3)}
 .mm-row>.btn{flex:none}
-#btn-quick{width:100%}
+#btn-quick{width:100%;min-height:52px;font-size:1.02rem}
+.btn.solo{width:100%}
+.code-h{margin-top:var(--s5)}
+#mm>.lbl+.mm-row,.code-h+.mm-row{margin-top:0}
 #mm-hint{flex:1 1 100%;font-size:.85rem}
 #mm-note{font-size:.875rem;color:var(--ok);margin-top:var(--s2)}
 #mm-note:empty{display:none}
 #mm-note.bad{color:var(--bad)}
-.mm-codes{margin-top:var(--s5)}
-.mm-codes .mm-row:first-of-type{margin-top:0}
 #mm-code{flex:1 1 7rem;width:auto;max-width:11rem;text-align:center;letter-spacing:.3em;text-transform:uppercase;font:800 1.05rem var(--f-mono)}
 #btn-code{flex:1 1 8rem}
 .mm-seg{display:inline-flex;padding:4px;gap:4px;background:var(--raise);border:1px solid var(--line);border-radius:var(--r-s)}
@@ -153,7 +154,7 @@ label.f input:focus,label.f select:focus,#mm-code:focus{border-color:var(--gold)
 #mm-rooms .tag.mid{background:rgba(236,185,79,.14);color:var(--warn)}
 #mm-rooms .tag.far{background:rgba(236,122,100,.14);color:var(--bad)}
 #mm-rooms .btn{grid-row:1/span 2;grid-column:2;min-height:40px;padding:0 14px;font-size:.88rem}
-.raids{margin-top:var(--s5)}
+label.f.raids{margin-top:var(--s5)}
 
 /* ---------- controls + guides ---------- */
 .ctl-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:4px;margin-bottom:var(--s4);background:var(--raise);border:1px solid var(--line);border-radius:var(--r-s)}
@@ -202,8 +203,6 @@ body.touch #net-pill{top:52px}
  .card{max-width:40rem;padding-top:var(--s6)}
  .panel{padding:var(--s5)}
  .brand img{width:min(100%,30rem)}
- #btn-quick{width:auto}
- #mm-hint{flex:1 1 14rem}
 }
 @media (min-width:1100px){
  .card{max-width:1120px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"a b" "a hd" "foot foot";column-gap:var(--s6)}

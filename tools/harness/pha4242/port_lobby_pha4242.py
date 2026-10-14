@@ -60,7 +60,13 @@ assert s.count("<style>") == 1
 # ---------- fragments reused from the live page ----------
 rom_inner = cut(s, "<div id=rom-loading>", "<div id=error-msg role=alert></div>")
 colors = cut(s, "<div class=colors>", "<div id=tunic-warn role=status aria-live=polite hidden></div>")
-mm = cut(s, "<div id=mm class=mm>", "<label class=f style=margin-top:.8rem>Days between raids", incl_end=False)
+mm_me = cut(s, "<div class=mm-me>", "</div>")
+mm_quick = cut(s, "<div class=mm-row><button type=button class=btn id=btn-quick", "</div>")
+mm_note = cut(s, "<div id=mm-note", "</div>")
+mm_code = cut(s, "<div class=mm-row><input id=mm-code", "</div>")
+mm_make = cut(s, "<div class=mm-row><div class=mm-seg", "Create lobby</button></div>")
+mm_made = cut(s, "<div id=mm-made class=mm-made hidden>", "id=mm-vis-toggle></button></div></div>")
+mm_list = cut(s, "<div class=mm-list-h><span>Open rooms</span>", "</ul>")
 raids = cut(s, "<select id=f-raids name=raids>", "</select>")
 hidden_inputs = "<input type=checkbox id=f-horde hidden><input type=checkbox id=f-sevendays checked hidden>"
 one(s, hidden_inputs)
@@ -70,12 +76,16 @@ room_in = cut(s, "<input id=f-room", ">")
 bgm = cut(s, "<div id=bgm role=region", "</div></div></div>")
 
 # copy + markup tidy inside the moved fragments
-mm = mm.replace("⚡ Quick match", "Quick match")
-mm = mm.replace("<div class=mm-list-h><span>Lobby code</span></div>", "<div class=lbl><span>Lobby code</span></div>")
-mm = mm.replace('<span class=muted>Your progress</span>', '<span class=muted>Your save</span>')
+# PHA-4242 (Brandon, 2026-10-14): named rooms are gone; lobbies (quick match, codes, open list) are the only way in.
+mm_quick = mm_quick.replace("class=btn id=btn-quick disabled>⚡ Quick match", "class=\"btn primary\" id=btn-quick disabled>Quick match")
+mm_quick = mm_quick.replace("Finds an open room near your progress. Joining a room gives you its progress, so you land in a game like yours.",
+                            "Puts you in an open lobby near your progress, or opens one. Joining a lobby gives you its progress, so you land in a game like yours.")
+mm_me = mm_me.replace("<span class=muted>Your progress</span>", "<span class=muted>Your save</span>")
+mm_list = mm_list.replace("<span>Open rooms</span>", "<span>Open lobbies</span>")
 ctl = ctl.replace("📱 Phone", "Phone").replace("🎮 Controller", "Controller").replace("⌨️ Keyboard", "Keyboard")
 name_in = name_in.replace("placeholder=Tyler", 'placeholder="What should we call you?"')
-room_in = room_in.replace("placeholder=boys", 'placeholder="Name a room, or use your invite"')
+# the room box stays as a hidden carrier: the lobby code fills it, then submits the form
+room_in = room_in.replace("<input id=f-room", "<input id=f-room hidden")
 bgm = bgm.replace("<div class=ctl>", "<div class=mus>")
 
 GUIDE = "https://phattmedia.club/7dtz-official-strategy-guide/"
@@ -97,13 +107,16 @@ overlay = (
     "</section></div>"
     "<div class=col-b>"
     "<section class=panel aria-labelledby=play-h><h2 id=play-h><span class=step>3</span>Play</h2>"
-    "<label class=f><span class=lbl>Room</span>" + room_in + "</label>"
-    "<div class=actions><button type=submit class=\"btn primary\" id=btn-join disabled>Join room</button>"
-    "<button type=button class=btn id=btn-solo disabled>Play solo</button></div>"
-    "<div class=invite><button type=button class=linkish id=btn-invite>Copy invite link</button>"
-    "<span id=copy-note aria-live=polite></span></div>"
-    "<div class=or><span>or find players</span></div>"
-    + mm +
+    "<div id=mm class=mm>" + mm_me + mm_quick + mm_note +
+    "<div class=or><span>or play with friends</span></div>"
+    "<div class=lbl><span>Start a lobby</span></div>" + mm_make + mm_made +
+    "<div class=\"lbl code-h\"><span>Have a code?</span></div>" + mm_code +
+    mm_list + "</div>"
+    "<div class=or><span>or on your own</span></div>"
+    "<button type=button class=\"btn solo\" id=btn-solo disabled>Play solo</button>"
+    + room_in +
+    "<button type=submit id=btn-join hidden disabled>Join</button>"
+    "<button type=button class=linkish id=btn-invite hidden>Copy invite link</button><span id=copy-note hidden aria-live=polite></span>"
     "<label class=\"f raids\"><span class=lbl>Days between raids <small>the host's pick counts</small></span>"
     + raids + "</label>" + hidden_inputs + "</section>"
     "<section class=panel id=controls aria-labelledby=ctl-h><h2 id=ctl-h>Controls &amp; guides</h2>"
@@ -129,6 +142,23 @@ assert s.count("id=bgm ") == 1
 # arcade button mounts in the strip instead of the card
 s = s.replace('data-mount="#overlay .card"', 'data-mount="#topbar"')
 assert 'data-mount="#topbar"' in s
+
+# ---------- script edits (lobby-only) ----------
+LOBBY_RE = r"/^(lb|mm)-[A-Z0-9]{5}$/"
+JS = [
+    ('autoJoin=!(!hashParams.room||!hashParams.name)',
+     'autoJoin=!(!' + LOBBY_RE + '.test(hashParams.room||"")||!hashParams.name)'),
+    ('$("f-room").value=hashParams.room||recall("room")',
+     '$("f-room").value=(function(r){return ' + LOBBY_RE + '.test(r||"")?r:""})(hashParams.room||recall("room"))'),
+    ('"No close game was open, so you\'re opening room " + j.room + ". Players near your progress get sent to you."',
+     '"No close game was open, so you\'re opening a new lobby. Players near your progress get sent to you."'),
+    ('|| "room " + j.room)', '|| "a lobby")'),
+    ('"No open rooms right now. Quick match opens one for you."', '"No open lobbies right now. Quick match opens one for you."'),
+    ('"Public: listed under Open rooms"', '"Public: listed under Open lobbies"'),
+    ("Could not load the room list.", "Could not load the lobby list."),
+]
+for a, b in JS:
+    one(s, a); s = s.replace(a, b)
 
 # every id the old page had must still exist exactly once
 old_ids = set(re.findall(r"\bid=([\w-]+)", open(src, encoding="utf-8").read()))

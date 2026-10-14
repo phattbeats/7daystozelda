@@ -96,8 +96,11 @@ and nothing else. Reduced-motion turns it all off.
 2. Hero: logo, "Ocarina co-op survival", and one line of pitch.
 3. **1 Game files**: ROM drop or ready state.
 4. **2 Your Link**: name and colours (who you are).
-5. **3 Play**: room, then Join room / Play solo / Copy invite link straight after. Below "or find players": your
-   save, Quick match, lobby code join/create, open rooms, days between raids.
+5. **3 Play** (lobby-only, per Brandon 2026-10-14: "remove the named room system, only the lobby system"): your save,
+   Quick match (the one gold button), "or play with friends": start a lobby (private/public) and have-a-code join,
+   open lobbies list, "or on your own": Play solo, then days between raids. No free-text room box or room invite.
+   `#f-room`/`#btn-join`/`#btn-invite` stay as hidden carriers for the scripts. Hash/remembered rooms are only used
+   when they match `^(lb|mm)-[A-Z0-9]{5}$`, so old `#room=<name>` links land on the lobby page instead of a named room.
 6. **Controls & guides**: the tabs, then Strategy guide and Devlog buttons.
 7. HD textures (desktop only, optional) last.
 

@@ -67,9 +67,12 @@ async def main():
         await scroll_to(".colors")
         await pg.click(".cpick[data-c=tunic] .swatches button:nth-child(3)"); await pg.wait_for_timeout(900)
         await scroll_to("#play-h")
-        await pg.click("#f-room"); await pg.keyboard.type("kokiri-crew", delay=70); await pg.wait_for_timeout(700)
+        await pg.wait_for_timeout(1200)
         await scroll_to(".or")
+        await pg.click("#btn-make"); await pg.wait_for_timeout(2200)
+        await scroll_to(".code-h")
         await pg.click("#mm-code"); await pg.keyboard.type("ABCDE", delay=110); await pg.wait_for_timeout(700)
+        await scroll_to("#btn-solo"); await pg.wait_for_timeout(900)
         await scroll_to("#ctl-h")
         for t in ("#ctl-tab-pad", "#ctl-tab-kb", "#ctl-tab-touch"):
             await pg.click(t); await pg.wait_for_timeout(1100)
