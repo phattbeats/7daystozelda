@@ -143,6 +143,9 @@ assert s.count("id=bgm ") == 1
 s = s.replace('data-mount="#overlay .card"', 'data-mount="#topbar"')
 assert 'data-mount="#topbar"' in s
 
+s = s.replace("<meta content=#0b0f14 name=theme-color>", "<meta content=#0a0c13 name=theme-color>")
+assert "<meta content=#0a0c13 name=theme-color>" in s
+
 # ---------- script edits (lobby-only) ----------
 LOBBY_RE = r"/^(lb|mm)-[A-Z0-9]{5}$/"
 JS = [

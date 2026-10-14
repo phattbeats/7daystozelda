@@ -1,0 +1,588 @@
+<!doctypehtml><html lang=en><head><meta charset=UTF-8><meta content="width=device-width,initial-scale=1,viewport-fit=cover"name=viewport><meta content=dark name=color-scheme><meta content=#0a0c13 name=theme-color><meta content=yes name=mobile-web-app-capable><meta content=yes name=apple-mobile-web-app-capable><meta content=black-translucent name=apple-mobile-web-app-status-bar-style><meta content="7 Days to Zelda" name=apple-mobile-web-app-title><link href=manifest.webmanifest rel=manifest crossorigin=use-credentials><link href="icon-180.png?v=da7f09aa" rel=apple-touch-icon><title>7 Days to Zelda</title><script>Object.defineProperty(document,"title",{configurable:!0,get:function(){return"7 Days to Zelda"},set:function(){}})</script><meta content="Co-op survival Ocarina of Time in your browser. Gather, craft, build walls, and hold Hyrule through seven nights of raids with your friends." name=description><meta content=website property=og:type><meta content="7 Days to Zelda" property=og:site_name><meta content="7 Days to Zelda" property=og:title><meta content="Co-op survival Ocarina of Time in your browser. Gather, craft, build walls, and hold Hyrule through seven nights of raids with your friends." property=og:description><meta content=https://zelda.phatt.vip/ property=og:url><meta content="https://zelda.phatt.vip/og.jpg?v=178bdcc3" property=og:image><meta content="https://zelda.phatt.vip/og.jpg?v=178bdcc3" property=og:image:secure_url><meta content=image/jpeg property=og:image:type><meta content=1200 property=og:image:width><meta content=630 property=og:image:height><meta content="7 Days to Zelda: a fortified camp under a blood moon, with the undead closing in" property=og:image:alt><meta content=summary_large_image name=twitter:card><meta content="7 Days to Zelda" name=twitter:title><meta content="Co-op survival Ocarina of Time in your browser. Gather, craft, build walls, and hold Hyrule through seven nights of raids with your friends." name=twitter:description><meta content="https://zelda.phatt.vip/og.jpg?v=178bdcc3" name=twitter:image><link href="favicon.ico?v=da7f09aa" rel=icon sizes=48x48><link href="favicon-32.png?v=da7f09aa" rel=icon sizes=32x32 type=image/png><link href="favicon-96.png?v=da7f09aa" rel=icon sizes=96x96 type=image/png><style>#canvas{position:fixed;top:0;left:0;width:100vw;height:100vh;display:block;outline:0;z-index:1;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}body.playing{overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}#touch-gamepad{display:none;position:fixed;top:env(safe-area-inset-top,0);right:env(safe-area-inset-right,0);bottom:env(safe-area-inset-bottom,0);left:env(safe-area-inset-left,0);z-index:5;pointer-events:none;user-select:none;-webkit-user-select:none}#touch-gamepad.visible{display:block}#touch-stick-zone{position:absolute;left:10px;bottom:10px;width:160px;height:160px;pointer-events:auto;touch-action:none}#touch-stick-base{position:absolute;left:20px;bottom:20px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.2)}#touch-stick-knob{position:absolute;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.35);left:35px;top:35px;pointer-events:none;transition:none}.touch-btn{position:absolute;pointer-events:auto;touch-action:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:monospace;font-weight:700;color:rgba(255,255,255,.7);border:2px solid rgba(255,255,255,.2)}.touch-btn.pressed,.touch-btn:active{background:rgba(255,255,255,.3)!important}#tb-a{right:20px;bottom:100px;width:64px;height:64px;background:rgba(255,255,255,.12);font-size:22px}#tb-b{right:90px;bottom:50px;width:56px;height:56px;background:rgba(255,255,255,.1);font-size:18px}#tb-z{right:160px;bottom:100px;width:50px;height:50px;background:rgba(255,255,255,.08);font-size:16px}#tb-start{top:10px;left:50%;transform:translateX(-50%);width:60px;height:34px;border-radius:17px;background:rgba(255,255,255,.08);font-size:11px}#tb-r{right:20px;top:10px;width:50px;height:34px;border-radius:17px;background:rgba(255,255,255,.08);font-size:14px}#tb-l{left:10px;top:10px;width:50px;height:34px;border-radius:17px;background:rgba(255,255,255,.08);font-size:14px}.touch-cbtn{position:absolute;pointer-events:auto;touch-action:none;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:12px;font-weight:700;color:rgba(255,200,50,.7);background:rgba(255,200,50,.08);border:2px solid rgba(255,200,50,.15)}.touch-cbtn.pressed,.touch-cbtn:active{background:rgba(255,200,50,.3)!important}#tb-cu{right:110px;bottom:210px}#tb-cd{right:110px;bottom:140px}#tb-cl{right:145px;bottom:175px}#tb-cr{right:75px;bottom:175px}#tb-esc{top:10px;right:80px;width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,.08);font-size:10px;letter-spacing:-.5px}
+@font-face{font-family:Cinzel;src:url(fonts/cinzel-700.woff2) format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:Nunito;src:url(fonts/nunito-600.woff2) format("woff2");font-weight:400 650;font-display:swap}
+@font-face{font-family:Nunito;src:url(fonts/nunito-800.woff2) format("woff2");font-weight:651 900;font-display:swap}
+/* 7DtZ lobby design system (PHA-4242). One palette, two typefaces, one set of components.
+   Night: the camp after dark. Gold: the Triforce, used for titles, focus and the one primary action.
+   Parchment: text. Green, amber and red are status colours only. */
+:root{
+--night:#0a0c13;--panel:rgba(14,17,29,.9);--raise:#181d30;--raise-2:#222941;--raise-3:#2c3452;
+--line:rgba(232,201,128,.2);--line-2:rgba(232,201,128,.42);
+--text:#f1e9d6;--muted:#aba493;--gold:#e8c980;--gold-2:#f7e0a6;--gold-ink:#231905;
+--ok:#8ad58e;--warn:#ecb94f;--bad:#ec7a64;--focus:#ffeab0;
+--bg:var(--night);--bg-2:var(--raise);--card:var(--panel);--gold-dim:#9c8143;
+--r:14px;--r-s:10px;
+--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+--f-ui:Nunito,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+--f-title:Cinzel,Georgia,"Times New Roman",serif;
+--f-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+--ease:cubic-bezier(.2,.7,.2,1);--t:160ms
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--night);color:var(--text);font:500 16px/1.5 var(--f-ui);-webkit-font-smoothing:antialiased}
+[hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.muted{color:var(--muted)}
+.small{font-size:.875rem}
+a{color:var(--gold)}
+
+/* ---------- page ---------- */
+#overlay{position:fixed;inset:0;z-index:100;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;transition:opacity .4s ease;
+ background:linear-gradient(180deg,rgba(10,12,19,.35) 0,rgba(10,12,19,.55) 40%,rgba(10,12,19,.92) 100%),url(home-bg.png) center 30%/cover no-repeat,var(--night);
+ padding:0 0 calc(var(--s6) + env(safe-area-inset-bottom))}
+#overlay.hidden{opacity:0;pointer-events:none}
+#topbar{position:relative;min-height:55px;padding-top:env(safe-area-inset-top)}
+#topbar>[data-phatt-arcade]{display:block}
+.card{width:100%;max-width:34rem;margin:0 auto;padding:var(--s5) var(--s4) 0;display:grid;grid-template-columns:minmax(0,1fr);align-items:start}
+#join{display:contents}
+.col-a{order:1}.col-b{order:2}
+.card>section.panel{order:3}
+.foot{order:4;text-align:center;font-size:.8rem;color:var(--muted);margin-top:var(--s2)}
+
+/* ---------- hero ---------- */
+.brand{text-align:center;margin:0 0 var(--s5)}
+.brand img{display:block;width:min(100%,26rem);height:auto;margin:0 auto var(--s3);filter:drop-shadow(0 8px 22px rgba(0,0,0,.75));animation:rise .7s var(--ease) both}
+.tagline{display:flex;align-items:center;justify-content:center;gap:var(--s3);font:700 .82rem/1.2 var(--f-title);letter-spacing:.2em;text-transform:uppercase;color:var(--gold-2);text-shadow:0 2px 10px #000}
+.tagline::before,.tagline::after{content:"";height:1px;flex:0 1 3rem;min-width:1rem;background:linear-gradient(90deg,transparent,var(--gold))}
+.tagline::after{transform:scaleX(-1)}
+.lede{margin:var(--s2) auto 0;max-width:36ch;text-wrap:balance;font-size:1rem;color:var(--text);text-shadow:0 2px 8px #000}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---------- panels ---------- */
+.panel{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:var(--s5) var(--s4);margin-bottom:var(--s4);
+ box-shadow:inset 0 1px 0 rgba(255,236,190,.07),0 14px 36px rgba(0,0,0,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.panel h2{display:flex;align-items:center;gap:var(--s3);margin:0 0 var(--s4);font:700 1.12rem/1.2 var(--f-title);letter-spacing:.06em;color:var(--gold)}
+.step{flex:none;display:grid;place-items:center;width:28px;height:28px;background:var(--gold);color:var(--gold-ink);font:800 .85rem/1 var(--f-ui);letter-spacing:0;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.panel h2 .opt{margin-left:auto;font:800 .68rem/1 var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:5px 8px}
+.panel>p.muted.small,.help{font-size:.875rem;color:var(--muted);line-height:1.5}
+.sub{margin-top:var(--s5);padding-top:var(--s4);border-top:1px solid var(--line)}
+
+/* ---------- fields ---------- */
+label.f,.f{display:block;margin-top:var(--s4)}
+label.f:first-of-type{margin-top:0}
+.lbl,.mm-list-h{display:flex;align-items:baseline;justify-content:space-between;gap:var(--s2);font:800 .72rem/1.2 var(--f-ui);letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin-bottom:var(--s2)}
+.lbl small{font:600 .78rem var(--f-ui);letter-spacing:0;text-transform:none;opacity:.85}
+.f .help{margin:-2px 0 var(--s3)}
+label.f input,label.f select,#mm-code,#mm-file{display:block;width:100%;height:48px;padding:0 14px;background:var(--raise);color:var(--text);border:1px solid var(--line);border-radius:var(--r-s);font:600 16px var(--f-ui);transition:border-color var(--t)}
+label.f select{appearance:none;padding-right:40px;background:var(--raise) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23e8c980' stroke-width='2'/%3E%3C/svg%3E") right 16px center no-repeat}
+input::placeholder{color:#6f6a5e}
+label.f input:hover,label.f select:hover,#mm-code:hover{border-color:var(--line-2)}
+input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+label.f input:focus,label.f select:focus,#mm-code:focus{border-color:var(--gold)}
+
+/* ---------- buttons ---------- */
+.btn{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);min-height:48px;padding:0 20px;border-radius:var(--r-s);
+ font:800 .95rem/1 var(--f-ui);letter-spacing:.02em;text-decoration:none;cursor:pointer;color:var(--text);background:var(--raise-2);border:1px solid var(--line-2);
+ box-shadow:0 2px 0 rgba(0,0,0,.55);transition:background var(--t),border-color var(--t),transform var(--t)}
+.btn:hover:not(:disabled){background:var(--raise-3);border-color:var(--gold)}
+.btn:active:not(:disabled){transform:translateY(1px);box-shadow:0 1px 0 rgba(0,0,0,.55)}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.btn.primary{color:var(--gold-ink);background:linear-gradient(180deg,#f5d995,#ddb563);border-color:#f9e6b4}
+.btn.primary:hover:not(:disabled){background:linear-gradient(180deg,#fbe3a9,#e6c072);border-color:#fff1c9}
+.linkish{appearance:none;background:none;border:0;padding:6px 0;cursor:pointer;color:var(--gold);font:700 .9rem var(--f-ui);text-decoration:underline;text-decoration-color:var(--line-2);text-underline-offset:4px}
+.linkish:hover{color:var(--gold-2);text-decoration-color:currentColor}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3);margin-top:var(--s4)}
+.actions .btn{width:100%}
+.invite{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s2);font-size:.875rem}
+#copy-note{color:var(--ok)}
+
+/* ---------- 1 game files ---------- */
+#drop{display:block;width:100%;text-align:center;cursor:pointer;padding:var(--s5) var(--s4);border:1.5px dashed var(--line-2);border-radius:var(--r-s);background:rgba(8,10,16,.55);color:var(--text);font:inherit;transition:border-color var(--t),background var(--t)}
+#drop.over,#drop:hover{border-color:var(--gold);background:rgba(232,201,128,.06)}
+#drop strong{display:block;font:800 1.05rem/1.3 var(--f-ui);margin-bottom:var(--s1)}
+#drop .small{display:block;line-height:1.5}
+#rom-file{display:none}
+#status-line{min-height:1.4em;font-size:.9rem;color:var(--muted)}
+.bar{height:6px;background:var(--raise);border-radius:3px;overflow:hidden;margin:var(--s2) 0}
+.bar>div{height:100%;width:0;background:linear-gradient(90deg,var(--gold-dim),var(--gold));transition:width .3s ease}
+.bar>div.crawl{transition:none;animation:crawl 40s cubic-bezier(.1,.4,.2,.85) forwards}
+@keyframes crawl{from{width:25%}to{width:92%}}
+.ready-row{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.ready-row .tick{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:rgba(138,213,142,.14);border:1px solid rgba(138,213,142,.4);color:var(--ok);font-weight:800}
+.ready-row .grow{flex:1;min-width:10rem;font-weight:700}
+.ready-row .grow .small{font-weight:500}
+#error-msg{color:var(--bad);font-size:.9rem;margin-top:var(--s2)}
+#error-msg:empty{display:none}
+
+/* ---------- 2 your link ---------- */
+.colors{display:flex;gap:var(--s4);align-items:center}
+.colors .preview{flex:none;width:96px;display:flex;flex-direction:column;align-items:center;gap:var(--s1);padding:var(--s2) 0;background:radial-gradient(circle,rgba(255,255,255,.05),transparent 70%)}
+.colors .preview svg{width:88px;height:88px;display:block}
+.pickers{flex:1;min-width:0;display:grid;gap:var(--s3)}
+.cpick{display:grid;grid-template-columns:5.2rem 32px 5.6rem 1fr;gap:var(--s2);align-items:center;font-size:.85rem}
+.cpick>span{color:var(--muted);font-weight:700}
+.cpick input[type=color]{width:32px;height:32px;padding:0;border:1px solid var(--line-2);border-radius:8px;background:var(--raise);cursor:pointer}
+.cpick input.hex{width:100%;height:32px;padding:0 8px;border-radius:8px;font:600 .8rem var(--f-mono);background:var(--raise);color:var(--text);border:1px solid var(--line);text-transform:uppercase}
+.cpick input.hex:invalid{border-color:var(--bad)}
+.swatches{display:flex;gap:6px;flex-wrap:wrap}
+.swatches button{width:22px;height:22px;border-radius:50%;padding:0;cursor:pointer;border:1px solid rgba(255,255,255,.2);box-shadow:inset 0 0 0 2px rgba(0,0,0,.25)}
+.swatches button.on{outline:2px solid var(--gold);outline-offset:2px}
+#tunic-warn{color:var(--warn);font-size:.875rem;margin-top:var(--s3)}
+
+/* ---------- 3 play ---------- */
+.or{display:flex;align-items:center;gap:var(--s3);margin:var(--s5) 0 var(--s4);font:800 .72rem/1 var(--f-ui);letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.mm-me{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;padding:var(--s3);margin-bottom:var(--s3);background:var(--raise);border:1px solid var(--line);border-radius:var(--r-s);font-size:.9rem}
+.mm-me>.muted{font:800 .72rem/1 var(--f-ui);letter-spacing:.11em;text-transform:uppercase}
+#mm-stage{color:var(--text);font-weight:700}
+#mm-file{width:auto;height:36px;font-size:.9rem}
+.mm-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);margin-top:var(--s3)}
+.mm-row>.btn{flex:none}
+#btn-quick{width:100%;min-height:52px;font-size:1.02rem}
+.btn.solo{width:100%}
+.code-h{margin-top:var(--s5)}
+#mm>.lbl+.mm-row,.code-h+.mm-row{margin-top:0}
+#mm-hint{flex:1 1 100%;font-size:.85rem}
+#mm-note{font-size:.875rem;color:var(--ok);margin-top:var(--s2)}
+#mm-note:empty{display:none}
+#mm-note.bad{color:var(--bad)}
+#mm-code{flex:1 1 7rem;width:auto;max-width:11rem;text-align:center;letter-spacing:.3em;text-transform:uppercase;font:800 1.05rem var(--f-mono)}
+#btn-code{flex:1 1 8rem}
+.mm-seg{display:inline-flex;padding:4px;gap:4px;background:var(--raise);border:1px solid var(--line);border-radius:var(--r-s)}
+.mm-seg label{display:flex;align-items:center;gap:6px;min-height:38px;padding:0 12px;border-radius:7px;font-weight:700;font-size:.9rem;color:var(--muted);cursor:pointer}
+.mm-seg input{accent-color:var(--gold)}
+.mm-seg label:has(input:checked){background:var(--raise-3);color:var(--text)}
+#btn-make{flex:1 1 9rem}
+.mm-made{margin-top:var(--s3);padding:var(--s3);background:rgba(232,201,128,.06);border:1px dashed var(--line-2);border-radius:var(--r-s);font-size:.95rem}
+#mm-made-code{font:800 1.15rem var(--f-mono);letter-spacing:.25em;color:var(--gold-2)}
+.mm-list-h{margin:var(--s5) 0 var(--s2)}
+.mm-list-h .linkish{font-size:.8rem;letter-spacing:0;text-transform:none;padding:0}
+#mm-rooms{list-style:none;max-height:15rem;overflow-y:auto}
+#mm-rooms li.room{display:grid;grid-template-columns:1fr auto;gap:2px var(--s3);align-items:center;background:var(--raise);border:1px solid var(--line);border-radius:var(--r-s);padding:var(--s2) var(--s3);margin-bottom:var(--s2)}
+#mm-rooms .who{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mm-rooms .st{font-size:.8rem;color:var(--muted);grid-column:1}
+#mm-rooms .tag{font:800 .68rem var(--f-ui);border-radius:5px;padding:2px 6px;margin-left:6px;background:rgba(138,213,142,.14);color:var(--ok)}
+#mm-rooms .tag.mid{background:rgba(236,185,79,.14);color:var(--warn)}
+#mm-rooms .tag.far{background:rgba(236,122,100,.14);color:var(--bad)}
+#mm-rooms .btn{grid-row:1/span 2;grid-column:2;min-height:40px;padding:0 14px;font-size:.88rem}
+label.f.raids{margin-top:var(--s5)}
+
+/* ---------- controls + guides ---------- */
+.ctl-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:4px;margin-bottom:var(--s4);background:var(--raise);border:1px solid var(--line);border-radius:var(--r-s)}
+.ctl-tab{appearance:none;min-height:42px;border:0;border-radius:7px;background:none;color:var(--muted);font:800 .9rem var(--f-ui);cursor:pointer;transition:background var(--t),color var(--t)}
+.ctl-tab:hover{color:var(--text)}
+.ctl-tab[aria-selected=true]{background:var(--gold);color:var(--gold-ink)}
+.keys{font-size:.9rem;color:var(--text);line-height:1.9}
+.ctl-pane .keys{margin:0 0 var(--s2)}
+.ctl-pane .small{color:var(--muted);line-height:1.8}
+kbd{font:700 .74rem/1 var(--f-mono);color:var(--gold-2);background:var(--raise-2);border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;padding:2px 5px;margin-right:2px;white-space:nowrap}
+.guides{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
+.guides .btn{width:100%}
+.guides+.help{margin-top:var(--s2);text-align:center}
+
+/* ---------- menu music (lives in the arcade strip) ---------- */
+#bgm{position:absolute;right:max(8px,env(safe-area-inset-right));top:calc(env(safe-area-inset-top) + 6px);height:43px;z-index:2;display:flex;align-items:center;color:var(--muted)}
+#bgm .mus{display:flex;align-items:center;gap:var(--s3)}
+#bgm .row{display:flex;align-items:center;gap:var(--s2)}
+#bgm button{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.04);border:1px solid var(--line-2);color:var(--gold-2);font-size:.85rem;cursor:pointer}
+#bgm button:hover{border-color:var(--gold)}
+#bgm input[type=range]{width:6.5rem;accent-color:var(--gold)}
+#bgm .pct{width:2.6rem;font:700 .8rem var(--f-ui);font-variant-numeric:tabular-nums;color:var(--text)}
+#bgm .hint{max-width:14rem;font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:560px){#bgm .hint,#bgm .pct{display:none}#bgm input[type=range]{width:4.5rem}}
+
+/* ---------- dialogs and in-game chrome ---------- */
+#rotate{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:60;width:min(21rem,calc(100vw - 32px));text-align:center;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r);padding:var(--s5) var(--s4);box-shadow:0 14px 36px rgba(0,0,0,.6)}
+#rotate strong{font:700 1.05rem var(--f-title);color:var(--gold);letter-spacing:.04em}
+#rotate .phone{font-size:2rem;display:block;margin-bottom:var(--s2);transform:rotate(90deg)}
+#rotate .actions{display:flex;justify-content:center;flex-wrap:wrap}
+#crash{position:fixed;inset:0;z-index:200;background:rgba(6,8,12,.92);display:grid;place-items:center;padding:var(--s4)}
+#crash .panel{max-width:28rem}
+#crash pre{white-space:pre-wrap;word-break:break-word;font:.74rem var(--f-mono);color:var(--muted);margin-top:var(--s3);max-height:8rem;overflow:auto}
+#crash .actions{display:flex}
+#net-pill{position:fixed;top:8px;right:8px;z-index:50;display:flex;align-items:center;gap:var(--s2);font:700 12px/1 var(--f-ui);color:var(--text);background:rgba(10,12,19,.78);border:1px solid var(--line);padding:6px 10px;border-radius:999px;pointer-events:none;transition:opacity .6s ease}
+#net-pill i{width:8px;height:8px;border-radius:50%;background:var(--warn);display:block}
+#net-pill.ok i{background:var(--ok)}
+#net-pill.bad i{background:var(--bad)}
+#net-pill.quiet{opacity:.35}
+body.touch #net-pill{top:52px}
+#mm-badge{position:fixed;top:6px;left:50%;transform:translateX(-50%);z-index:20;background:rgba(10,12,19,.78);color:var(--gold-2);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font:800 .72rem var(--f-ui);letter-spacing:.1em;cursor:pointer;opacity:.7}
+#mm-badge:hover,#mm-badge:focus{opacity:1}
+
+/* ---------- tablet + desktop ---------- */
+@media (min-width:600px){
+ .card{max-width:40rem;padding-top:var(--s6)}
+ .panel{padding:var(--s5)}
+ .brand img{width:min(100%,30rem)}
+}
+@media (min-width:1100px){
+ .card{max-width:1120px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"a b" "a hd" "foot foot";column-gap:var(--s6)}
+ .col-a{grid-area:a}
+ .col-b{grid-area:b}
+ .card>section.panel{grid-area:hd}
+ .foot{grid-area:foot}
+ .brand{margin-top:var(--s2)}
+ .brand img{width:min(100%,32rem)}
+}
+@media (max-width:420px){
+ .tagline{font-size:.74rem;letter-spacing:.14em;white-space:nowrap}
+ .colors{flex-direction:column;align-items:stretch}
+ .colors .preview{flex-direction:row;justify-content:center;width:auto}
+ .cpick{grid-template-columns:4.6rem 32px 1fr}
+ .cpick .swatches{grid-column:1/-1}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style></head><body><div id=overlay><header id=topbar><div id=bgm role=region aria-label="Menu music"><div class=mus><div class=row><button type=button id=bgm-toggle aria-label="Play music">&#9654;</button><input type=range id=bgm-vol min=0 max=100 step=1 value=15 aria-label="Music volume"><span class=pct id=bgm-pct>15%</span></div><div class=hint id=bgm-hint>&#9835; Menu music · tap anywhere to start</div></div></div></header><div class=card><form aria-labelledby=play-h autocomplete=off id=join><div class=col-a><div class=brand><img src=home-logo.png alt="7 Days to Zelda" width=960 height=398 decoding=async><h1 class=sr>7 Days to Zelda</h1><p class=tagline>Ocarina co-op survival</p><p class=lede>Gather, craft and wall in your camp. Hold Hyrule through the raids, together.</p></div><section class=panel aria-labelledby=rom-h><h2 id=rom-h><span class=step>1</span>Game files</h2><div id=rom-loading><div id=status-line>Loading the game engine…</div><div class=bar><div id=bar></div></div></div><div id=rom-need hidden><button type=button id=drop><strong id=drop-title>Drop your Ocarina of Time ROM</strong><span class="muted small"id=drop-hint>or click to choose a .z64 / .n64 / .v64 file, or a .zip with one inside. It's unpacked inside this browser and never uploaded.</span></button><input type=file id=rom-file accept=.z64,.n64,.v64,.zip,.o2r,.otr multiple></div><div id=rom-ready class=ready-row hidden><span class=tick aria-hidden=true>✓</span><span class=grow><span id=rom-label>ROM ready</span><br><span class="muted small">Stored in this browser. Saves stay here too.</span></span><button type=button class=linkish id=rom-forget>Use a different ROM</button></div><div id=error-msg role=alert></div></section><section class=panel aria-labelledby=link-h><h2 id=link-h><span class=step>2</span>Your Link</h2><label class=f><span class=lbl>Name</span><input id=f-name enterkeyhint=go maxlength=24 name=name placeholder="What should we call you?"></label><div class=f><span class=lbl>Colors</span><p class=help>Everyone sees your fairy's glow and your tunic in these. You can change them in game too: Settings &rarr; Network &rarr; Anchor.</p><div class=colors><div class=preview aria-hidden=true><svg viewBox="0 0 100 100"><defs><radialGradient id=pv-glow><stop id=pv-in offset=0 stop-color=#ffffff /><stop id=pv-mid offset=.38 stop-color=#3cb043 stop-opacity=.9 /><stop id=pv-out offset=1 stop-color=#3cb043 stop-opacity=0 /></radialGradient></defs><circle cx=50 cy=50 r=46 fill="url(#pv-glow)"/><g fill=#e8f2ff fill-opacity=.55><ellipse cx=50 cy=35 rx=6.5 ry=15 transform="rotate(38 50 50)"/><ellipse cx=50 cy=35 rx=6.5 ry=15 transform="rotate(-38 50 50)"/></g><g fill=#e8f2ff fill-opacity=.4><ellipse cx=50 cy=40 rx=5 ry=10 transform="rotate(128 50 50)"/><ellipse cx=50 cy=40 rx=5 ry=10 transform="rotate(-128 50 50)"/></g><circle id=pv-core cx=50 cy=50 r=8 fill=#ffffff /></svg><svg viewBox="0 0 40 40" style=width:40px;height:40px><path id=pv-tunic d="M14 4 L26 4 L31 10 L36 20 L31 22 L29 17 L29 36 L11 36 L11 17 L9 22 L4 20 L9 10 Z" fill=#3cb043 stroke="rgba(0,0,0,.45)" stroke-width=1.2 /><rect x=11 y=24 width=18 height=3 fill=#6b4a26 /></svg></div><div class=pickers><div class=cpick data-c=inner><span>Fairy core</span><input type=color aria-label="Fairy core color"><input class=hex maxlength=7 pattern="#?[0-9A-Fa-f]{6}" aria-label="Fairy core hex" spellcheck=false><div class=swatches></div></div><div class=cpick data-c=outer><span>Fairy aura</span><input type=color aria-label="Fairy aura color"><input class=hex maxlength=7 pattern="#?[0-9A-Fa-f]{6}" aria-label="Fairy aura hex" spellcheck=false><div class=swatches></div></div><div class=cpick data-c=tunic><span>Tunic</span><input type=color aria-label="Tunic color"><input class=hex maxlength=7 pattern="#?[0-9A-Fa-f]{6}" aria-label="Tunic hex" spellcheck=false><div class=swatches></div></div></div></div><div id=tunic-warn role=status aria-live=polite hidden></div></div></section></div><div class=col-b><section class=panel aria-labelledby=play-h><h2 id=play-h><span class=step>3</span>Play</h2><div id=mm class=mm><div class=mm-me><span class=muted>Your save</span> <select id=mm-file aria-label="Which save to match" hidden></select><span id=mm-stage>Reading your saves…</span></div><div class=mm-row><button type=button class="btn primary" id=btn-quick disabled>Quick match</button><span class="muted small" id=mm-hint>Puts you in an open lobby near your progress, or opens one. Joining a lobby gives you its progress, so you land in a game like yours.</span></div><div id=mm-note role=status aria-live=polite></div><div class=or><span>or play with friends</span></div><div class=lbl><span>Start a lobby</span></div><div class=mm-row><div class=mm-seg role=radiogroup aria-label="Who can find the lobby"><label><input type=radio name=mm-vis value=private checked> Private</label><label><input type=radio name=mm-vis value=public> Public</label></div><button type=button class=btn id=btn-make>Create lobby</button></div><div id=mm-made class=mm-made hidden><div>Your lobby <b id=mm-made-code></b> · <span id=mm-made-vis></span></div><div class="muted small" id=mm-made-note></div><div class=mm-row><button type=button class=btn id=btn-enter>Enter lobby</button><button type=button class=linkish id=mm-copy>Copy invite link</button><button type=button class=linkish id=mm-vis-toggle></button></div></div><div class="lbl code-h"><span>Have a code?</span></div><div class=mm-row><input id=mm-code maxlength=5 placeholder=ABCDE autocapitalize=characters autocomplete=off spellcheck=false aria-label="Lobby code"><button type=button class=btn id=btn-code disabled>Join lobby</button></div><div class=mm-list-h><span>Open lobbies</span><button type=button class=linkish id=mm-refresh>Refresh</button></div><ul id=mm-rooms aria-live=polite><li class="muted small">Looking…</li></ul></div><div class=or><span>or on your own</span></div><button type=button class="btn solo" id=btn-solo disabled>Play solo</button><input id=f-room hidden enterkeyhint=go maxlength=32 name=room placeholder=boys><button type=submit id=btn-join hidden disabled>Join</button><button type=button class=linkish id=btn-invite hidden>Copy invite link</button><span id=copy-note hidden aria-live=polite></span><label class="f raids"><span class=lbl>Days between raids <small>the host's pick counts</small></span><select id=f-raids name=raids><option value=1>Every night</option><option value=2>Every 2 days</option><option value=3>Every 3 days (recommended)</option><option value=5>Every 5 days</option><option value=7>Every 7 days</option></select></label><input type=checkbox id=f-horde hidden><input type=checkbox id=f-sevendays checked hidden></section><section class=panel id=controls aria-labelledby=ctl-h><h2 id=ctl-h>Controls &amp; guides</h2><div class=ctl-tabs role=tablist aria-label="How are you playing?"><button type=button class=ctl-tab role=tab id=ctl-tab-touch aria-controls=ctl-touch aria-selected=false data-ctl=touch>Phone</button><button type=button class=ctl-tab role=tab id=ctl-tab-pad aria-controls=ctl-pad aria-selected=false data-ctl=pad>Controller</button><button type=button class=ctl-tab role=tab id=ctl-tab-kb aria-controls=ctl-kb aria-selected=false data-ctl=kb>Keyboard</button></div><div class=ctl-pane id=ctl-touch role=tabpanel aria-labelledby=ctl-tab-touch hidden><p class=keys>Turn your phone sideways. The pad appears when the game starts: left thumb <kbd>stick</kbd> move · <kbd>A</kbd> talk, open, confirm · <kbd>B</kbd> sword, cancel · <kbd>Z</kbd> Z-target · <kbd>R</kbd> shield · <kbd>▲</kbd><kbd>▼</kbd><kbd>◀</kbd><kbd>▶</kbd> C-items · <kbd>START</kbd> pause menu · <kbd>ESC</kbd> settings.</p><p class="muted small">Menus use the same pad: stick moves the cursor, <kbd>A</kbd> picks, <kbd>B</kbd> backs out, <kbd>Z</kbd>/<kbd>R</kbd> turn pages (keep turning until the arrows say <em>To Workbench</em>), <kbd>START</kbd> closes. Walk up to a placed workbench and press <kbd>A</kbd> to open it. Building: pick a kit on the Base tab, <kbd>◀</kbd>/<kbd>▶</kbd> rotate, <kbd>A</kbd> place, <kbd>B</kbd> cancel. On the pause menu you can also tap a slot to move the cursor, tap it again to pick, and swipe sideways to turn pages.</p></div><div class=ctl-pane id=ctl-pad role=tabpanel aria-labelledby=ctl-tab-pad hidden><p class=keys>Pair over Bluetooth or plug in, then <strong>press any button once the game is up</strong>: browsers only reveal a controller after a press. On a phone the touch pad hides while a controller is connected and returns when it drops.</p><p class=keys>Defaults (Xbox names): left <kbd>stick</kbd> move · <kbd>A</kbd> confirm · <kbd>B</kbd> sword, cancel · <kbd>LT</kbd> Z-target · <kbd>RT</kbd> shield, next page · right <kbd>stick</kbd> C-items · <kbd>LB</kbd> L · <kbd>Start</kbd> pause · <kbd>D-pad</kbd> D-pad. PlayStation: ✕ is A, ○ is B, L2/R2 are the triggers. Some pads (Switch Pro, generic Bluetooth) report A/B swapped: rebind in Settings → Controller (<kbd>ESC</kbd> opens settings); it's remembered.</p></div><div class=ctl-pane id=ctl-kb role=tabpanel aria-labelledby=ctl-tab-kb hidden><p class=keys><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>X</kbd> A · <kbd>C</kbd> B · <kbd>Z</kbd> Z-target · <kbd>R</kbd> R (shield, next page) · <kbd>E</kbd> L · <kbd>Space</kbd> Start (pause) · arrows C-items · <kbd>T</kbd><kbd>G</kbd><kbd>F</kbd><kbd>H</kbd> D-pad · <kbd>Tab</kbd> Workbench · <kbd>Esc</kbd> settings menu. Rebind anything in Settings → Controller; it's remembered.</p></div><div class=sub><div class=guides><a class=btn href="https://phattmedia.club/7dtz-official-strategy-guide/" target=_blank rel=noopener>Strategy guide</a><a class=btn href="https://phattmedia.club/tag/7-days-to-zelda/" target=_blank rel=noopener>Devlog</a></div><p class=help>Both open on phattmedia.club. The guide is free with an email sign-up.</p></div></section></div></form><p class=foot>Bring your own legally dumped ROM. No Nintendo files are hosted here.</p></div></div><div id=net-pill hidden><i></i><span id=net-text></span></div><div id=rotate hidden aria-label="Turn your phone sideways"role=dialog><span class=phone aria-hidden=true>📱</span><strong>Turn your phone sideways</strong><p class="muted small"style=margin-top:.3rem>The game is 4:3 and the controls need the room.</p><p class="muted small"style=margin-top:.4rem hidden id=rotate-ios>For true fullscreen on iPhone: Share → Add to Home Screen, then play from that icon. Drop your ROM once more there; it keeps its own storage.</p><div class=actions><button type=button class="btn primary"id=rotate-fs hidden>Go fullscreen</button><button type=button class=btn id=rotate-dismiss>Keep it upright</button></div></div><div id=crash hidden><div class=panel><h2>The game crashed</h2><p>Anything you saved before this is kept. Reload to jump back in; the link remembers your room.</p><div class=actions><button type=button class="btn primary"onclick=location.reload()>Reload</button></div><pre id=crash-detail></pre></div></div><canvas id=canvas oncontextmenu=event.preventDefault() tabindex=-1></canvas><input id=mobile-keyboard-input autocomplete=off autocorrect=off autocapitalize=off spellcheck=false style=position:fixed;left:-9999px;top:50%;width:1px;height:1px;opacity:0;z-index:-1;font-size:16px><div id=touch-gamepad><div id=touch-stick-zone><div id=touch-stick-base><div id=touch-stick-knob></div></div></div><div id=tb-a class=touch-btn>A</div><div id=tb-b class=touch-btn>B</div><div id=tb-z class=touch-btn>Z</div><div id=tb-start class=touch-btn>START</div><div id=tb-r class=touch-btn>R</div><div id=tb-l class=touch-btn>L</div><div id=tb-esc class=touch-btn>ESC</div><div id=tb-cu class=touch-cbtn>▲</div><div id=tb-cd class=touch-cbtn>▼</div><div id=tb-cl class=touch-cbtn>◀</div><div id=tb-cr class=touch-cbtn>▶</div></div><script>var OTR_DB_NAME="soh_otr_files",OTR_DB_STORE="otr",OTR_DB_VERSION=1,ROM_ARCHIVES=["oot.o2r","oot-mq.o2r"],audioResumed=!1,runtimeReady=!1,sohInstalled=!1,romReady=!1,gameStarted=!1,pendingRomFiles=null,hashParams=getHashParams(),autoJoin=!(!/^(lb|mm)-[A-Z0-9]{5}$/.test(hashParams.room||"")||!hashParams.name);function $(e){return document.getElementById(e)}var isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||"MacIntel"===navigator.platform&&navigator.maxTouchPoints>1,isTouch="ontouchstart"in window||navigator.maxTouchPoints>0,isMobile=isIOS||/Android|Mobile/i.test(navigator.userAgent)||!(!navigator.userAgentData||!navigator.userAgentData.mobile),isStandalone=window.matchMedia&&matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches||!0===navigator.standalone;function remember(e,t){try{localStorage.setItem("soh."+e,t)}catch(e){}}function recall(e){try{return localStorage.getItem("soh."+e)||""}catch(e){return""}}function openOtrDB(){return new Promise((function(e,t){var n=indexedDB.open(OTR_DB_NAME,OTR_DB_VERSION);n.onupgradeneeded=function(e){e.target.result.createObjectStore(OTR_DB_STORE)},n.onsuccess=function(t){e(t.target.result)},n.onerror=function(e){t(e.target.error)}}))}function idbDo(e,t){return openOtrDB().then((function(n){return new Promise((function(o,r){var a=n.transaction(OTR_DB_STORE,e),i=t(a.objectStore(OTR_DB_STORE));a.oncomplete=function(){o(i?i.result:void 0)},a.onerror=function(e){r(e.target.error)},a.onabort=function(e){r(e.target.error)}}))}))}function getCachedFile(e){return idbDo("readonly",(function(t){return t.get(e)})).then((function(e){return e||null})).catch((function(){return null}))}function cacheFile(e,t){return idbDo("readwrite",(function(n){return n.put(t,e)}))}function deleteCachedFile(e){return idbDo("readwrite",(function(t){return t.delete(e)})).catch((function(){}))}function listCachedFiles(){return idbDo("readonly",(function(e){return e.getAllKeys()})).then((function(e){return e||[]})).catch((function(){return[]}))}function showError(e){$("error-msg").textContent=e||""}function setStatus(e){$("status-line").textContent=e}function setProgress(e){$("bar").style.width=Math.max(0,Math.min(100,e))+"%"}function romView(e){$("rom-loading").hidden="loading"!==e,$("rom-need").hidden="need"!==e,$("rom-ready").hidden="ready"!==e}function refreshButtons(){var e=runtimeReady&&sohInstalled,t=e&&romReady&&!gameStarted;$("btn-join").textContent=gameStarted?"Starting...":romReady&&!e?"Loading engine...":"Join room",$("btn-solo").disabled=!t,$("btn-join").disabled=!t||!$("f-name").value.trim()||!$("f-room").value.trim()}function hideOverlay(){var e=$("overlay");e.classList.contains("hidden")||(e.classList.add("hidden"),setTimeout((function(){e.style.display="none"}),450),$("canvas").focus())}function formValues(){var e=Colors.get();return{name:$("f-name").value.trim().slice(0,24),room:$("f-room").value.trim().slice(0,32),color:e.outer,fairy:e.inner+"-"+e.outer,tunic:e.tunic,horde:!1,sevendays:!0}}function buildHash(e,t){var n=["room="+encodeURIComponent(e.room)];return t&&n.push("name="+encodeURIComponent(e.name)),t&&n.push("color="+e.color),n.push("fairy="+e.fairy,"tunic="+e.tunic),e.horde&&n.push("horde=1"),e.sevendays&&n.push("sevendays=1"),["team","ws","hordeforce"].forEach((function(e){hashParams[e]&&n.push(e+"="+encodeURIComponent(hashParams[e]))})),"#"+n.join("&")}function writeToFS(e,t){try{return FS.writeFile("/"+e,new Uint8Array(t)),!0}catch(t){return showError("Could not load "+e+" into the game: "+t.message),console.error("[Web] write failed",t),!1}}deleteCachedFile("soh.o2r");var Colors=function(){var SW=["3CB043","D0312D","2A6FDB","8E44AD","E8B93B","F06EB4","3BD6D6","FFFFFF","222222"],NM=["Green","Red","Blue","Purple","Gold","Pink","Cyan","White","Black"],cur={inner:"FFFFFF",outer:"3CB043",tunic:"3CB043"},invited=null;
+function hex(v){v=String(v||"").replace(/^#/,"").toUpperCase();return/^[0-9A-F]{6}$/.test(v)?v:""}
+function row(k){return document.querySelector(".cpick[data-c="+k+"]")}
+function fromLink(p){var f=String(p.fairy||"").split("-");return{inner:hex(f[0]),outer:hex(f[1])||hex(p.color),tunic:hex(p.tunic)||hex(p.color)}}
+function paint(){["inner","outer","tunic"].forEach(function(k){var r=row(k),v=cur[k];r.querySelector("input[type=color]").value="#"+v.toLowerCase();var h=r.querySelector("input.hex");document.activeElement!==h&&(h.value="#"+v);r.querySelectorAll(".swatches button").forEach(function(b){b.classList.toggle("on",b.dataset.v===v)})});$("pv-in").setAttribute("stop-color","#"+cur.inner);$("pv-core").setAttribute("fill","#"+cur.inner);$("pv-mid").setAttribute("stop-color","#"+cur.outer);$("pv-out").setAttribute("stop-color","#"+cur.outer);$("pv-tunic").setAttribute("fill","#"+cur.tunic);warn()}
+function set(k,v){v=hex(v);if(v){cur[k]=v;paint()}}
+function lab(h){var v=[0,2,4].map(function(i){var x=parseInt(h.substr(i,2),16)/255;return x>.04045?Math.pow((x+.055)/1.055,2.4):x/12.92});var X=(v[0]*.4124+v[1]*.3576+v[2]*.1805)/.95047,Y=v[0]*.2126+v[1]*.7152+v[2]*.0722,Z=(v[0]*.0193+v[1]*.1192+v[2]*.9505)/1.08883,f=function(t){return t>.008856?Math.cbrt(t):7.787*t+16/116};return[116*f(Y)-16,500*(f(X)-f(Y)),200*(f(Y)-f(Z))]}
+function dist(a,b){var p=lab(a),q=lab(b);return Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2])}
+function others(){var l=[];invited&&invited.tunic&&l.push({name:"your inviter",tunic:invited.tunic});var room=$("f-room").value.trim(),me=$("f-name").value.trim();try{(JSON.parse(recall("roster."+room)||"[]")||[]).forEach(function(p){p&&p.name!==me&&hex(p.tunic)&&l.push(p)})}catch(e){}return l}
+function warn(){var c=others().filter(function(p){return dist(cur.tunic,hex(p.tunic))<25}),el=$("tunic-warn");el.hidden=!c.length;el.textContent=c.length?"Your tunic looks a lot like the one "+c.map(function(p){return p.name}).join(", ")+" wears. Pick another so you can tell your Links apart.":""}
+function init(){var sf=recall("fairy").split("-"),saved={inner:hex(sf[0]),outer:hex(sf[1])||hex(recall("color")),tunic:hex(recall("tunic"))},link=fromLink(hashParams),own=!!hashParams.name;!own&&(link.outer||link.tunic)&&(invited=link);var s=own?link:{};cur.inner=s.inner||saved.inner||"FFFFFF";cur.outer=s.outer||saved.outer||"3CB043";cur.tunic=s.tunic||saved.tunic||cur.outer;["inner","outer","tunic"].forEach(function(k){var r=row(k),sw=r.querySelector(".swatches");SW.forEach(function(v,i){var b=document.createElement("button");b.type="button";b.dataset.v=v;b.title=NM[i];b.setAttribute("aria-label",NM[i]);b.style.background="#"+v;b.addEventListener("click",function(){set(k,v)});sw.appendChild(b)});r.querySelector("input[type=color]").addEventListener("input",function(e){set(k,e.target.value)});var h=r.querySelector("input.hex");h.addEventListener("input",function(){hex(h.value)&&set(k,h.value)});h.addEventListener("blur",function(){h.value="#"+cur[k]})});paint()}
+return{init:init,warn:warn,get:function(){return{inner:cur.inner,outer:cur.outer,tunic:cur.tunic}}}}();!function(){$("f-name").value=hashParams.name||recall("name"),$("f-room").value=(function(r){return /^(lb|mm)-[A-Z0-9]{5}$/.test(r||"")?r:""})(hashParams.room||recall("room"));$("f-raids").value=recall("raids")||"3",$("f-raids").value||($("f-raids").value="3"),$("f-raids").addEventListener("change",(function(){remember("raids",$("f-raids").value)}));Colors.init(),$("f-horde").checked=!1,$("f-sevendays").checked=!0,["f-name","f-room"].forEach((function(e){$(e).addEventListener("input",refreshButtons)})),$("f-room").addEventListener("input",Colors.warn),isTouch&&document.body.classList.add("touch"),isTouch&&($("drop-title").textContent="Choose your Ocarina of Time ROM",$("drop-hint").textContent="Tap to pick the .z64 / .n64 / .v64 file (or a .zip of it) from Files or Downloads. It never leaves this phone."),isIOS&&$("rom-file").removeAttribute("accept")}(),$("join").addEventListener("submit",(function(e){e.preventDefault();var t=formValues();t.name&&t.room&&startGame(t)})),$("btn-solo").addEventListener("click",(function(){startGame(null)})),$("btn-invite").addEventListener("click",(function(){var e=formValues();if(!e.room)return $("f-room").focus(),void($("copy-note").textContent="Pick a room name first.");var t=location.origin+location.pathname+location.search+buildHash(e,!1);navigator.clipboard&&window.isSecureContext?navigator.clipboard.writeText(t).then((function(){$("copy-note").textContent="Copied. Friends add their own name."}),(function(){prompt("Invite link:",t)})):prompt("Invite link:",t)}));var sohO2rPromise=fetch("soh.o2r",{cache:"no-cache"}).then((function(e){if(!e.ok)throw new Error("HTTP "+e.status);return e.arrayBuffer()})).catch((function(e){return console.warn("[Web] soh.o2r download failed:",e),null}));function isRomFile(e){var t=e.toLowerCase().split(".").pop();return"z64"===t||"n64"===t||"v64"===t}function toBigEndianRom(e){var t=new Uint8Array(e);if(t.length<4096)return null;var n=(t[0]<<24|t[1]<<16|t[2]<<8|t[3])>>>0;if(2151092800===n)return e;var o,r=new Uint8Array(t.length);if(931151890===n){for(o=0;o+1<t.length;o+=2)r[o]=t[o+1],r[o+1]=t[o];return r.buffer}if(1074935680===n){for(o=0;o+3<t.length;o+=4)r[o]=t[o+3],r[o+1]=t[o+2],r[o+2]=t[o+1],r[o+3]=t[o];return r.buffer}return null}function romTitle(e){for(var t=new Uint8Array(e,32,20),n="",o=0;o<t.length;o++)n+=String.fromCharCode(t[o]);return n.trim()}var EXTRACT_ERRORS={"-3":"That ROM isn't a version Ship of Harkinian supports. It needs an unmodified Ocarina of Time dump: N64 1.0/1.1/1.2, PAL, or a GameCube version.","-4":"Unpacking finished without producing game data. Reload and try once more; if it repeats, the browser console has details."};function extractRom(e){romView("loading"),setStatus(isMobile?"Unpacking your ROM (a minute or two on a phone; keep this screen open)...":"Unpacking your ROM (about half a minute; the page may freeze briefly)..."),setProgress(20);try{FS.writeFile("/rom.z64",new Uint8Array(e))}catch(e){return showError("Could not load the ROM: "+e.message),void romView("need")}var t=$("bar");t.classList.add("crawl"),setTimeout((function(){var e;try{e=Module.ccall("web_extract_rom","number",["string","string"],["/rom.z64","/oot.o2r"])}catch(t){console.error("[Web] extractor crashed",t),e=-4}try{FS.unlink("/rom.z64")}catch(e){}if(t.classList.remove("crawl"),e<0)return showError(EXTRACT_ERRORS[String(e)]||"Unpacking failed (error "+e+")."),void romView("need");var n,o=1===e?"oot-mq.o2r":"oot.o2r";setStatus("Saving the unpacked game in this browser..."),setProgress(94);try{n=FS.readFile("/"+o)}catch(e){return showError("Could not read the unpacked game: "+e.message),void romView("need")}var r=n.buffer.slice(n.byteOffset,n.byteOffset+n.byteLength);cacheFile(o,r).then((function(){try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}var e=formValues();e.name&&remember("name",e.name),e.room&&remember("room",e.room),remember("color",e.color),remember("fairy",e.fairy),remember("tunic",e.tunic),remember("horde",e.horde?"1":"0"),remember("sevendays",e.sevendays?"1":"0"),setStatus("Unpacked. Reloading to start fresh..."),setProgress(100),setTimeout((function(){location.reload()}),400)}),(function(e){console.warn("[Web] Could not store "+o+" (you will need to add the ROM again next visit):",e),setRomReady([o],!0)}))}),60)}function unzipRom(e){for(var t=new DataView(e),n=new Uint8Array(e),o=-1,r=e.byteLength-22;r>=Math.max(0,e.byteLength-65557);r--)if(101010256===t.getUint32(r,!0)){o=r;break}if(o<0)return Promise.reject(new Error("not a zip"));for(var a=t.getUint16(o+10,!0),i=t.getUint32(o+16,!0),s=0;s<a&&i+46<=e.byteLength&&33639248===t.getUint32(i,!0);s++){var c=t.getUint16(i+10,!0),d=t.getUint32(i+20,!0),u=t.getUint16(i+28,!0),l=t.getUint16(i+30,!0),h=t.getUint16(i+32,!0),m=t.getUint32(i+42,!0),f=(new TextDecoder).decode(n.subarray(i+46,i+46+u));if(i+=46+u+l+h,/\.(z64|n64|v64)$/i.test(f)&&!/(^|\/)__MACOSX\//.test(f)){var v=m+30+t.getUint16(m+26,!0)+t.getUint16(m+28,!0),g=e.slice(v,v+d),p=f.split("/").pop();if(0===c)return Promise.resolve({name:p,data:g});if(8!==c)return Promise.reject(new Error("That zip uses a compression method browsers can't open. Unzip it first."));if("undefined"==typeof DecompressionStream)return Promise.reject(new Error("This browser can't open .zip files. Unzip it first."));var w=new Blob([g]).stream().pipeThrough(new DecompressionStream("deflate-raw"));return new Response(w).arrayBuffer().then((function(e){return{name:p,data:e}}))}}return Promise.resolve(null)}function checkAndExtract(e){var t=toBigEndianRom(e);return t?romTitle(t).toUpperCase().indexOf("ZELDA")<0?(showError('That ROM is "'+romTitle(t)+'". This needs Ocarina of Time.'),void romView("need")):void extractRom(t):(showError("That file isn't an N64 ROM."),void romView("need"))}function handleFiles(e){if(showError(""),!runtimeReady)return pendingRomFiles=e,romView("loading"),void setStatus("Got it. Waiting for the game engine to finish loading...");for(var t=null,n=null,o=[],r=0;r<e.length;r++)isRomFile(e[r].name)?t=t||e[r]:/\.zip$/i.test(e[r].name)?n=n||e[r]:/\.(o2r|otr)$/i.test(e[r].name)&&o.push(e[r]);if(!t&&n)return romView("loading"),setStatus("Opening "+n.name+"..."),setProgress(8),void n.arrayBuffer().then(unzipRom).then((function(e){if(!e)return showError("No .z64 / .n64 / .v64 ROM inside "+n.name+"."),void romView("need");setStatus("Found "+e.name+"."),checkAndExtract(e.data)})).catch((function(e){showError(e&&e.message&&"not a zip"!==e.message?e.message:"Couldn't open "+n.name+" as a zip."),romView("need")}));if(t||o.length){if(t)return romView("loading"),setStatus("Reading "+t.name+"..."),setProgress(10),void t.arrayBuffer().then(checkAndExtract,(function(){showError("Could not read "+t.name+"."),romView("need")}));(o=o.filter((function(e){return!/soh/i.test(e.name)}))).length?Promise.all(o.map((function(e){var t=/mq/i.test(e.name)?"oot-mq.o2r":"oot.o2r";return e.arrayBuffer().then((function(e){return cacheFile(t,e).catch((function(){})).then((function(){return writeToFS(t,e),t}))}))}))).then((function(e){var t=e.filter((function(e){return ROM_ARCHIVES.indexOf(e)>=0}));t.length?setRomReady(t,!0):showError("Those files are loaded, but the game still needs your Ocarina of Time ROM.")})):showError("That is the support archive; this page already has it. Drop your ROM or oot.o2r.")}else showError("That doesn't look like a ROM. Pick the .z64 (or .n64 / .v64) file, or a .zip of it.")}function setRomReady(e,t){romReady=!0,romReadyNames=e,romInFS=!!t;var n=e.indexOf("oot-mq.o2r")>=0,o=e.indexOf("oot.o2r")>=0;$("rom-label").textContent="Ocarina of Time ready"+(n&&o?" (vanilla + Master Quest)":n?" (Master Quest)":""),romView("ready"),refreshButtons(),maybeAutoJoin()}$("drop").addEventListener("click",(function(){$("rom-file").click()})),$("rom-file").addEventListener("change",(function(e){e.target.files.length&&handleFiles(e.target.files),e.target.value=""})),document.addEventListener("dragover",(function(e){e.preventDefault(),gameStarted||$("drop").classList.add("over")})),document.addEventListener("dragleave",(function(){$("drop").classList.remove("over")})),document.addEventListener("drop",(function(e){e.preventDefault(),$("drop").classList.remove("over"),!gameStarted&&e.dataTransfer.files.length&&handleFiles(e.dataTransfer.files)})),$("rom-forget").addEventListener("click",(function(){Promise.all(ROM_ARCHIVES.map(deleteCachedFile)).then((function(){ROM_ARCHIVES.forEach((function(e){try{FS.unlink("/"+e)}catch(e){}})),romReady=!1,romView("need"),refreshButtons()}))}));var romReadyNames=[],romInFS=!1;function checkCachedRom(){return listCachedFiles().then((function(e){var t=e.filter((function(e){return ROM_ARCHIVES.indexOf(e)>=0}));return t.length?setRomReady(t,!1):runtimeReady&&romView("need"),t.length>0}))}function maybeAutoJoin(){autoJoin&&!gameStarted&&romReady&&runtimeReady&&sohInstalled&&startGame(formValues())}function enterFullscreen(){var e=document.documentElement,t=e.requestFullscreen||e.webkitRequestFullscreen;if(!t)return!1;try{var n=t.call(e,{navigationUI:"hide"});return n&&n.then&&n.then((function(){screen.orientation&&screen.orientation.lock&&screen.orientation.lock("landscape").catch((function(){}))}),(function(){})),!0}catch(e){return!1}}function startGame(e){if(!gameStarted){if(gameStarted=!0,window._raidInterval=$("f-raids").value||recall("raids")||"3",remember("raids",window._raidInterval),!isMobile||isStandalone||document.fullscreenElement||enterFullscreen(),isTouch){document.body.classList.add("playing");var t=document.querySelector("meta[name=viewport]");t&&t.setAttribute("content","width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"),document.addEventListener("gesturestart",(function(e){e.preventDefault()}))}if(refreshButtons(),showError(""),e){remember("name",e.name),remember("room",e.room),remember("color",e.color),remember("fairy",e.fairy),remember("tunic",e.tunic),remember("horde",e.horde?"1":"0"),remember("sevendays",e.sevendays?"1":"0");try{history.replaceState(null,"",location.pathname+location.search+buildHash(e,!0))}catch(e){}window._anchorConfig={room:e.room,name:e.name,color:e.color,fairy:e.fairy,tunic:e.tunic,team:hashParams.team||"default",ws:hashParams.ws||"",horde:e.horde?"1":"0",hordeforce:hashParams.hordeforce||"",sevendays:e.sevendays?"1":"0"},NetPill.start(e.room)}else delete window._anchorConfig,window._sevenDaysSolo="1",remember("sevendays",window._sevenDaysSolo);romView("loading"),setStatus("Starting..."),setProgress(96),(romInFS?Promise.resolve():Promise.all(romReadyNames.map((function(e){return getCachedFile(e).then((function(t){t&&writeToFS(e,t)}))})))).then((function(){if(!ROM_ARCHIVES.some((function(e){try{return FS.stat("/"+e),!0}catch(e){return!1}})))return gameStarted=!1,showError("The stored game files are gone (browser storage was cleared?). Drop your ROM again."),romReady=!1,romView("need"),void refreshButtons();setProgress(100),Module._web_otr_loaded(),keepAwake(),window.addEventListener("beforeunload",(function(e){e.preventDefault(),e.returnValue=""})),waitForGameRender(),isMobile&&setTimeout(RotateHint.check,1600)}))}}var RotateHint=function(){var e=!1,t=window.matchMedia?matchMedia("(orientation: portrait)"):null;function n(){var n=gameStarted&&isMobile&&!e&&t&&t.matches&&Math.min(innerWidth,innerHeight)<600;$("rotate").hidden=!n,$("rotate-fs").hidden=isIOS||!(document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen)||!!document.fullscreenElement,$("rotate-ios").hidden=!(isIOS&&!isStandalone)}return t&&t.addEventListener&&t.addEventListener("change",n),window.addEventListener("resize",n),$("rotate-dismiss").addEventListener("click",(function(){e=!0,n(),$("canvas").focus()})),$("rotate-fs").addEventListener("click",(function(){enterFullscreen(),setTimeout(n,600)})),{check:n}}();function waitForGameRender(){setTimeout(hideOverlay,1500)}var wakeLock=null;function keepAwake(){"wakeLock"in navigator&&"visible"===document.visibilityState&&navigator.wakeLock.request("screen").then((function(e){wakeLock=e}),(function(){}))}document.addEventListener("visibilitychange",(function(){if(runtimeReady&&"function"==typeof Module._web_set_hidden){var e="hidden"===document.visibilityState;try{Module._web_set_hidden(e?1:0)}catch(e){}if(isMobile&&gameStarted&&"function"==typeof Module._web_anchor_suspend)try{Module._web_anchor_suspend(e?1:0)}catch(e){}gameStarted&&!e&&keepAwake()}}));var NetPill=function(){var e="",t=!1,n=null,o=!1;function r(e,t,o){var r=$("net-pill");r.hidden=!1,r.className=e+(o?" quiet":""),$("net-text").textContent=t,clearTimeout(n),"ok"===e&&(n=setTimeout((function(){r.classList.add("quiet")}),5e3))}return{start:function(t){o=!0,r("","Connecting to "+(e=t)+"...")},state:function(n){o&&(2===n?(t=!0,r("ok",e)):1===n?r("",(t?"Reconnecting to ":"Connecting to ")+e+"..."):r("bad",t?"Disconnected, retrying...":"Can't reach the co-op server, retrying..."))}}}();window.SohNet={state:function(e){NetPill.state(e)},roster:function(e){var t=window._anchorConfig&&window._anchorConfig.room;if(t)try{var n={};JSON.parse(recall("roster."+t)||"[]").concat(JSON.parse(e)).forEach((function(e){e&&e.name&&(n[e.name]=e)})),remember("roster."+t,JSON.stringify(Object.keys(n).slice(-12).map((function(e){return n[e]}))))}catch(e){}}};var crashed=!1;var _wsAll=[];!function(){var N=window.WebSocket;if(N){function W(u,p){var s=void 0===p?new N(u):new N(u,p);return _wsAll.push(s),s}W.prototype=N.prototype,["CONNECTING","OPEN","CLOSING","CLOSED"].forEach((function(k){W[k]=N[k]})),window.WebSocket=W}}();function closeSockets(){_wsAll.forEach((function(s){try{s.close(1e3,"crash")}catch(e){}}))}function showCrash(e){if(!crashed){crashed=!0,closeSockets(),runtimeReady||($("crash").querySelector("h2").textContent="The game didn't finish loading",$("crash").querySelector("p").textContent="Usually a dropped download. Reload to try again."),$("crash-detail").textContent=String(e||"").slice(0,600),$("crash").hidden=!1;try{window.sohPersist&&window.sohPersist()}catch(e){}}}function resumeAudio(){if(!audioResumed)try{var e=Module.SDL2&&Module.SDL2.audioContext;if(!e)return;if("running"===e.state)return void(audioResumed=!0);"suspended"===e.state&&e.resume().then((function(){"running"===e.state&&(audioResumed=!0)})).catch((function(){}))}catch(e){}}function getHashParams(){var e={},t=window.location.hash.substring(1);return t?(t.split("&").forEach((function(t){var n=t.indexOf("=");if(n>0)try{e[decodeURIComponent(t.substring(0,n))]=decodeURIComponent(t.substring(n+1))}catch(e){}})),e):e}window.addEventListener("error",(function(e){var t=e&&(e.message||e.error&&e.error.message)||"";/abort|RuntimeError|unreachable|memory access out of bounds/i.test(t)&&showCrash(t)})),window.addEventListener("unhandledrejection",(function(e){var t=e&&e.reason&&(e.reason.message||String(e.reason));t&&/abort|RuntimeError|unreachable/i.test(t)&&showCrash(t)})),["click","mousedown","keydown","touchstart","touchend","pointerdown","pointerup"].forEach((function(e){document.addEventListener(e,resumeAudio,!0)})),checkCachedRom();var Module={canvas:document.getElementById("canvas"),noInitialRun:!1,print:function(e){console.log("[SOH] "+e)},printErr:function(e){console.error("[SOH] "+e)},setStatus:function(e){if(e&&!runtimeReady){var t=e.match(/\((\d+(?:\.\d+)?)\/(\d+)\)/);if(t){var n=Math.round(parseFloat(t[1])/parseInt(t[2],10)*100);setStatus("Downloading the game engine... "+n+"%"),setProgress(.9*n)}}},monitorRunDependencies:function(e){runtimeReady||0!==e||setStatus("Starting the engine...")},onAbort:function(e){showCrash(e)},onRuntimeInitialized:function(){runtimeReady=!0,sohO2rPromise.then((function(e){if(e&&writeToFS("soh.o2r",e)){if(sohInstalled=!0,pendingRomFiles){var t=pendingRomFiles;return pendingRomFiles=null,void handleFiles(t)}romReady?(refreshButtons(),maybeAutoJoin()):checkCachedRom()}else showError("Couldn't download the game's support files from this server. Reload to retry.")}))},locateFile:function(e){return e}},TouchGamepad={_active:!1,_stickX:0,_stickY:0,_buttons:{},_stickTouchId:null,_stickCenterX:0,_stickCenterY:0,_knob:null,BUTTON_IDS:["tb-a","tb-b","tb-z","tb-start","tb-r","tb-l","tb-cu","tb-cd","tb-cl","tb-cr","tb-esc"],init:function(){if("ontouchstart"in window||!(navigator.maxTouchPoints<=0)){this._knob=document.getElementById("touch-stick-knob"),document.getElementById("touch-gamepad").classList.add("visible"),this._active=!0,this._setupButtons(),this._setupStick();var e=this;window.addEventListener("gamepadconnected",(function(){e.setShown(!1)})),window.addEventListener("gamepaddisconnected",(function(){(navigator.getGamepads?Array.prototype.filter.call(navigator.getGamepads(),Boolean):[]).length||e.setShown(!0)})),console.log("[TouchGamepad] Initialized for touch device")}},setShown:function(e){this._active=e,document.getElementById("touch-gamepad").classList.toggle("visible",e),e||(this._buttons={},this._stickX=0,this._stickY=0,this._stickTouchId=null,this._knob&&(this._knob.style.transform="translate(0px, 0px)"))},isActive:function(){return this._active},getStickX:function(){return this._stickX},getStickY:function(){return this._stickY},isButtonPressed:function(e){return!!this._buttons[e]},_setupButtons:function(){var e=this;this.BUTTON_IDS.forEach((function(t){var n=document.getElementById(t);n&&(n.addEventListener("touchstart",(function(o){o.preventDefault(),n.classList.add("pressed"),e._buttons[t]=!0,resumeAudio()}),{passive:!1}),n.addEventListener("touchend",(function(o){o.preventDefault(),n.classList.remove("pressed"),e._buttons[t]=!1}),{passive:!1}),n.addEventListener("touchcancel",(function(o){n.classList.remove("pressed"),e._buttons[t]=!1})))}))},_setupStick:function(){var e=this,t=document.getElementById("touch-stick-zone"),n=document.getElementById("touch-stick-base");t.addEventListener("touchstart",(function(t){t.preventDefault(),resumeAudio();var o=t.changedTouches[0];e._stickTouchId=o.identifier;var r=n.getBoundingClientRect();e._stickCenterX=r.left+r.width/2,e._stickCenterY=r.top+r.height/2,e._updateStick(o.clientX,o.clientY,50)}),{passive:!1}),t.addEventListener("touchmove",(function(t){t.preventDefault();for(var n=0;n<t.changedTouches.length;n++)if(t.changedTouches[n].identifier===e._stickTouchId){e._updateStick(t.changedTouches[n].clientX,t.changedTouches[n].clientY,50);break}}),{passive:!1});var o=function(t){for(var n=0;n<t.changedTouches.length;n++)if(t.changedTouches[n].identifier===e._stickTouchId){e._stickTouchId=null,e._knob.style.transform="translate(0px, 0px)",e._stickX=0,e._stickY=0;break}};t.addEventListener("touchend",o,{passive:!1}),t.addEventListener("touchcancel",o)},_updateStick:function(e,t,n){var o=e-this._stickCenterX,r=t-this._stickCenterY,a=Math.sqrt(o*o+r*r);a>n&&(o=o/a*n,r=r/a*n),this._knob.style.transform="translate("+o+"px, "+r+"px)",this._stickX=Math.round(o/n*127),this._stickY=Math.round(-r/n*127)}};!function(){var e=document.getElementById("tb-esc");if(e){var t=document.getElementById("canvas");e.addEventListener("touchstart",(function(n){n.preventDefault(),e.classList.add("pressed"),t.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",code:"Escape",keyCode:27,which:27,bubbles:!0}))}),{passive:!1}),e.addEventListener("touchend",(function(n){n.preventDefault(),e.classList.remove("pressed"),t.dispatchEvent(new KeyboardEvent("keyup",{key:"Escape",code:"Escape",keyCode:27,which:27,bubbles:!0}))}),{passive:!1}),e.addEventListener("touchcancel",(function(){e.classList.remove("pressed"),t.dispatchEvent(new KeyboardEvent("keyup",{key:"Escape",code:"Escape",keyCode:27,which:27,bubbles:!0}))}))}}(),"complete"===document.readyState?TouchGamepad.init():window.addEventListener("load",(function(){TouchGamepad.init()}))</script><script>!function(){var e=document.getElementById("mobile-keyboard-input");if(e){var n=!1;e.addEventListener("input",(function(n){var t=document.getElementById("canvas"),c=e.value;if(c.length>0){for(var a=0;a<c.length;a++){var i=c.charCodeAt(a);t.dispatchEvent(new KeyboardEvent("keydown",{key:c[a],charCode:i,keyCode:i,which:i,bubbles:!0})),t.dispatchEvent(new KeyboardEvent("keypress",{key:c[a],charCode:i,keyCode:i,which:i,bubbles:!0})),t.dispatchEvent(new KeyboardEvent("keyup",{key:c[a],charCode:i,keyCode:i,which:i,bubbles:!0}))}e.value=""}})),document.addEventListener("touchend",t,!0),document.addEventListener("click",t,!0)}function t(){try{if(Module&&Module._web_wants_text_input){var t=Module._web_wants_text_input();t&&!n?(n=!0,e.focus()):!t&&n&&(n=!1,e.blur())}}catch(e){}}}(),function(){function e(e){if(!e._touchScrollBound){e._touchScrollBound=!0;var n=null,t=null,c=null;e.addEventListener("touchstart",(function(e){if(null===c){var a=e.changedTouches[0];a.clientY>.5*window.innerHeight||(c=a.identifier,n=a.clientY,t=a.clientX)}}),{passive:!0}),e.addEventListener("touchmove",(function(a){for(var i=0;i<a.changedTouches.length;i++){var d=a.changedTouches[i];if(d.identifier===c){var o=n-d.clientY,u=t-d.clientX;n=d.clientY,t=d.clientX,Math.abs(o)>Math.abs(u)&&Math.abs(o)>1&&e.dispatchEvent(new WheelEvent("wheel",{deltaY:3*o,deltaX:0,bubbles:!0,clientX:d.clientX,clientY:d.clientY}))}}}),{passive:!0}),e.addEventListener("touchend",(function(e){for(var n=0;n<e.changedTouches.length;n++)e.changedTouches[n].identifier===c&&(c=null)}),{passive:!0}),e.addEventListener("touchcancel",(function(){c=null}),{passive:!0})}}var n=document.getElementById("canvas");n&&e(n),setTimeout((function(){var n=document.getElementById("canvas");n&&e(n)}),1e3),setTimeout((function(){var n=document.getElementById("canvas");n&&e(n)}),3e3),setTimeout((function(){var n=document.getElementById("canvas");n&&e(n)}),5e3)}()</script>
+
+<script>!function(){var SRC="title-theme.mp3?v=ab03a2ad",KEY="soh.menuMusicVolume",DEF=15,box=document.getElementById("bgm"),vol=document.getElementById("bgm-vol"),pct=document.getElementById("bgm-pct"),btn=document.getElementById("bgm-toggle"),hint=document.getElementById("bgm-hint"),ov=document.getElementById("overlay"),AC=window.AudioContext||window.webkitAudioContext,ctx=null,gain=null,buf=null,src=null,wantPlay=!0,done=!1,saved=parseInt(localStorage.getItem(KEY),10);
+if(!AC){box.remove();return}
+var v=isNaN(saved)?DEF:Math.max(0,Math.min(100,saved));vol.value=v;pct.textContent=v+"%";
+function setBtn(p){btn.innerHTML=p?"&#10074;&#10074;":"&#9654;";btn.setAttribute("aria-label",p?"Pause music":"Play music")}
+var data=fetch(SRC).then(function(r){if(!r.ok)throw Error(r.status);return r.arrayBuffer()});data.catch(function(){box.remove()});
+function ensureCtx(){if(ctx)return;ctx=new AC();gain=ctx.createGain();gain.gain.value=vol.value/100;gain.connect(ctx.destination);data.then(function(a){return new Promise(function(ok,no){ctx.decodeAudioData(a,ok,no)})}).then(function(b){buf=b;start()}).catch(function(){box.remove()})}
+function start(){if(done||!buf||!wantPlay||src)return;src=ctx.createBufferSource();src.buffer=buf;src.loop=!0;src.connect(gain);src.start();ctx.resume();setBtn(!0);hint.innerHTML="&#9835; Ocarina of Time · Title Theme"}
+function pause(){if(src){try{src.stop()}catch(e){}src.disconnect();src=null}setBtn(!1)}
+function stop(){if(done)return;done=!0;if(!ctx){box.remove();return}var t=ctx.currentTime;gain.gain.cancelScheduledValues(t);gain.gain.setValueAtTime(gain.gain.value,t);gain.gain.linearRampToValueAtTime(0,t+1);setTimeout(function(){pause();ctx.close();box.remove()},1100)}
+vol.addEventListener("input",function(){pct.textContent=vol.value+"%";localStorage.setItem(KEY,vol.value);gain&&gain.gain.setTargetAtTime(vol.value/100,ctx.currentTime,.03)});
+btn.addEventListener("click",function(e){e.stopPropagation();if(src){wantPlay=!1;pause()}else{wantPlay=!0;ensureCtx();ctx.resume();start()}});
+var EV=["pointerdown","pointerup","touchend","click","keydown"];function unlock(e){if(done||e.target===btn&&e.type!=="click")return;ensureCtx();var p=ctx.resume();function ok(){if(ctx.state==="running"){EV.forEach(function(n){document.removeEventListener(n,unlock,!0)});e.target!==btn&&start()}}p&&p.then?p.then(ok):ok()}
+EV.forEach(function(n){document.addEventListener(n,unlock,!0)});
+if(ov)new MutationObserver(function(){(ov.classList.contains("hidden")||ov.style.display==="none")&&stop()}).observe(ov,{attributes:!0,attributeFilter:["class","style"]})}()</script><script>
+// #4125: touch on the pause menu. While the pause menu is open, a tap on the canvas moves the
+// game's cursor to the slot under the finger, a second tap on that slot presses A, and a sideways
+// swipe turns the page. Outside the menu nothing here runs, and the on-screen pad is untouched.
+!function(){
+  var canvas=document.getElementById("canvas"),pad=document.getElementById("touch-gamepad");
+  if(!canvas)return;
+  var st=null,lastSelect=0;
+  function fn(n){return typeof Module!=="undefined"&&typeof Module[n]==="function"?Module[n]:null}
+  function menuOpen(){var f=fn("_sevendays_touch_menu_open");try{return !!f&&f()===1}catch(e){return false}}
+  function norm(t){var r=canvas.getBoundingClientRect();return[(t.clientX-r.left)/r.width,(t.clientY-r.top)/r.height,r.width/Math.max(1,r.height)]}
+  function find(e){if(!st)return null;for(var i=0;i<e.changedTouches.length;i++)if(e.changedTouches[i].identifier===st.id)return e.changedTouches[i];return null}
+  document.addEventListener("touchstart",function(e){
+    if(e.target!==canvas||(pad&&pad.contains(e.target)))return;
+    if(!menuOpen()){st=null;return}
+    var t=e.changedTouches[0];
+    st={id:t.identifier,x:t.clientX,y:t.clientY,t:Date.now(),moved:false,swiped:false};
+    e.preventDefault();e.stopImmediatePropagation();
+  },{capture:true,passive:false});
+  document.addEventListener("touchmove",function(e){
+    var t=find(e);if(!t)return;
+    var dx=t.clientX-st.x,dy=t.clientY-st.y;
+    if(Math.abs(dx)>12||Math.abs(dy)>12)st.moved=true;
+    if(!st.swiped&&Math.abs(dx)>60&&Math.abs(dx)>2*Math.abs(dy)){
+      st.swiped=true;var f=fn("_sevendays_touch_menu_swipe");try{f&&f(dx<0?1:-1)}catch(x){}
+    }
+    e.preventDefault();e.stopImmediatePropagation();
+  },{capture:true,passive:false});
+  document.addEventListener("touchend",function(e){
+    var t=find(e);if(!t)return;
+    if(!st.moved&&!st.swiped&&Date.now()-st.t<600&&menuOpen()){
+      var n=norm(t),f=fn("_sevendays_touch_menu_tap"),now=Date.now();
+      if(f&&(now-lastSelect>350)){try{var r=f(n[0],n[1],n[2]);if(r===3)lastSelect=now}catch(x){}}
+    }
+    st=null;e.preventDefault();e.stopImmediatePropagation();
+  },{capture:true,passive:false});
+  document.addEventListener("touchcancel",function(e){if(find(e))st=null},{capture:true});
+  window.TouchMenu={open:menuOpen,tap:function(nx,ny){var f=fn("_sevendays_touch_menu_tap");var r=canvas.getBoundingClientRect();return f?f(nx,ny,r.width/Math.max(1,r.height)):-1},swipe:function(d){var f=fn("_sevendays_touch_menu_swipe");f&&f(d)}};
+}();
+</script><script>!function(){var t=document.querySelectorAll(".ctl-tab");if(!t.length)return;function p(){return navigator.getGamepads?Array.prototype.filter.call(navigator.getGamepads(),Boolean):[]}function d(){return"undefined"!=typeof isTouch?isTouch:"ontouchstart"in window||navigator.maxTouchPoints>0}function s(k,r){t.forEach(function(b){var c=b.getAttribute("data-ctl"),o=c===k;b.setAttribute("aria-selected",o?"true":"false");var e=document.getElementById("ctl-"+c);e&&(e.hidden=!o)});if(r)try{localStorage.setItem("sevendays.ctlTab",k)}catch(e){}}t.forEach(function(b){b.addEventListener("click",function(){s(b.getAttribute("data-ctl"),!0)})});var v=null;try{v=localStorage.getItem("sevendays.ctlTab")}catch(e){}s(p().length?"pad":v||(d()?"touch":"kb"),!1);window.addEventListener("gamepadconnected",function(){s("pad",!1)});window.addEventListener("gamepaddisconnected",function(){p().length||s(d()?"touch":"kb",!1)})}();</script><script src="hdpack.js?v=9134466f"></script><script src="arcade/phatt-arcade.js" data-game="7dtz" data-mount="#topbar" defer></script><script src="chat.js?v=7e0696ef"></script><script async src="soh.js?v=575ccf4a"></script><script>// #4155: lobby + matchmaking, CS Party style. Quick match puts you in an open
+// room whose progress is near yours (joining a room hands you its progress, see
+// UpdateTeamState.cpp) and the list shows the open public rooms. A lobby has a
+// 5-letter code: make one (private by default, or public so it is listed), share
+// the code or the ?code= link, and the host can flip it public/private later.
+// server.js proxies the zelda-lobby Worker, or runs the same API from memory.
+!function () {
+  var $ = function (i) { return document.getElementById(i); };
+  if (!$("mm")) return;
+  var DUNGEON_BITS = [0x12, 0x13, 0x14, 0x00, 0x01, 0x02, 0x03, 0x04];
+  var FRESH = { slot: "new", stage: { dungeons: 0, hearts: 0, raids: 0, days: 0, interval: 0, gs: 0 } };
+  var saves = null, range = 6, busy = false, timer = 0, made = null;
+  var pid = recall("mm.pid");
+  if (!/^[0-9a-f]{16,64}$/.test(pid || "")) {
+    pid = [].map.call(crypto.getRandomValues(new Uint8Array(12)), function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+    remember("mm.pid", pid);
+  }
+  var CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
+
+  function started() { return typeof gameStarted !== "undefined" && gameStarted; }
+  function obj(v) {
+    if (typeof v === "string") try { return JSON.parse(v); } catch (e) { return null; }
+    return v && typeof v === "object" ? v : null;
+  }
+  // The same summary server.js reads from a room's UPDATE_TEAM_STATE.
+  function stageOf(json) {
+    var sec = json && json.sections, b = sec && sec.base && sec.base.data;
+    if (!b) return null;
+    var q = (b.inventory && b.inventory.questItems) >>> 0, dn = 0;
+    DUNGEON_BITS.forEach(function (bit) { if (q & (1 << bit)) dn++; });
+    if (!(q & (1 << 0x12)) && b.eventChkInf && b.eventChkInf[0] & 0x80) dn++;
+    var sd = sec.sevenDays && sec.sevenDays.data, base = obj(sd && sd.base) || {}, c = base.counters || {};
+    var st = {
+      dungeons: dn,
+      hearts: Math.max(0, Math.floor((b.healthCapacity || 48) / 16) - 3),
+      raids: c.hordeNightsSurvived >>> 0,
+      days: c.daysSurvived >>> 0,
+      interval: c.raidInterval >>> 0,
+    };
+    st.gs = 3 * st.dungeons + st.hearts + st.raids;
+    return st;
+  }
+  function readSaves() {
+    if (!window._sohIdbReady || typeof FS === "undefined") return false;
+    var list = [];
+    try {
+      FS.readdir("/Save").forEach(function (f) {
+        var m = /^file(\d+)\.sav$/.exec(f);
+        if (!m) return;
+        try {
+          var st = stageOf(JSON.parse(new TextDecoder().decode(FS.readFile("/Save/" + f))));
+          st && list.push({ slot: m[1], stage: st, t: +FS.stat("/Save/" + f).mtime || 0 });
+        } catch (e) {}
+      });
+    } catch (e) { return false; }
+    list.sort(function (a, b) { return b.t - a.t; });
+    saves = list;
+    return true;
+  }
+  function current() {
+    if (!saves || !saves.length) return FRESH;
+    var v = $("mm-file").value;
+    if (v === "new") return FRESH;
+    for (var i = 0; i < saves.length; i++) if (saves[i].slot === v) return saves[i];
+    return saves[0];
+  }
+  function plural(n, w) { return n + " " + w + (n === 1 ? "" : "s"); }
+  function describe(st) {
+    if (!st) return "progress not saved yet";
+    if (!st.gs && !st.days) return "just starting";
+    return [plural(st.dungeons, "dungeon"), st.hearts + 3 + "♥", plural(st.raids, "raid") + " survived", "day " + (st.days + 1)].join(" · ");
+  }
+  function showMine() {
+    var sel = $("mm-file");
+    if (saves && saves.length) {
+      if (!sel.options.length) {
+        var want = recall("mm.file");
+        saves.forEach(function (s) { sel.add(new Option("File " + s.slot, s.slot)); });
+        sel.add(new Option("New game", "new"));
+        sel.value = want && [].some.call(sel.options, function (o) { return o.value === want; }) ? want : saves[0].slot;
+      }
+      sel.hidden = saves.length < 2 && sel.value !== "new";
+    }
+    if (saves === null) return;
+    var cur = current();
+    $("mm-stage").textContent = cur === FRESH ? (saves && saves.length ? "a new game" : "no save yet, so new games") : describe(cur.stage);
+  }
+  function note(t, bad) { var n = $("mm-note"); n.textContent = t || ""; n.className = bad ? "bad" : ""; }
+  function api(path, body) {
+    return fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : { cache: "no-store" })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || "HTTP " + r.status); return j; }); });
+  }
+  function closeness(d) {
+    if (d === null || d === undefined) return null;
+    if (d <= 2) return ["Close to you", ""];
+    if (d <= range) return ["A bit off", "mid"];
+    return ["Far from you", "far"];
+  }
+  function canPlay() { return !$("btn-solo").disabled && !started(); }
+  function refreshQuick() {
+    $("btn-quick").disabled = busy || !canPlay();
+    $("btn-code").disabled = busy || !CODE_RE.test($("mm-code").value.trim().toUpperCase()) || !canPlay();
+    $("btn-make").disabled = busy;
+    $("btn-enter").disabled = busy || !canPlay();
+    $("mm-rooms").querySelectorAll("button").forEach(function (b) { b.disabled = !canPlay(); });
+  }
+  function join(room) {
+    if (!$("f-name").value.trim()) {
+      note("Type your name first.", true);
+      $("f-name").focus();
+      return;
+    }
+    $("f-room").value = room;
+    showBadge(/^lb-/.test(room) ? room.slice(3) : "");
+    $("f-room").dispatchEvent(new Event("input"));
+    refreshButtons();
+    if ($("btn-join").disabled) return note("The game is still loading. Try again in a moment.", true);
+    $("join").requestSubmit ? $("join").requestSubmit($("btn-join")) : $("btn-join").click();
+  }
+  function render(list) {
+    var ul = $("mm-rooms");
+    ul.textContent = "";
+    if (!list.length) {
+      var li = document.createElement("li");
+      li.className = "muted small";
+      li.textContent = "No open lobbies right now. Quick match opens one for you.";
+      ul.appendChild(li);
+      return;
+    }
+    list.forEach(function (r) {
+      var li = document.createElement("li"), who = document.createElement("span"), st = document.createElement("span"), b = document.createElement("button");
+      li.className = "room";
+      who.className = "who";
+      who.textContent = (r.players.length ? r.players.join(", ") : r.code || r.room) + " · " + (r.seats - r.free) + "/" + r.seats;
+      var c = closeness(r.distance);
+      if (c) {
+        var tag = document.createElement("span");
+        tag.className = "tag " + c[1];
+        tag.textContent = c[0];
+        who.appendChild(tag);
+      }
+      st.className = "st";
+      st.textContent = describe(r.stage) + (r.looking ? "" : " · not looking");
+      b.type = "button";
+      b.className = "btn";
+      b.textContent = r.free > 0 ? "Join" : "Full";
+      b.disabled = r.free <= 0 || !canPlay();
+      b.addEventListener("click", function () { join(r.room); });
+      li.append(who, b, st);
+      ul.appendChild(li);
+    });
+  }
+  function load() {
+    if (started()) return clearInterval(timer);
+    var s = current().stage;
+    var q = "?gs=" + s.gs + "&dn=" + s.dungeons + "&h=" + s.hearts + "&r=" + s.raids + "&d=" + s.days + "&i=" + s.interval;
+    api("api/rooms" + q).then(function (j) {
+      range = j.range;
+      render(j.rooms.filter(function (r) { return r.free > 0; }).concat(j.rooms.filter(function (r) { return r.free <= 0; })));
+    }, function () {
+      $("mm-rooms").innerHTML = '<li class="muted small">Could not load the lobby list.</li>';
+    });
+  }
+
+  $("btn-quick").addEventListener("click", function () {
+    if (!$("f-name").value.trim()) {
+      note("Type your name first.", true);
+      return $("f-name").focus();
+    }
+    busy = true;
+    refreshQuick();
+    note("Finding a game near your progress…");
+    api("api/quickplay", { stage: current().stage }).then(function (j) {
+      busy = false;
+      note(j.created
+        ? "No close game was open, so you're opening a new lobby. Players near your progress get sent to you."
+        : "Matched: " + (j.players.join(", ") || "a lobby") + " (" + describe(j.stage) + ").");
+      join(j.room);
+    }, function (e) {
+      busy = false;
+      refreshQuick();
+      note("Quick match failed: " + e.message, true);
+    });
+  });
+  $("mm-refresh").addEventListener("click", load);
+  $("mm-file").addEventListener("change", function () {
+    remember("mm.file", $("mm-file").value);
+    showMine();
+    load();
+  });
+  function link(code) { return location.origin + location.pathname + "?code=" + code; }
+  function showBadge(code) {
+    var b = $("mm-badge");
+    if (!code) return b && b.remove();
+    if (!b) {
+      b = document.createElement("button");
+      b.id = "mm-badge";
+      b.type = "button";
+      b.title = "Copy the invite link";
+      b.addEventListener("click", function () { copy(link(b.dataset.code), b); });
+      document.body.appendChild(b);
+    }
+    b.dataset.code = code;
+    b.textContent = "Lobby " + code;
+  }
+  function copy(text, el) {
+    var done = function () { var t = el.textContent; el.textContent = "Copied"; setTimeout(function () { el.textContent = t; }, 1200); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { prompt("Copy this link:", text); });
+    else prompt("Copy this link:", text);
+  }
+  function showMade() {
+    $("mm-made").hidden = !made;
+    if (!made) return;
+    $("mm-made-code").textContent = made.code;
+    $("mm-made-vis").textContent = made.public ? "Public: listed under Open lobbies" : "Private: only people with the code can join";
+    $("mm-made-note").textContent = "Send the code, or the invite link. Press Enter lobby when you're ready.";
+    $("mm-vis-toggle").textContent = made.public ? "Make private" : "Make public";
+  }
+  function needName() {
+    if ($("f-name").value.trim()) return false;
+    note("Type your name first.", true);
+    $("f-name").focus();
+    return true;
+  }
+  $("btn-make").addEventListener("click", function () {
+    if (needName()) return;
+    busy = true;
+    refreshQuick();
+    api("api/lobby/create", { pid: pid, name: $("f-name").value.trim(), public: document.querySelector("input[name=mm-vis]:checked").value === "public", stage: current().stage }).then(function (j) {
+      busy = false;
+      made = j;
+      remember("mm.lobby", j.code);
+      note("");
+      showMade();
+      refreshQuick();
+      load();
+    }, function (e) {
+      busy = false;
+      refreshQuick();
+      note("Could not make a lobby: " + e.message, true);
+    });
+  });
+  $("mm-vis-toggle").addEventListener("click", function () {
+    if (!made) return;
+    api("api/lobby/visibility", { code: made.code, pid: pid, public: !made.public }).then(function (j) {
+      made = j;
+      showMade();
+      load();
+    }, function (e) { note("Could not change that: " + e.message, true); });
+  });
+  $("mm-copy").addEventListener("click", function () { if (made) copy(link(made.code), $("mm-copy")); });
+  $("btn-enter").addEventListener("click", function () { if (made) join(made.room); });
+  function joinCode() {
+    var code = $("mm-code").value.trim().toUpperCase();
+    if (needName()) return;
+    if (!CODE_RE.test(code)) return note("A lobby code is 5 letters or numbers.", true);
+    busy = true;
+    refreshQuick();
+    api("api/lobby/info?code=" + code).then(function (j) {
+      busy = false;
+      if (j.free <= 0) {
+        refreshQuick();
+        return note("That lobby is full.", true);
+      }
+      note("Joining lobby " + code + (j.players.length ? " with " + j.players.join(", ") : "") + ".");
+      join(j.room);
+    }, function (e) {
+      busy = false;
+      refreshQuick();
+      note(/no such lobby/.test(e.message) ? "No lobby with code " + code + ". Check it with whoever made it." : "Could not look that up: " + e.message, true);
+    });
+  }
+  $("btn-code").addEventListener("click", joinCode);
+  $("mm-code").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); if (!$("btn-code").disabled) joinCode(); } });
+  $("mm-code").addEventListener("input", function () { this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
+  // An invite link: ?code=ABCDE puts the code in the box.
+  var invite = (new URLSearchParams(location.search).get("code") || "").toUpperCase();
+  if (CODE_RE.test(invite)) {
+    $("mm-code").value = invite;
+    note("You're invited to lobby " + invite + ". Type your name, then press Join lobby.");
+  }
+  $("mm-code").addEventListener("input", refreshQuick);
+  ["f-name", "f-room"].forEach(function (i) { $(i).addEventListener("input", refreshQuick); });
+  new MutationObserver(refreshQuick).observe($("btn-solo"), { attributes: true, attributeFilter: ["disabled"] });
+
+  // Saves come out of IndexedDB a moment after the engine starts.
+  var tries = 0, poll = setInterval(function () {
+    if (readSaves() || ++tries > 120) {
+      clearInterval(poll);
+      showMine();
+      load();
+    }
+  }, 500);
+  showMine();
+  load();
+  timer = setInterval(load, 10000);
+  refreshQuick();
+}();
+</script></body></html>
