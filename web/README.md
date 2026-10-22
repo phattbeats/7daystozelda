@@ -94,4 +94,4 @@ ready (the Join button's own gate), with a "The party is at camp CODE…" note u
 (`api/lobby/create`) and tells the party its room. The room and `lobby`/`playing` are reported to the party; the name
 carried across games fills an empty name box; a started game is not left through the party or the arcade selector
 without asking. Both scripts are on `server.js`'s `PUBLIC_PATHS` so a party link resolves before the invite key.
-Dev: open the page once with `?hub=http://<ip>:4400` to point the drop-in at a local Clubhouse hub.
+`?camp=lb-CODE` or `?camp=mm-CODE` joins that camp the same way once the game is ready (the arcade's universal lobby browser links here; `api/rooms` is what it lists). Dev: open the page once with `?hub=http://<ip>:4400` to point the drop-in at a local Clubhouse hub.

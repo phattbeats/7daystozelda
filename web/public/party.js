@@ -8,16 +8,17 @@
 //   name      a nameless browser takes the party's name; a named one tells the party.
 //   guard     a started game is not left without asking (the arcade selector gets the same guard).
 // Globals from index.html's classic script: startGame, formValues, gameStarted, recall, remember, refreshButtons.
-// Rooms: 'lb-' + 5 chars; anything else the page drops (index.html's room rule).
+// Rooms: 'lb-' + 5 chars (lobbies) or 'mm-' + 5 (quick-match camps); anything else the page drops (index.html's room rule).
+// ?camp=ROOM joins that camp (the arcade's universal browser links here), party or not.
 (function () {
   "use strict";
-  var GAME = "7dtz", ROOM_RE = /^lb-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
+  var GAME = "7dtz", ROOM_RE = /^lb-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/, ROOM_RE_ANY = /^(lb|mm)-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
   var $ = function (i) { return document.getElementById(i); };
   var party = null, accepted, joined, whereKey = "", making = false, waiting = null, waitTimer = 0;
 
   function started() { return typeof gameStarted !== "undefined" && !!gameStarted; }
   function myName() { var n = $("f-name"); return n ? n.value.trim().slice(0, 24) : ""; }
-  function roomNow() { var r = started() && window._anchorConfig ? window._anchorConfig.room : ($("f-room") || {}).value; return ROOM_RE.test(r || "") ? r : null; }
+  function roomNow() { var r = started() && window._anchorConfig ? window._anchorConfig.room : ($("f-room") || {}).value; return ROOM_RE_ANY.test(r || "") ? r : null; }
   function note(t, bad) { var n = $("mm-note"); if (!n) return; n.textContent = t || ""; n.className = bad ? "bad" : ""; }
   function hostName() { var h = null; (party.members || []).some(function (m) { if (m.id === party.host) { h = m; return true; } return false; }); return (h && h.name) || "The host"; }
   function pid() {
@@ -63,7 +64,7 @@
   function act(venue) {
     if (!party) return;
     if (venue.room) {
-      if (!ROOM_RE.test(venue.room)) return;
+      if (!ROOM_RE_ANY.test(venue.room)) return;
       if (roomNow() === venue.room || joined === venue.room) return;
       joined = venue.room; joinRoom(venue.room);
       return;
@@ -95,6 +96,9 @@
   function init() {
     var guard = function () { return started() ? "You are in a game. Leaving takes you out of the camp." : ""; };
     if (window.PhattArcade) PhattArcade.setGuard(guard);
+    // ?camp=lb-CODE|mm-CODE: a Join from the arcade's universal browser (or a party venue URL): join it once the game is ready
+    var camp = new URLSearchParams(location.search).get("camp") || "";
+    if (ROOM_RE_ANY.test(camp)) { joined = camp; joinRoom(camp); }
     party = window.PhattParty || null;
     if (!party) return;
     party.setGuard(guard);
