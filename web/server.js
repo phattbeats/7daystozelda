@@ -74,6 +74,9 @@ const PUBLIC_PATHS = new Set([
   "/fonts/nunito-600.woff2",
   "/fonts/nunito-800.woff2",
   "/home-logo.png",
+  // PHA-4335: the Clubhouse party drop-in and its glue; a party link lands here before the invite key is typed
+  "/party/phatt-party.js",
+  "/party.js",
   "/home-bg.png",
 ]);
 

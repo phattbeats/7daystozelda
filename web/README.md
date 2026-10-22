@@ -83,3 +83,15 @@ Saves, settings and controller bindings stay in each browser. A small pill in th
 - Custom streamed music mods (Opus) are silent. The game's own music and sounds work.
 - No Crowd Control or Sail (they need raw sockets).
 - Clearing the site's data deletes saves and the unpacked ROM.
+
+### The Clubhouse party (PHA-4335)
+
+The lobby page carries the arcade's universal lobby: `public/party/phatt-party.js` (a byte copy of the canonical
+`clubhouse-games/client/party/phatt-party.js`; contract `clubhouse-games/docs/CROSSOVER.md`) draws the Party pill,
+drawer and follow banner; `public/party.js` is what 7DTZ does with it. A party arriving with `?party=CODE&m=TOKEN`
+whose venue is a camp (`lb-CODE`) puts that room in the Join form and joins as soon as the ROM is in and the engine is
+ready (the Join button's own gate), with a "The party is at camp CODE…" note until then; a host with no camp makes one
+(`api/lobby/create`) and tells the party its room. The room and `lobby`/`playing` are reported to the party; the name
+carried across games fills an empty name box; a started game is not left through the party or the arcade selector
+without asking. Both scripts are on `server.js`'s `PUBLIC_PATHS` so a party link resolves before the invite key.
+Dev: open the page once with `?hub=http://<ip>:4400` to point the drop-in at a local Clubhouse hub.
