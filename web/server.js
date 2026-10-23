@@ -672,7 +672,9 @@ const server = http.createServer((req, res) => {
   if (apiPath === "/api/save") return handleSave(req, res);
   if (apiPath.startsWith("/api/")) {
     const access = checkAccess(req);
-    if (!access.ok) return sendJson(res, 403, { error: "invite only" });
+    // GET /api/rooms (the open public camps, no game files) is readable without the key so the
+    // arcade's universal lobby browser (clubhouse.phatt.vip) can list them; joining still needs it.
+    if (!access.ok && !(apiPath === "/api/rooms" && req.method === "GET")) return sendJson(res, 403, { error: "invite only" });
     return handleApi(req, res, apiPath, access.setCookie ? { "Set-Cookie": access.setCookie } : {});
   }
   if (req.method !== "GET" && req.method !== "HEAD") {

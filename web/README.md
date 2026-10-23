@@ -50,7 +50,7 @@ Under the name and room boxes the lobby shows your progress, read from your newe
 
 Progress is the game's own raid gamestage (`Raids.cpp` `Gamestage()`) minus the player term: 3 × dungeon rewards + extra heart containers + raids survived. Days survived and a different raid interval break ties. `server.js` keeps the room directory in memory. It learns who is in a room from the relay's `ALL_CLIENT_STATE`, and a room's progress from the `UPDATE_TEAM_STATE` every save sends. The game needs no change.
 
-API (same invite key as the page): `GET /api/rooms?gs=&dn=&h=&r=&d=&i=` lists public rooms, with `distance` when you pass your progress. `POST /api/quickplay {stage}` returns `{room, created, distance}` and holds a seat for 2 minutes. `POST /api/rooms/publish {room, stage}` lists a room; it answers 409 if the room is private with players in it. Env: `ROOM_SEATS` (default 4) and `MATCH_RANGE` (default 6 gamestage points).
+API (same invite key as the page, except `GET /api/rooms`, which is public so the arcade's lobby browser can list open camps): `GET /api/rooms?gs=&dn=&h=&r=&d=&i=` lists public rooms, with `distance` when you pass your progress. `POST /api/quickplay {stage}` returns `{room, created, distance}` and holds a seat for 2 minutes. `POST /api/rooms/publish {room, stage}` lists a room; it answers 409 if the room is private with players in it. Env: `ROOM_SEATS` (default 4) and `MATCH_RANGE` (default 6 gamestage points).
 
 Links skip the lobby when they carry both room and name:
 
