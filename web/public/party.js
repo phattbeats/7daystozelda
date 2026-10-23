@@ -51,7 +51,12 @@
     if (!canJoin()) {
       waiting = room;
       note(myName() ? "The party is at camp " + room.slice(3) + ". Joining once the game has loaded…" : "The party is at camp " + room.slice(3) + ". Type your name to join them.");
-      if (!waitTimer) waitTimer = setInterval(function () { if (!waiting) { clearInterval(waitTimer); waitTimer = 0; return; } if (canJoin()) { var r = waiting; waiting = null; joinRoom(r); } }, 500);
+      if (!waitTimer) waitTimer = setInterval(function () {
+        if (!waiting) { clearInterval(waitTimer); waitTimer = 0; return; }
+        if (canJoin()) { var r = waiting; waiting = null; joinRoom(r); return; }
+        // the name can arrive after we started waiting (the party carries it in): keep the note true
+        note(myName() ? "The party is at camp " + waiting.slice(3) + ". Joining once the game has loaded…" : "The party is at camp " + waiting.slice(3) + ". Type your name to join them.");
+      }, 500);
       return;
     }
     waiting = null; joined = room;
