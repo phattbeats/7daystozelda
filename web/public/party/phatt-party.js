@@ -95,7 +95,7 @@
   // so it is the same in every game. The name box offers the three instead of a free-text name.
   function usePid(me) {
     const was = ls.get(LS_PID_NAME);
-    pid = { username: me.username || '', name: me.name || '', display: me.display || me.username || 'Member', nameStyle: me.nameStyle || 'username', names: me.names || null };
+    pid = { username: me.username || '', name: me.name || '', display: me.display || me.username || 'Member', nameStyle: me.nameStyle || 'username', names: me.names || null, canEditUsername: !!me.canEditUsername };
     if (profile.name !== pid.display) { profile = { ...profile, name: pid.display }; ls.set(LS_PROFILE, JSON.stringify({ name: profile.name, avatar: profile.avatar || null })); }
     ls.set(LS_PID, pid.username); ls.set(LS_PID_NAME, pid.display);
     // Poker Night keeps its own name (pn_mp_profile, 16 chars) and its built page runs before this script, so it never
@@ -129,6 +129,22 @@
         api.setProfile({ name: pid.display });
         emit('identity', pid); emit('me', api.me);
         return pid;
+      });
+  }
+  // Edit username: the hub checks it and renames the PHATT ID in Authentik, so it is their log-on name too. Rejects with the
+  // hub's own words ("That username is taken. Pick another.") for the page to show.
+  function setUsername(username) {
+    if (!pid) return Promise.reject(new Error('You are not logged on.'));
+    return fetch(HUB + '/auth/phatt-id/username', { method: 'POST', mode: 'cors', credentials: 'include', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username }) })
+      .catch(() => null).then((r) => {
+        if (!r) throw new Error('Could not reach the arcade. Try again.');
+        return r.json().catch(() => ({})).then((me) => {
+          if (!r.ok) throw new Error(me.error || 'Could not change your username. Try again.');
+          usePid(me);
+          api.setProfile({ name: pid.display });
+          emit('identity', pid); emit('me', api.me);
+          return pid;
+        });
       });
   }
   function logOff() {
@@ -407,6 +423,7 @@
     '.nstyle{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-height:44px;padding:5px 10px;border-radius:8px;background:#120d0a;border:2px solid var(--line);color:var(--c);text-align:left;max-width:100%}',
     '.nstyle b{font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.nstyle small{font-size:10px;color:var(--m);letter-spacing:.06em;text-transform:uppercase}',
     '.nstyle.on{border-color:#7b52c7;background:#2a1a4a}.nstyle.on small{color:#cbb6f2}.nstyle:disabled{opacity:.6}',
+    '.uedit{flex:0 0 auto}.uform{flex:1 0 100%;display:flex;flex-direction:column;gap:6px}.uform[hidden]{display:none}.urow{display:flex;gap:6px}.urow .input{flex:1;min-width:0}.uerr{font-size:12px;color:#ff9a8a}.uerr:empty{display:none}',
     // games
     '.brow{min-width:0;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;background:#120d0a;border:2px solid var(--line)}.brow .gi{font-size:18px;width:24px;text-align:center;flex:none}.brow .info{flex:1;min-width:0}.brow .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.brow .wh{font-size:12px;color:var(--m);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.brow .acts{display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end}',
     '.st{display:inline-block;margin-right:6px;padding:1px 5px;border-radius:4px;font:bold 10px/1.3 "Courier New",monospace;letter-spacing:.08em;vertical-align:1px;background:var(--t);color:#0b2b27}.st.playing{background:var(--o);color:#1a0f06}.st.full{background:#6b5846;color:var(--c)}.st.party{background:#8fd694;color:#0e2a12}',
@@ -656,6 +673,23 @@
       opts.appendChild(b);
     }
     nameBarEl.appendChild(opts);
+    if (pid.canEditUsername) {
+      const ed = button('✎ Edit username', 'btn quiet small uedit'); ed.setAttribute('aria-expanded', 'false');
+      const form = el('div', 'uform'); form.hidden = true;
+      const inp = el('input', 'input grow'); inp.maxLength = 20; inp.value = pid.username; inp.setAttribute('aria-label', 'New username');
+      inp.autocomplete = 'username'; inp.setAttribute('autocapitalize', 'none'); inp.spellcheck = false;
+      const ok = button('Save', 'btn small'), err = el('div', 'uerr'); err.setAttribute('role', 'alert');
+      const line = el('div', 'urow'); line.appendChild(inp); line.appendChild(ok);
+      form.appendChild(el('span', 'note', 'New username. It is your PHATT ID log-on name too.')); form.appendChild(line); form.appendChild(err);
+      ed.onclick = () => { form.hidden = !form.hidden; ed.setAttribute('aria-expanded', String(!form.hidden)); if (!form.hidden) { inp.focus(); inp.select(); } };
+      const save = () => {
+        const v = inp.value.trim(); if (!v || v === pid.username) { form.hidden = true; ed.setAttribute('aria-expanded', 'false'); return; }
+        ok.disabled = inp.disabled = true; err.textContent = '';
+        setUsername(v).then(() => { renderHeader(); showNameBar(false); }, (e) => { ok.disabled = inp.disabled = false; err.textContent = e.message; inp.focus(); });
+      };
+      ok.onclick = save; inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } else if (e.key === 'Escape') { nameBarEl.hidden = true; } };
+      nameBarEl.appendChild(ed); nameBarEl.appendChild(form);
+    }
     const row = el('div', 'pidrow');
     row.appendChild(el('span', 'pidb', 'ID')); row.appendChild(el('span', 'note', 'Logged on as ' + pid.username + '. Same name in every game.'));
     const off = button('Log off', 'btn quiet small'); off.onclick = () => { off.disabled = true; logOff(); }; row.appendChild(off);
@@ -926,6 +960,7 @@
     logOn() { location.href = pidUrl(false); },
     logOff,
     setNameStyle,                                    // 'username' | 'first' | 'full' -> resolves with the updated PHATT ID
+    setUsername,                                     // renames the PHATT ID (its log-on name too); rejects with the hub's reason
     nameStyleOptions() { return pid ? nameStyleOptions(pid) : []; },
     create(p) { if (p && (p.name || p.avatar)) { profile = { ...profile, name: p.name || profile.name, avatar: p.avatar === undefined ? profile.avatar : p.avatar }; ls.set(LS_PROFILE, JSON.stringify(profile)); } return startJoin(null, true); },
     join(code) { code = cleanCode(code); if (code.length !== 6) return Promise.reject(new Error('bad code')); return startJoin(code, false); },
