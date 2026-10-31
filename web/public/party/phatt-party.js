@@ -54,6 +54,65 @@
   const freshMember = !hex32(q.get('m')) && !hex32(ls.get(LS_MEMBER)); // minted right here: the hub cannot know this token yet
   let member = freshMember ? newToken() : hex32(q.get('m')) ? q.get('m') : ls.get(LS_MEMBER);
   ls.set(LS_MEMBER, member);
+  // ---- PHATT ID (PHA-4166) ---- the hub ties a PHATT ID to one member token (server/phattid.js). Before saying hello we ask
+  // <hub>/auth/phatt-id/me (its cookie rides along: every *.phatt.vip page is same-site with the hub). Signed in: that token
+  // and name are mine. Not signed in: one quiet trip through PHATT ID per tab (prompt=none) in case I am logged on there;
+  // it comes back with ?pid=ok|guest|error, and a page carrying ?pid never makes the trip again (no loops, even without
+  // sessionStorage or cookies). Log off sets phatt.pid.off so the trip stops until I log on again.
+  const LS_PID = 'phatt.pid.user', LS_PID_OFF = 'phatt.pid.off', SS_PID_TRIED = 'phatt.pid.tried';
+  const ss = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch { /* private mode */ } } };
+  const isGuestName = (n) => !n || /^guest\s*\d*$/i.test(String(n).trim());
+  let pid = null, pidEnabled = false, resolveIdentity;
+  const identityReady = new Promise((r) => { resolveIdentity = r; });
+  const pidFlag = q.get('pid');
+  if (pidFlag) { ss.set(SS_PID_TRIED, '1'); try { const u = new URL(location.href); u.searchParams.delete('pid'); history.replaceState(history.state, '', u.toString()); } catch { /* old browser */ } }
+  const pidUrl = (silent) => HUB + '/auth/phatt-id/login?' + (silent ? 'silent=1&' : '') + 'm=' + member + '&to=' + encodeURIComponent(location.href);
+  function checkIdentity() {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = setTimeout(() => ctl && ctl.abort(), 3500);
+    return fetch(HUB + '/auth/phatt-id/me', { mode: 'cors', credentials: 'include', cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null).then((me) => {
+        clearTimeout(timer);
+        if (!me || !me.enabled) return null;
+        pidEnabled = true;
+        if (me.signedIn && hex32(me.member)) {
+          if (member !== me.member) { member = me.member; ls.set(LS_MEMBER, member); }
+          pid = { username: me.username || '', name: me.name || '', display: me.display || me.username || 'Member' };
+          if (isGuestName(profile.name) || ls.get(LS_PID) !== pid.username) { profile = { ...profile, name: pid.display }; ls.set(LS_PROFILE, JSON.stringify({ name: profile.name, avatar: profile.avatar || null })); }
+          ls.set(LS_PID, pid.username); ls.set(LS_PID_OFF, null);
+          // Poker Night keeps its own name (pn_mp_profile, 16 chars) and its built page runs before this script, so it never
+          // reads PhattParty.me: a nameless Poker Night takes the PHATT ID's name here (the lobby's name box hears it too)
+          if (GAME === 'pokernight') {
+            try {
+              const pn = JSON.parse(localStorage.getItem('pn_mp_profile') || 'null') || {};
+              if (isGuestName(pn.name)) {
+                pn.name = pid.display.slice(0, 16); localStorage.setItem('pn_mp_profile', JSON.stringify(pn));
+                const box = document.querySelector('input.name');
+                if (box && !box.value.trim()) { box.value = pn.name; box.dispatchEvent(new Event('input', { bubbles: true })); }
+              }
+            } catch { /* private mode */ }
+          }
+          return pid;
+        }
+        ls.set(LS_PID, null);
+        const top = (() => { try { return window.top === window; } catch { return false; } })();
+        if (!pidFlag && !ss.get(SS_PID_TRIED) && !ls.get(LS_PID_OFF) && top && navigator.cookieEnabled !== false && /^https:/.test(HUB)) {
+          ss.set(SS_PID_TRIED, '1');
+          location.replace(pidUrl(true));
+          return 'redirect';
+        }
+        return null;
+      });
+  }
+  function logOff() {
+    return fetch(HUB + '/auth/phatt-id/logout', { method: 'POST', mode: 'cors', credentials: 'include' }).catch(() => null).then(() => {
+      // a fresh guest on this browser: the PHATT ID's token stays with the account (and needs its cookie anyway)
+      ls.set(LS_PID, null); ls.set(LS_PID_OFF, '1'); ls.set(LS_MEMBER, newToken()); ls.set(LS_PROFILE, null); ls.set(LS_CODE, null);
+      try { localStorage.removeItem('clubhouse.profile'); } catch { /* private mode */ }
+      location.reload();
+    });
+  }
+  // ---- /PHATT ID ----
   const cleanCode = (c) => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
   let wantCode = /^[A-Z2-9]{6}$/.test(q.get('party') || '') ? q.get('party').toUpperCase() : (ls.get(LS_CODE) || null);
   let profile = (() => { try { return JSON.parse(ls.get(LS_PROFILE) || 'null') || {}; } catch { return {}; } })();
@@ -312,7 +371,11 @@
     '.u{display:flex;align-items:center;gap:8px;width:100%;padding:5px 6px;border-radius:6px;background:none;border:0;text-align:left}.u:hover{background:#2b211a}.u .gi{width:22px;text-align:center;font-size:15px;flex:none}.u .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.u .aw{color:var(--o);font-size:10px}.u.off{opacity:.5}',
     '.compose{display:flex;gap:6px;padding:8px 10px 10px;border-top:1px solid #000;position:relative;background:var(--bg2)}',
     '.hints{position:absolute;left:10px;right:10px;bottom:100%;background:#0e0b09;border:2px solid var(--line);border-radius:8px;padding:4px;max-height:200px;overflow:auto;box-shadow:0 -8px 20px #000a}.hint{display:block;width:100%;text-align:left;padding:4px 8px;border:0;background:none;border-radius:4px;font-size:12px;color:var(--m)}.hint b{color:var(--c);font-family:"Courier New",monospace}.hint:hover,.hint.on{background:#2b211a}',
-    '.namebar{display:flex;gap:6px;padding:8px 10px;background:#2b1a0e;border-bottom:1px solid #000;align-items:center}',
+    '.namebar{display:flex;gap:6px;padding:8px 10px;background:#2b1a0e;border-bottom:1px solid #000;align-items:center;flex-wrap:wrap}',
+    '.pidrow{flex:1 0 100%;display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
+    '.pidb{display:inline-grid;place-items:center;min-width:22px;height:16px;padding:0 4px;border-radius:4px;background:#5b2fa6;color:#fff;font:700 10px/1 Tahoma,Verdana,sans-serif;letter-spacing:.04em;flex:none}',
+    '.btn.pidon{display:inline-flex;align-items:center;gap:6px;background:#3a2266;border-color:#7b52c7;color:#fff}',
+    '.btn.pidon:hover{background:#4b2d82}',
     // games
     '.brow{min-width:0;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;background:#120d0a;border:2px solid var(--line)}.brow .gi{font-size:18px;width:24px;text-align:center;flex:none}.brow .info{flex:1;min-width:0}.brow .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.brow .wh{font-size:12px;color:var(--m);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.brow .acts{display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end}',
     '.st{display:inline-block;margin-right:6px;padding:1px 5px;border-radius:4px;font:bold 10px/1.3 "Courier New",monospace;letter-spacing:.08em;vertical-align:1px;background:var(--t);color:#0b2b27}.st.playing{background:var(--o);color:#1a0f06}.st.full{background:#6b5846;color:var(--c)}.st.party{background:#8fd694;color:#0e2a12}',
@@ -456,6 +519,7 @@
     const chip = button('', 'mechip', 'Change your name'); chip.appendChild(avatarNode(me));
     if (me.level) chip.appendChild(el('span', 'lvl', String(me.level)));
     chip.appendChild(el('span', 'nm', me.name || 'Guest'));
+    if (pid) { const b = el('span', 'pidb', 'ID'); b.title = 'Logged on with PHATT ID as ' + pid.username; chip.appendChild(b); }
     if (chat.you && chat.you.away != null) chip.appendChild(el('span', 'away', 'away'));
     chip.onclick = () => { openDrawer('chat'); showNameBar(true); };
     headerEl.appendChild(chip);
@@ -529,6 +593,19 @@
     const done = () => { const n = inp.value.trim(); if (!n) return; api.setProfile({ name: n }); emit('me', api.me); nameBarEl.hidden = true; renderHeader(); inputEl && inputEl.focus(); };
     save.onclick = done; inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); done(); } else if (e.key === 'Escape') { nameBarEl.hidden = true; } };
     nameBarEl.appendChild(lab); nameBarEl.appendChild(inp); nameBarEl.appendChild(save);
+    if (pidEnabled) {
+      const row = el('div', 'pidrow');
+      if (pid) {
+        row.appendChild(el('span', 'pidb', 'ID')); row.appendChild(el('span', 'note', 'Logged on with PHATT ID as ' + pid.username));
+        const off = button('Log off', 'btn quiet small'); off.onclick = () => { off.disabled = true; logOff(); }; row.appendChild(off);
+      } else {
+        const on = button('', 'btn small pidon', 'Log on with your PHATT ID: your name, level and trophies follow you to every game');
+        on.appendChild(el('span', 'pidb', 'ID')); on.appendChild(document.createTextNode('Log on with PHATT ID'));
+        on.onclick = () => { location.href = pidUrl(false); };
+        row.appendChild(on); row.appendChild(el('span', 'note', 'Keeps your name, level and trophies in every game.'));
+      }
+      nameBarEl.appendChild(row);
+    }
     if (focus) setTimeout(() => inp.focus(), 0);
   }
   function renderChips() {
@@ -790,6 +867,11 @@
     get catalog() { return CATALOG; },
     get connected() { return state.connected; },
     game: GAME, hub: HUB, ready,
+    identity: identityReady,                         // resolves with the PHATT ID ({username, name, display}) or null, before hello
+    get phattId() { return pid; },
+    get phattIdEnabled() { return pidEnabled; },
+    logOn() { location.href = pidUrl(false); },
+    logOff,
     create(p) { if (p && (p.name || p.avatar)) { profile = { ...profile, name: p.name || profile.name, avatar: p.avatar === undefined ? profile.avatar : p.avatar }; ls.set(LS_PROFILE, JSON.stringify(profile)); } return startJoin(null, true); },
     join(code) { code = cleanCode(code); if (code.length !== 6) return Promise.reject(new Error('bad code')); return startJoin(code, false); },
     leave() { if (!state.code) return; send({ t: 'leave' }); ls.set(LS_CODE, null); wantCode = null; state.code = null; state.members = []; state.venue = null; state.chat = []; state.host = null; if (chat.view === 'party') chat.view = 'general'; hideBanner(); render(); if (open) renderTab(); emit('party', snapshot()); },
@@ -808,7 +890,10 @@
   function boot() {
     build();
     fetch(HUB + '/api/catalog', { mode: 'cors' }).then((r) => (r.ok ? r.json() : null)).then((c) => { if (c && Array.isArray(c.games) && c.games.length) { CATALOG = c; if (open && tab === 'games') renderTab(); } }).catch(() => {});
-    if (!wantCode) { hadSnapshot = true; resolveReady(api); }
+    // ready (no party to wait for) only after the PHATT ID answer, so pages that copy PhattParty.me.name on ready get the right one
+    checkIdentity().then((r) => { if (r === 'redirect') return; resolveIdentity(r); if (pid) { emit('identity', pid); emit('me', api.me); render(); } if (!wantCode) { hadSnapshot = true; resolveReady(api); } afterIdentity(); });
+  }
+  function afterIdentity() {
     // A surface that has never seen me (no name on this origin yet) asks the hub who I am before saying hello: a hello
     // without a name introduces me as Guest and the party forgets the name and avatar I carried from the last game.
     if (profile.name || freshMember || !wantCode) connect();
