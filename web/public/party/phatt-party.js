@@ -59,7 +59,7 @@
   // and name are mine. Not signed in: one quiet trip through PHATT ID per tab (prompt=none) in case I am logged on there;
   // it comes back with ?pid=ok|guest|error, and a page carrying ?pid never makes the trip again (no loops, even without
   // sessionStorage or cookies). Log off sets phatt.pid.off so the trip stops until I log on again.
-  const LS_PID = 'phatt.pid.user', LS_PID_OFF = 'phatt.pid.off', SS_PID_TRIED = 'phatt.pid.tried';
+  const LS_PID = 'phatt.pid.user', LS_PID_NAME = 'phatt.pid.name', LS_PID_OFF = 'phatt.pid.off', SS_PID_TRIED = 'phatt.pid.tried';
   const ss = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch { /* private mode */ } } };
   const isGuestName = (n) => !n || /^guest\s*\d*$/i.test(String(n).trim());
   let pid = null, pidEnabled = false, resolveIdentity;
@@ -77,24 +77,11 @@
         pidEnabled = true;
         if (me.signedIn && hex32(me.member)) {
           if (member !== me.member) { member = me.member; ls.set(LS_MEMBER, member); }
-          pid = { username: me.username || '', name: me.name || '', display: me.display || me.username || 'Member' };
-          if (isGuestName(profile.name) || ls.get(LS_PID) !== pid.username) { profile = { ...profile, name: pid.display }; ls.set(LS_PROFILE, JSON.stringify({ name: profile.name, avatar: profile.avatar || null })); }
-          ls.set(LS_PID, pid.username); ls.set(LS_PID_OFF, null);
-          // Poker Night keeps its own name (pn_mp_profile, 16 chars) and its built page runs before this script, so it never
-          // reads PhattParty.me: a nameless Poker Night takes the PHATT ID's name here (the lobby's name box hears it too)
-          if (GAME === 'pokernight') {
-            try {
-              const pn = JSON.parse(localStorage.getItem('pn_mp_profile') || 'null') || {};
-              if (isGuestName(pn.name)) {
-                pn.name = pid.display.slice(0, 16); localStorage.setItem('pn_mp_profile', JSON.stringify(pn));
-                const box = document.querySelector('input.name');
-                if (box && !box.value.trim()) { box.value = pn.name; box.dispatchEvent(new Event('input', { bubbles: true })); }
-              }
-            } catch { /* private mode */ }
-          }
+          usePid(me);
+          ls.set(LS_PID_OFF, null);
           return pid;
         }
-        ls.set(LS_PID, null);
+        ls.set(LS_PID, null); ls.set(LS_PID_NAME, null);
         const top = (() => { try { return window.top === window; } catch { return false; } })();
         if (!pidFlag && !ss.get(SS_PID_TRIED) && !ls.get(LS_PID_OFF) && top && navigator.cookieEnabled !== false && /^https:/.test(HUB)) {
           ss.set(SS_PID_TRIED, '1');
@@ -104,10 +91,50 @@
         return null;
       });
   }
+  // A PHATT ID's name is the hub's: the style its member picked (username, the default; first name; first and last name),
+  // so it is the same in every game. The name box offers the three instead of a free-text name.
+  function usePid(me) {
+    const was = ls.get(LS_PID_NAME);
+    pid = { username: me.username || '', name: me.name || '', display: me.display || me.username || 'Member', nameStyle: me.nameStyle || 'username', names: me.names || null };
+    if (profile.name !== pid.display) { profile = { ...profile, name: pid.display }; ls.set(LS_PROFILE, JSON.stringify({ name: profile.name, avatar: profile.avatar || null })); }
+    ls.set(LS_PID, pid.username); ls.set(LS_PID_NAME, pid.display);
+    // Poker Night keeps its own name (pn_mp_profile, 16 chars) and its built page runs before this script, so it never
+    // reads PhattParty.me: a nameless Poker Night, or one still on my last PHATT ID name, takes this one (its lobby name box too)
+    if (GAME === 'pokernight') {
+      try {
+        const pn = JSON.parse(localStorage.getItem('pn_mp_profile') || 'null') || {};
+        const old = pn.name;
+        if (isGuestName(old) || (was && old === was.slice(0, 16))) {
+          pn.name = pid.display.slice(0, 16); localStorage.setItem('pn_mp_profile', JSON.stringify(pn));
+          const box = document.querySelector('input.name');
+          if (box && (!box.value.trim() || box.value === old)) { box.value = pn.name; box.dispatchEvent(new Event('input', { bubbles: true })); }
+        }
+      } catch { /* private mode */ }
+    }
+  }
+  // the choices this PHATT ID has, each with the name it gives: [{style, value, label, on}]; a name that repeats one above is left out
+  function nameStyleOptions(p) {
+    const n = p.names || { username: p.username }, out = [{ style: 'username', value: n.username || p.username, label: 'Username' }];
+    if (n.first && n.first !== out[0].value) out.push({ style: 'first', value: n.first, label: 'First name' });
+    if (n.full && !out.some((o) => o.value === n.full)) out.push({ style: 'full', value: n.full, label: 'First and last name' });
+    const cur = out.some((o) => o.style === p.nameStyle) ? p.nameStyle : 'username';
+    return out.map((o) => ({ ...o, on: o.style === cur }));
+  }
+  // the member picks how the games show them; the hub saves it on their PHATT ID and renames them everywhere it can see
+  function setNameStyle(style) {
+    if (!pid) return Promise.reject(new Error('not logged on'));
+    return fetch(HUB + '/auth/phatt-id/name', { method: 'POST', mode: 'cors', credentials: 'include', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ style }) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('name ' + r.status)))).then((me) => {
+        usePid(me);
+        api.setProfile({ name: pid.display });
+        emit('identity', pid); emit('me', api.me);
+        return pid;
+      });
+  }
   function logOff() {
     return fetch(HUB + '/auth/phatt-id/logout', { method: 'POST', mode: 'cors', credentials: 'include' }).catch(() => null).then(() => {
       // a fresh guest on this browser: the PHATT ID's token stays with the account (and needs its cookie anyway)
-      ls.set(LS_PID, null); ls.set(LS_PID_OFF, '1'); ls.set(LS_MEMBER, newToken()); ls.set(LS_PROFILE, null); ls.set(LS_CODE, null);
+      ls.set(LS_PID, null); ls.set(LS_PID_NAME, null); ls.set(LS_PID_OFF, '1'); ls.set(LS_MEMBER, newToken()); ls.set(LS_PROFILE, null); ls.set(LS_CODE, null);
       try { localStorage.removeItem('clubhouse.profile'); } catch { /* private mode */ }
       location.reload();
     });
@@ -372,10 +399,14 @@
     '.compose{display:flex;gap:6px;padding:8px 10px 10px;border-top:1px solid #000;position:relative;background:var(--bg2)}',
     '.hints{position:absolute;left:10px;right:10px;bottom:100%;background:#0e0b09;border:2px solid var(--line);border-radius:8px;padding:4px;max-height:200px;overflow:auto;box-shadow:0 -8px 20px #000a}.hint{display:block;width:100%;text-align:left;padding:4px 8px;border:0;background:none;border-radius:4px;font-size:12px;color:var(--m)}.hint b{color:var(--c);font-family:"Courier New",monospace}.hint:hover,.hint.on{background:#2b211a}',
     '.namebar{display:flex;gap:6px;padding:8px 10px;background:#2b1a0e;border-bottom:1px solid #000;align-items:center;flex-wrap:wrap}',
-    '.pidrow{flex:1 0 100%;display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
+    '.pidrow{flex:1 0 100%;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pidrow .note{flex:1;min-width:0}',
     '.pidb{display:inline-grid;place-items:center;min-width:22px;height:16px;padding:0 4px;border-radius:4px;background:#5b2fa6;color:#fff;font:700 10px/1 Tahoma,Verdana,sans-serif;letter-spacing:.04em;flex:none}',
     '.btn.pidon{display:inline-flex;align-items:center;gap:6px;background:#3a2266;border-color:#7b52c7;color:#fff}',
     '.btn.pidon:hover{background:#4b2d82}',
+    '.nstyles{flex:1 0 100%;display:flex;gap:6px;flex-wrap:wrap}',
+    '.nstyle{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-height:44px;padding:5px 10px;border-radius:8px;background:#120d0a;border:2px solid var(--line);color:var(--c);text-align:left;max-width:100%}',
+    '.nstyle b{font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.nstyle small{font-size:10px;color:var(--m);letter-spacing:.06em;text-transform:uppercase}',
+    '.nstyle.on{border-color:#7b52c7;background:#2a1a4a}.nstyle.on small{color:#cbb6f2}.nstyle:disabled{opacity:.6}',
     // games
     '.brow{min-width:0;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;background:#120d0a;border:2px solid var(--line)}.brow .gi{font-size:18px;width:24px;text-align:center;flex:none}.brow .info{flex:1;min-width:0}.brow .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.brow .wh{font-size:12px;color:var(--m);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.brow .acts{display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end}',
     '.st{display:inline-block;margin-right:6px;padding:1px 5px;border-radius:4px;font:bold 10px/1.3 "Courier New",monospace;letter-spacing:.08em;vertical-align:1px;background:var(--t);color:#0b2b27}.st.playing{background:var(--o);color:#1a0f06}.st.full{background:#6b5846;color:var(--c)}.st.party{background:#8fd694;color:#0e2a12}',
@@ -592,6 +623,7 @@
     const save = button('Save', 'btn small');
     const done = () => { const n = inp.value.trim(); if (!n) return; api.setProfile({ name: n }); emit('me', api.me); nameBarEl.hidden = true; renderHeader(); inputEl && inputEl.focus(); };
     save.onclick = done; inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); done(); } else if (e.key === 'Escape') { nameBarEl.hidden = true; } };
+    if (pid) { showNameStyles(); return; }
     nameBarEl.appendChild(lab); nameBarEl.appendChild(inp); nameBarEl.appendChild(save);
     if (pidEnabled) {
       const row = el('div', 'pidrow');
@@ -607,6 +639,27 @@
       nameBarEl.appendChild(row);
     }
     if (focus) setTimeout(() => inp.focus(), 0);
+  }
+  // logged on: "Show my name as" username / first name / first and last name (only the ones this PHATT ID has)
+  function showNameStyles() {
+    nameBarEl.appendChild(el('span', 'note', 'Show my name as'));
+    const opts = el('div', 'nstyles'); opts.setAttribute('role', 'radiogroup'); opts.setAttribute('aria-label', 'Show my name as');
+    for (const o of nameStyleOptions(pid)) {
+      const b = button('', 'nstyle' + (o.on ? ' on' : ''));
+      b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(o.on));
+      b.appendChild(el('b', '', o.value)); b.appendChild(el('small', '', o.label));
+      b.onclick = () => {
+        if (o.on) { nameBarEl.hidden = true; return; }
+        for (const x of opts.children) x.disabled = true;
+        setNameStyle(o.style).then(() => { renderHeader(); showNameBar(false); }, () => { for (const x of opts.children) x.disabled = false; });
+      };
+      opts.appendChild(b);
+    }
+    nameBarEl.appendChild(opts);
+    const row = el('div', 'pidrow');
+    row.appendChild(el('span', 'pidb', 'ID')); row.appendChild(el('span', 'note', 'Logged on as ' + pid.username + '. Same name in every game.'));
+    const off = button('Log off', 'btn quiet small'); off.onclick = () => { off.disabled = true; logOff(); }; row.appendChild(off);
+    nameBarEl.appendChild(row);
   }
   function renderChips() {
     if (!chipsEl) return;
@@ -872,6 +925,8 @@
     get phattIdEnabled() { return pidEnabled; },
     logOn() { location.href = pidUrl(false); },
     logOff,
+    setNameStyle,                                    // 'username' | 'first' | 'full' -> resolves with the updated PHATT ID
+    nameStyleOptions() { return pid ? nameStyleOptions(pid) : []; },
     create(p) { if (p && (p.name || p.avatar)) { profile = { ...profile, name: p.name || profile.name, avatar: p.avatar === undefined ? profile.avatar : p.avatar }; ls.set(LS_PROFILE, JSON.stringify(profile)); } return startJoin(null, true); },
     join(code) { code = cleanCode(code); if (code.length !== 6) return Promise.reject(new Error('bad code')); return startJoin(code, false); },
     leave() { if (!state.code) return; send({ t: 'leave' }); ls.set(LS_CODE, null); wantCode = null; state.code = null; state.members = []; state.venue = null; state.chat = []; state.host = null; if (chat.view === 'party') chat.view = 'general'; hideBanner(); render(); if (open) renderTab(); emit('party', snapshot()); },
