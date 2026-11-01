@@ -95,3 +95,10 @@ ready (the Join button's own gate), with a "The party is at camp CODE…" note u
 carried across games fills an empty name box; a started game is not left through the party or the arcade selector
 without asking. Both scripts are on `server.js`'s `PUBLIC_PATHS` so a party link resolves before the invite key.
 `?camp=lb-CODE` or `?camp=mm-CODE` joins that camp the same way once the game is ready (the arcade's universal lobby browser links here; `api/rooms` is what it lists). Dev: open the page once with `?hub=http://<ip>:4400` to point the drop-in at a local Clubhouse hub.
+
+PHATT ID (PHA-4166) comes with the drop-in: it asks the hub who is logged on before its hello, so a member plays here as
+their PHATT ID (the hub's name for them: username, first name or full name, picked in the dock's name bar, which also has
+Edit username); a guest gets a **Log on with PHATT ID** button. `party.js` only fills the lobby's name box when it is empty.
+Keep the drop-in a straight copy (never edit it here), commit it to main, and after a deploy run
+`node tools/check-docks.mjs` in clubhouse-games: zelda.phatt.vip must say `same` and `PHATT ID yes`. Live container notes:
+`/mnt/user/appdata/soh-web-pha4166/README.md` on RAID (image `soh-web:pha4166-dock`).
