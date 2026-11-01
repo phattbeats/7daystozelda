@@ -32,6 +32,7 @@
  *   PhattParty.dockInto(el)   put the launcher in a page's own top bar (see above)
  *   PhattParty.ready   Promise, settles after the first party snapshot (or at once with no party)
  *   PhattParty.urlFor(gameId, {room}) / isHere(venue) / open(tab?: 'chat'|'games'|'party') / close() / toast(msg)
+ *   PhattParty.track(e, fields) / pageview(path?) / dnt   analytics beacons (docs/ANALYTICS.md; nothing is sent under DNT / GPC)
  */
 (function () {
   'use strict';
@@ -183,7 +184,7 @@
   const send = (m) => { if (ws && ws.readyState === 1 && (ws.__said || m.t === 'hello' || m.t === 'ping')) { ws.send(JSON.stringify(m)); return true; } return false; };
   function hello() {
     if (ws) ws.__said = true;
-    send({ t: 'hello', party: createNext ? undefined : wantCode || undefined, member, name: profile.name || 'Guest', avatar: profile.avatar || null, game: GAME, create: createNext || undefined, level: profile.level, title: profile.title });
+    send({ t: 'hello', party: createNext ? undefined : wantCode || undefined, member, name: profile.name || 'Guest', avatar: profile.avatar || null, game: GAME, create: createNext || undefined, level: profile.level, title: profile.title, dnt: ANA_DNT ? 1 : undefined }); // (--- analytics --- dnt)
     createNext = false;
     if (Object.keys(state.where).length) send({ t: 'where', ...state.where });
     if (state.localInventory && state.localInventory.length) send({ t: 'inventory', items: state.localInventory });
@@ -385,7 +386,7 @@
         banner = el('div', 'banner'); banner.setAttribute('role', 'status');
         const box = el('div', 'bbody'); box.appendChild(el('p', null, heldText(h)));
         const row = el('div', 'row'), go2 = el('a', 'btn', 'Rejoin'), later = button('Not now', 'btn ghost');
-        go2.href = heldUrl(h); go2.onclick = (e) => { e.preventDefault(); hideBanner(); go(go2.href); };
+        go2.href = heldUrl(h); go2.onclick = (e) => { e.preventDefault(); anaTrack('rejoin_click', { game: h.game }); hideBanner(); go(go2.href); }; // (--- analytics ---)
         later.onclick = () => hideBanner();
         row.appendChild(go2); row.appendChild(later); box.appendChild(row);
         banner.appendChild(el('span', 'bico', gameIcon(h.game))); banner.appendChild(box);
@@ -614,6 +615,7 @@
     if (t) { tab = t; ls.set(LS_TAB, tab); }
     if (open) { renderTabs(); renderTab(); return; }
     open = true;
+    anaTrack('dock_open', { props: { tab } }); // --- analytics ---
     if (barEl) { const bar = barEl.closest('header,nav,.topbar') || barEl; hostEl.style.setProperty('--top', Math.round(bar.getBoundingClientRect().bottom + 8) + 'px'); }
     panel = el('aside', 'panel'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'PHATT Arcade');
     headerEl = el('div', 'hd'); tabsEl = el('div', 'tabs'); tabsEl.setAttribute('role', 'tablist'); bodyEl = el('div', 'body');
@@ -859,6 +861,12 @@
     if (!state.connected) { toast('Still connecting to the arcade.'); return; }
     if ((cmd === '/name' || cmd === '/nick') && text.split(' ').slice(1).join(' ').trim()) { profile.name = text.split(' ').slice(1).join(' ').trim().slice(0, 20); ls.set(LS_PROFILE, JSON.stringify({ name: profile.name, avatar: profile.avatar })); }
     send({ t: 'say', ch: chat.view, text });
+    { // --- analytics --- a chat line counted by channel kind (commands that are not lines are not counted; never the text)
+      const c = text[0] === '/' ? cmd : '';
+      const ch = /^\/(w|whisper|msg|m|tell|pm|r|reply|rw)$/.test(c) ? 'whisper' : /^\/(p|party)$/.test(c) ? 'party' : /^\/(t|table)$/.test(c) ? 'table'
+        : c && !/^\/(me|emote|roll|random|dice)$/.test(c) ? '' : chat.view === 'party' || chat.view === 'table' ? chat.view : (chat.general.name || 'Arcade').toLowerCase() === 'arcade' ? 'arcade' : 'channel';
+      if (ch) anaTrack('chat_send', { props: { ch } });
+    }
     inputEl.value = ''; renderHints();
   }
 
@@ -897,11 +905,11 @@
     t.appendChild(el('span', 'n', g.name));
     t.appendChild(el('span', 'p', players(g) + (host && n < g.min && g.hub ? ' · bots fill in' : '')));
     if (here) { t.classList.add('here'); t.appendChild(el('span', 'herel', 'THE PARTY IS HERE')); }
-    if (!host) { t.href = urlFor(g.id); t.title = 'Play ' + g.name; t.onclick = (e) => { e.preventDefault(); go(t.href); }; return t; }
+    if (!host) { t.href = urlFor(g.id); t.title = 'Play ' + g.name; t.onclick = (e) => { e.preventDefault(); anaTrack('game_open', { game: g.id }); go(t.href); }; return t; } // (--- analytics --- game_open)
     if (why) t.appendChild(el('span', 'why', why));
     const ta = el('div', 'ta');
-    const bring = button('Bring party', 'btn small' + (why ? ' dis' : '')); bring.onclick = () => { if (api.goto(g.id)) { tab = 'party'; renderTabs(); renderTab(); } };
-    const alone = button('Go alone', 'btn ghost small'); alone.onclick = () => go(urlFor(g.id));
+    const bring = button('Bring party', 'btn small' + (why ? ' dis' : '')); bring.onclick = () => { if (api.goto(g.id)) { anaTrack('game_open', { game: g.id, props: { party: 1 } }); tab = 'party'; renderTabs(); renderTab(); } };
+    const alone = button('Go alone', 'btn ghost small'); alone.onclick = () => { anaTrack('game_open', { game: g.id }); go(urlFor(g.id)); }; // (--- analytics --- game_open)
     ta.appendChild(bring); ta.appendChild(alone); t.appendChild(ta);
     return t;
   }
@@ -912,7 +920,7 @@
       const r = el('div', 'brow mine'); r.appendChild(el('span', 'gi', gameIcon(h.game)));
       const info = el('div', 'info'); info.appendChild(el('div', 'nm', 'Your seat at ' + h.gameName));
       const wh = el('div', 'wh'); wh.appendChild(el('span', 'st waiting', 'HELD')); wh.appendChild(document.createTextNode(heldWith(h) ? 'with ' + heldWith(h) : 'held for you')); info.appendChild(wh); r.appendChild(info);
-      const acts = el('div', 'acts'), a = el('a', 'btn small', 'Rejoin'); a.href = heldUrl(h); a.onclick = (e) => { e.preventDefault(); go(a.href); }; acts.appendChild(a); r.appendChild(acts);
+      const acts = el('div', 'acts'), a = el('a', 'btn small', 'Rejoin'); a.href = heldUrl(h); a.onclick = (e) => { e.preventDefault(); anaTrack('rejoin_click', { game: h.game }); go(a.href); }; acts.appendChild(a); r.appendChild(acts); // (--- analytics --- rejoin_click)
       openNowEl.appendChild(r);
     });
     const d = browseData, host = api.isHost;
@@ -1063,6 +1071,78 @@
     urlFor, isHere, open: (t) => openDrawer(t), close: closeDrawer, toast,
   };
   window.PhattParty = api;
+
+  // ---- analytics (PHA-4335) ---- docs/ANALYTICS.md. Beacons to <hub>/api/ev: page_view on load, page_leave when hidden or
+  // gone (visible ms), dock_open, chat_send (a count, never the text), game_open, rejoin_click. Batched for 1 s (at once on
+  // leave), text/plain so sendBeacon needs no preflight. DNT / GPC: nothing is sent and the hellos carry dnt:1.
+  // Self-contained for the older dock copies: needs only HUB, GAME and `member` (the token, read at send time); waits for
+  // `identityReady` (the PHATT ID check) when that dock has it, so the view goes out under the token the page settles on.
+  // Page API: PhattParty.track(e, fields) / PhattParty.pageview(path?) (the hub page calls it on its in-page route changes).
+  const ANA_DNT = (() => { try { return navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.globalPrivacyControl === true; } catch (e) { return false; } })();
+  const ana = { q: [], timer: 0, ready: false, path: '', shownAt: 0, left: false };
+  function anaPath(p) { // the hub's ?game=x → /game/x, ?table= → /table; no query string anywhere else
+    if (p) return String(p).split(/[?#]/)[0].slice(0, 200);
+    const u = new URLSearchParams(location.search), g = u.get('game');
+    if (GAME === 'clubhouse' && u.has('table')) return '/table';
+    if (GAME === 'clubhouse' && g && /^[a-z0-9_-]{1,32}$/.test(g)) return '/game/' + g;
+    return location.pathname.slice(0, 200);
+  }
+  function anaSend(beacon) {
+    clearTimeout(ana.timer); ana.timer = 0;
+    if (!ana.ready || !ana.q.length) return;
+    const now = Date.now();
+    while (ana.q.length) {
+      const ev = ana.q.splice(0, 25).map((x) => { const o = Object.assign({}, x); o.age = Math.max(0, now - x.t); delete o.t; return o; });
+      const body = JSON.stringify({ v: 1, m: member, site: GAME, ev: ev });
+      if (body.length > 8000) continue; // (an event this big is a bug in the page; never block the rest)
+      let sent = false;
+      try { if (navigator.sendBeacon) sent = navigator.sendBeacon(HUB + '/api/ev', new Blob([body], { type: 'text/plain' })); } catch (e) { sent = false; }
+      if (!sent) { try { fetch(HUB + '/api/ev', { method: 'POST', mode: 'cors', keepalive: !!beacon, headers: { 'content-type': 'text/plain' }, body: body }).catch(() => {}); } catch (e) { /* offline */ } }
+    }
+  }
+  function anaTrack(e, f) {
+    if (ANA_DNT || typeof e !== 'string') return;
+    const x = Object.assign({}, f || {}); x.e = e; x.t = Date.now();
+    ana.q.push(x); if (ana.q.length > 200) ana.q.shift();
+    if (!ana.timer) ana.timer = setTimeout(anaSend, 1000);
+  }
+  function anaLeave(beacon) { // the visible time on this view since it was shown (or the tab came back)
+    if (ana.left || !ana.shownAt) return;
+    ana.left = true; anaTrack('page_leave', { path: ana.path, dur: Date.now() - ana.shownAt }); anaSend(beacon);
+  }
+  function anaView(path, landing) {
+    if (!landing) anaLeave(false); // an in-page route change: the last view ends here
+    ana.path = anaPath(path); ana.shownAt = Date.now(); ana.left = document.visibilityState === 'hidden';
+    const f = { path: ana.path };
+    if (landing) {
+      let ref = ''; try { ref = document.referrer ? new URL(document.referrer).origin + '/' : ''; } catch (e) { ref = ''; }
+      if (ref && new URL(ref).host === location.host) ref = '';
+      const u = new URLSearchParams(location.search), src = (u.get('utm_source') || '').slice(0, 40), camp = (u.get('utm_campaign') || '').slice(0, 40);
+      let pend = null; try { pend = JSON.parse(sessionStorage.getItem('phatt.ana.pend') || 'null'); sessionStorage.removeItem('phatt.ana.pend'); } catch (e) { pend = null; }
+      f.ref = ref || (pend && pend.ref) || ''; f.utm = src ? src + (camp ? '/' + camp : '') : (pend && pend.utm) || '';
+      ana.land = f;
+    }
+    anaTrack('page_view', f);
+  }
+  if (!ANA_DNT) {
+    anaView(null, true);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') anaLeave(true);
+      else { ana.shownAt = Date.now(); ana.left = false; }
+    });
+    window.addEventListener('pagehide', () => {
+      // left before the dock knew who I am (the one quiet PHATT ID trip): nothing goes; the next page carries ref/utm on
+      if (!ana.ready) { try { if (ana.land && (ana.land.ref || ana.land.utm)) sessionStorage.setItem('phatt.ana.pend', JSON.stringify({ ref: ana.land.ref, utm: ana.land.utm })); } catch (e) { /* private mode */ } ana.q = []; return; }
+      anaLeave(true);
+    });
+    const go = () => { ana.ready = true; if (ana.q.length && !ana.timer) ana.timer = setTimeout(anaSend, 1000); };
+    const idp = typeof identityReady !== 'undefined' && identityReady && identityReady.then ? identityReady : null;
+    if (idp) { idp.then(go, go); setTimeout(go, 6000); } else go();
+  }
+  api.track = (e, f) => anaTrack(e, f);
+  api.pageview = (p) => { if (!ANA_DNT) anaView(p, false); };
+  api.dnt = ANA_DNT;
+  // ---- /analytics ----
 
   // ---- boot ----
   function boot() {
